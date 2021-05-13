@@ -210,6 +210,7 @@ memtier_policy_dynamic_threshold_get_kind(struct memtier_memory *memory,
             break;
         }
     }
+    log_err("thres: %zu, size: %zu, dest: %d", thres[0].val, size, i);
     return memory->cfg[i].kind;
 }
 
@@ -655,9 +656,11 @@ memtier_builder_construct_memtier_memory(struct memtier_builder *builder)
 MEMKIND_EXPORT void memtier_delete_memtier_memory(struct memtier_memory *memory)
 {
     print_memtier_memory(memory);
-    jemk_free(memory->thres);
-    jemk_free(memory->cfg);
-    jemk_free(memory);
+    if (memory) {
+        jemk_free(memory->thres);
+        jemk_free(memory->cfg);
+        jemk_free(memory);
+    }
 }
 
 // TODO - create "get" version for builder

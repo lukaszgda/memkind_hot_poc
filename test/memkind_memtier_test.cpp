@@ -174,6 +174,57 @@ protected:
     }
 };
 
+class MemkindMemtierThresholdSizesTest: public ::testing::Test
+{
+protected:
+    struct memtier_memory *m_tier_memory;
+
+    const int MEMKIND_DEFAULT_ratio = 1;
+    const int MEMKIND_REGULAR_ratio = 1;
+
+    const float m_tier_regular_normalized_ratio =
+        (float)MEMKIND_REGULAR_ratio / MEMKIND_DEFAULT_ratio;
+
+    size_t allocation_sum()
+    {
+        return memtier_kind_allocated_size(MEMKIND_DEFAULT) +
+            memtier_kind_allocated_size(MEMKIND_REGULAR);
+    }
+
+    void SetUp()
+    {
+        struct memtier_builder *builder =
+            memtier_builder_new(MEMTIER_POLICY_DYNAMIC_THRESHOLD);
+        ASSERT_NE(nullptr, builder);
+        int res = memtier_builder_add_tier(builder, MEMKIND_DEFAULT,
+                                           MEMKIND_DEFAULT_ratio);
+        ASSERT_EQ(0, res);
+        res = memtier_builder_add_tier(builder, MEMKIND_REGULAR,
+                                       MEMKIND_REGULAR_ratio);
+        ASSERT_EQ(0, res);
+        const size_t min = 512;
+        res = memtier_ctl_set(
+            builder, "policy.dynamic_threshold.thresholds[0].min", &min);
+        ASSERT_EQ(0, res);
+        const size_t val = 2048;
+        res = memtier_ctl_set(
+            builder, "policy.dynamic_threshold.thresholds[0].val", &val);
+        ASSERT_EQ(0, res);
+        const size_t max = 8192;
+        res = memtier_ctl_set(
+            builder, "policy.dynamic_threshold.thresholds[0].max", &max);
+        ASSERT_EQ(0, res);
+        m_tier_memory = memtier_builder_construct_memtier_memory(builder);
+        ASSERT_NE(nullptr, m_tier_memory);
+        memtier_builder_delete(builder);
+    }
+
+    void TearDown()
+    {
+        memtier_delete_memtier_memory(m_tier_memory);
+    }
+};
+
 TEST_F(MemkindMemtierKindTest, test_tier_size_after_destroy)
 {
     const size_t size = 512;
@@ -1333,6 +1384,70 @@ TEST_F(MemkindMemtierThresholdTest, test_various_alloc_size)
     float def_reg_dist = abs(m_tier_regular_normalized_ratio - reg_def_ratio) /
         (m_tier_regular_normalized_ratio);
     ASSERT_LE(def_reg_dist, max_ratio_distance);
+
+    for (auto const &ptr : allocs) {
+        memtier_free(ptr);
+    }
+}
+
+TEST_F(MemkindMemtierThresholdSizesTest, test_final_alloc_sizes)
+{
+    size_t i;
+
+    const int alloc_sizes_num = 9;
+    const size_t alloc_sizes[alloc_sizes_num] = {1024, 1024, 1024, 1024, 1024,
+                                                 1024, 1024, 1024, 8192};
+    const int alloc_num = 5000;
+    size_t sizes[alloc_num];
+    std::vector<void *> allocs;
+
+    // initialize sizes array
+    srand(1);
+    for (i = 0; i < alloc_num; ++i) {
+        unsigned size_id = rand() % alloc_sizes_num;
+        sizes[i] = alloc_sizes[size_id];
+    }
+
+    std::vector<size_t> default_sizes;
+    std::vector<size_t> regular_sizes;
+
+    // do allocations
+    for (i = 0; i < alloc_num; ++i) {
+        void *ptr = memtier_malloc(m_tier_memory, sizes[i]);
+        ASSERT_NE(nullptr, ptr);
+        allocs.push_back(ptr);
+
+        if (memkind_detect_kind(ptr) == MEMKIND_DEFAULT) {
+            default_sizes.push_back(sizes[i]);
+        } else {
+            regular_sizes.push_back(sizes[i]);
+        }
+    }
+
+    size_t default_alloc_size = memtier_kind_allocated_size(MEMKIND_DEFAULT);
+    size_t regular_alloc_size = memtier_kind_allocated_size(MEMKIND_REGULAR);
+
+    // check if actual ratios between tiers are close to desired
+    const float max_ratio_distance = 0.10; // 10%
+
+    float reg_def_ratio = (float)regular_alloc_size / default_alloc_size;
+
+    float def_reg_dist = abs(m_tier_regular_normalized_ratio - reg_def_ratio) /
+        (m_tier_regular_normalized_ratio);
+    ASSERT_LE(def_reg_dist, max_ratio_distance);
+
+    // check if most of small allocations goes to first tier
+    const float min_small_allocs = 0.85; // 85%
+
+    float small_allocs_in_default =
+        (float)std::count_if(default_sizes.begin(), default_sizes.end(),
+                             [](int i) { return i == 1024; });
+    ASSERT_GE(small_allocs_in_default / default_sizes.size(), min_small_allocs);
+
+    float small_allocs_in_regular =
+        (float)std::count_if(regular_sizes.begin(), regular_sizes.end(),
+                             [](int i) { return i == 1024; });
+    ASSERT_LE(small_allocs_in_regular / regular_sizes.size(), 1 - min_small_allocs);
 
     for (auto const &ptr : allocs) {
         memtier_free(ptr);
