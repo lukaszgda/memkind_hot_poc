@@ -74,9 +74,9 @@
 // CHECK_CNT     - number of memory management operations that has to be made
 //                 between ratio checks
 // STEP          - default step (in bytes) between thresholds
-#define THRESHOLD_TRIGGER   0.1  // 10%
-#define THRESHOLD_DEGREE    0.25 // 25%
-#define THRESHOLD_CHECK_CNT 5
+#define THRESHOLD_TRIGGER   0.02 // 2%
+#define THRESHOLD_DEGREE    0.15 // 15%
+#define THRESHOLD_CHECK_CNT 20
 #define THRESHOLD_STEP      1024
 
 // Macro to get number of thresholds from parent object
@@ -85,6 +85,9 @@
 struct memtier_tier_cfg {
     memkind_t kind;   // Memory kind
     float kind_ratio; // Memory kind ratio
+
+    // DEBUG
+    int histo[100];
 };
 
 // Thresholds configuration - valid only for DYNAMIC_THRESHOLD policy
@@ -93,6 +96,7 @@ struct memtier_threshold_cfg {
     size_t min;       // Minimum threshold level
     size_t max;       // Maximum threshold level
     float norm_ratio; // Normalized ratio between two adjacent tiers
+    float prev_ratio; // Previously calclulated ratio
 };
 
 struct memtier_builder {
@@ -120,6 +124,7 @@ struct memtier_memory {
     float thres_trigger;                 // Difference between ratios to update
                                          // threshold
     float thres_degree; // % of threshold change in case of update
+
     // memtier_memory operations
     memkind_t (*get_kind)(struct memtier_memory *memory, size_t size);
     void (*update_cfg)(struct memtier_memory *memory);
@@ -209,12 +214,32 @@ memtier_policy_dynamic_threshold_get_kind(struct memtier_memory *memory,
             break;
         }
     }
+
+    // DEBUG
+    /*
+    size_t prev_alloc_size, next_alloc_size;
+    memkind_atomic_get(g_alloc_size[memory->cfg[0].kind->partition],
+                       prev_alloc_size);
+    memkind_atomic_get(g_alloc_size[memory->cfg[1].kind->partition],
+                       next_alloc_size);
+    log_err("DEBUG: size: %zu, tier: %d, size0: %zu, size1: %zu, thres: %ld,
+    ratio: %f", size, i, prev_alloc_size, next_alloc_size, thres[0].val,
+    (float)next_alloc_size/(float)prev_alloc_size);
+    */
+
+    if (size > 0) {
+        int l = log2(size);
+        if (l > 15)
+            l = 15;
+        memory->cfg[i].histo[l]++;
+    }
+
     return memory->cfg[i].kind;
 }
 
 static void print_memtier_memory(struct memtier_memory *memory)
 {
-    int i;
+    int i, j;
     if (!memory) {
         log_info("Empty memtier memory");
         return;
@@ -225,6 +250,9 @@ static void print_memtier_memory(struct memtier_memory *memory)
         log_info("Tier normalized ratio %f", memory->cfg[i].kind_ratio);
         log_info("Tier allocated size %zu",
                  memtier_kind_allocated_size(memory->cfg[i].kind));
+        for (j = 0; j < 15; j++) {
+            log_info("histo %d: %d", j, memory->cfg[i].histo[j]);
+        }
     }
     if (memory->thres) {
         for (i = 0; i < THRESHOLD_NUM(memory); ++i) {
@@ -287,11 +315,31 @@ memtier_policy_dynamic_threshold_update_config(struct memtier_memory *memory)
         return;
     }
 
+    {
+        // DEBUG
+        /*
+        size_t prev_alloc_size, next_alloc_size;
+        memkind_atomic_get(g_alloc_size[memory->cfg[0].kind->partition],
+                        prev_alloc_size);
+        memkind_atomic_get(g_alloc_size[memory->cfg[1].kind->partition],
+                        next_alloc_size);
+
+        float current_ratio = (float)next_alloc_size / prev_alloc_size;
+        float ratio_diff = fabs(current_ratio - thres[0].norm_ratio);
+        float prev_ratio_diff = fabs(thres[0].prev_ratio -
+        thres[0].norm_ratio);
+
+        log_err("DEBUG: size0: %zu, size1: %zu, thres: %ld, cur_ratio: %f,
+        cur_diff: %f, prev_diff: %f", prev_alloc_size, next_alloc_size,
+        thres[0].val, current_ratio, ratio_diff, prev_ratio_diff);
+        */
+    }
+
     // for every pair of adjacent tiers, check if distance between actual vs
     // desired ratio between them is above TRIGGER level and if so, change
     // threshold by CHANGE val
-    // TODO optimize the loop to avoid redundant atomic_get in 3 or more tier
-    // scenario
+    // TODO optimize the loop to avoid redundant atomic_get in 3 or more
+    // tier scenario
     for (i = 0; i < THRESHOLD_NUM(memory); ++i) {
         memkind_atomic_get(g_alloc_size[cfg[i].kind->partition],
                            prev_alloc_size);
@@ -301,8 +349,12 @@ memtier_policy_dynamic_threshold_update_config(struct memtier_memory *memory)
         float current_ratio = -1;
         if (prev_alloc_size > 0) {
             current_ratio = (float)next_alloc_size / prev_alloc_size;
-            float ratio_diff = current_ratio - thres[i].norm_ratio;
-            if (fabs(ratio_diff) < memory->thres_trigger) {
+            float ratio_diff = fabs(current_ratio - thres[i].norm_ratio);
+            float prev_ratio_diff =
+                fabs(thres[i].prev_ratio - thres[i].norm_ratio);
+            thres[i].prev_ratio = current_ratio;
+            if ((ratio_diff < memory->thres_trigger) ||
+                (ratio_diff < prev_ratio_diff)) {
                 // threshold needn't to be changed
                 continue;
             }
@@ -310,7 +362,9 @@ memtier_policy_dynamic_threshold_update_config(struct memtier_memory *memory)
 
         // increase/decrease threshold value by thres_degree and clamp it to
         // (min, max) range
-        size_t threshold = (size_t)ceilf(thres[i].val * memory->thres_degree);
+        // float degree_mult = thres[i].norm_ratio / current_ratio;
+        size_t threshold =
+            (size_t)ceilf(thres[i].val * memory->thres_degree); // * degree_mult
         if ((prev_alloc_size == 0) || (current_ratio > thres[i].norm_ratio)) {
             size_t higher_threshold = thres[i].val + threshold;
             if (higher_threshold <= thres[i].max) {
@@ -488,6 +542,7 @@ builder_dynamic_create_memory(struct memtier_builder *builder)
         memory->thres[i].max = builder->thres[i].max;
         memory->thres[i].norm_ratio =
             builder->cfg[i + 1].kind_ratio / builder->cfg[i].kind_ratio;
+        memory->thres[i].prev_ratio = memory->thres[i].norm_ratio;
     }
 
     // Validate threshold configuration:
@@ -660,8 +715,10 @@ MEMKIND_EXPORT void memtier_delete_memtier_memory(struct memtier_memory *memory)
 }
 
 // TODO - create "get" version for builder
-// TODO - create "get" version for memtier_memory obj (this will be read-only)
-// TODO - how to validate val type? e.g. provide function with explicit size_t
+// TODO - create "get" version for memtier_memory obj (this will be
+// read-only)
+// TODO - how to validate val type? e.g. provide function with explicit
+// size_t
 //        type of val for thresholds[ID].val/min/max
 MEMKIND_EXPORT int memtier_ctl_set(struct memtier_builder *builder,
                                    const char *name, const void *val)
