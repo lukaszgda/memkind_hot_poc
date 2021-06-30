@@ -12,6 +12,9 @@
 #include <syscall.h>
 #include <unistd.h>
 
+#include <fcntl.h>
+#include <string.h>
+
 static const char *message_prefixes[MESSAGE_TYPE_MAX_VALUE] = {
     [MESSAGE_TYPE_ERROR] = "MEMKIND_MEM_TIERING_LOG_ERROR",
     [MESSAGE_TYPE_INFO] = "MEMKIND_MEM_TIERING_LOG_INFO",
@@ -35,8 +38,16 @@ static ssize_t swrite(int fd, const void *buf, size_t count)
 static unsigned log_level;
 static pthread_mutex_t log_lock = PTHREAD_MUTEX_INITIALIZER;
 
+static int pid;
+static int log_file;
+static int wa = 0;
+
 static void log_generic(message_type_t type, const char *format, va_list args)
 {
+    if (wa == 1)
+        return;
+    wa = 1;
+
     static char buf[4096], *b;
 
     b = buf + sprintf(buf, "%s: ", message_prefixes[type]);
@@ -54,9 +65,23 @@ static void log_generic(message_type_t type, const char *format, va_list args)
         swrite(STDERR_FILENO, overflow_msg, sizeof(overflow_msg));
     swrite(STDERR_FILENO, buf, b - buf);
 
+    // log to file
+    int cur_pid = getpid();
+    int cur_tid = gettid();
+    if (pid != cur_pid) {
+        char name[255] = {0};
+        sprintf(name, "tier_pid_%d_tid_%d.log", cur_pid, cur_tid);
+        log_file = open(name, O_CREAT | O_WRONLY, S_IRWXU);
+    }
+    assert(log_file);
+   // lseek(log_file, 0, SEEK_END);
+    write(log_file, buf, strlen(buf));
+
     if (pthread_mutex_unlock(&log_lock) != 0) {
         assert(0 && "failed to release log mutex");
     }
+
+    wa = 0;
 }
 
 void log_info(const char *format, ...)
