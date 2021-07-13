@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /* Copyright (C) 2021 Intel Corporation. */
 
-#include <memkind/internal/memkind_memtier.h>
-
 #include <memkind/internal/memkind_arena.h>
 #include <memkind/internal/memkind_log.h>
 #include <memkind/internal/bthash.h>
+#include <memkind/internal/memkind_memtier.h>
+#include <memkind/internal/pebs.h>
 
 #include "config.h"
 #include <assert.h>
@@ -239,7 +239,7 @@ memtier_policy_data_hotness_get_kind(struct memtier_memory *memory,
     bthash(*size);
     return MEMKIND_DEFAULT;
 }
-
+/*
 static void print_memtier_memory(struct memtier_memory *memory)
 {
     int i;
@@ -270,7 +270,7 @@ static void print_memtier_memory(struct memtier_memory *memory)
              memory->thres_init_check_cnt);
     log_info("Threshold counter current value %u", memory->thres_check_cnt);
 }
-
+*/
 static void print_builder(struct memtier_builder *builder)
 {
     int i;
@@ -594,6 +594,8 @@ failure:
     return NULL;
 }
 
+extern pthread_t pebs_thread;
+
 static struct memtier_memory *
 builder_hot_create_memory(struct memtier_builder *builder)
 {
@@ -602,6 +604,8 @@ builder_hot_create_memory(struct memtier_builder *builder)
     read_maps();
     struct memtier_memory *memory =
         memtier_memory_init(builder->cfg_size, false, true);
+
+    pebs_init();
 
     return memory;
 }
@@ -655,6 +659,7 @@ memtier_builder_new(memtier_policy_t policy)
                 b->ctl_set = builder_hot_ctl_set;
                 b->cfg = NULL;
                 b->thres = NULL;
+                return b;
             default:
                 log_err("Unrecognized memory policy %u", policy);
                 jemk_free(b);
@@ -718,7 +723,9 @@ memtier_builder_construct_memtier_memory(struct memtier_builder *builder)
 
 MEMKIND_EXPORT void memtier_delete_memtier_memory(struct memtier_memory *memory)
 {
-    print_memtier_memory(memory);
+    pebs_fini();
+
+    //print_memtier_memory(memory);
     jemk_free(memory->thres);
     jemk_free(memory->cfg);
     jemk_free(memory);
