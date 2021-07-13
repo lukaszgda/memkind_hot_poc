@@ -35,7 +35,7 @@ libmemkind_la_SOURCES = src/hbwmalloc.c \
 
 
 libmemkind_la_LIBADD = jemalloc/lib/libjemalloc_pic.a
-libmemkind_la_LDFLAGS = -version-info 0:1:0 -ldl -lrt
+libmemkind_la_LDFLAGS = -version-info 0:1:0 -ldl -lrt -lpfm
 include_HEADERS = include/hbw_allocator.h \
                   include/hbwmalloc.h \
                   include/memkind.h \
@@ -475,7 +475,7 @@ bin_PROGRAMS = memkind-auto-dax-kmem-nodes memkind-hbw-nodes
 
 memkind_auto_dax_kmem_nodes_SOURCES = src/memkind-auto-dax-kmem-nodes.c
 memkind_auto_dax_kmem_nodes_LDADD = libmemkind.la
-memkind_auto_dax_kmem_nodes_LDFLAGS = $(DAXCTL_LIBS)
+memkind_auto_dax_kmem_nodes_LDFLAGS = $(DAXCTL_LIBS) -lpfm
 
 memkind_hbw_nodes_SOURCES = src/memkind-hbw-nodes.c
 memkind_hbw_nodes_LDADD = libmemkind.la

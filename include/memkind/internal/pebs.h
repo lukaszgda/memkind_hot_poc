@@ -23,14 +23,6 @@
 #include <perfmon/pfmlib.h>     // pfm_get_os_event_encoding
 #include <perfmon/pfmlib_perf_event.h>
 
-typedef struct {
-    struct perf_event_attr *attr;
-    char **fstr;
-    size_t size;
-    int idx;
-    int cpu;
-    int flags;
-} pfm_pmu_encode_t;
 
 void *pebs_monitor(void *);
 

@@ -77,26 +77,22 @@ void pebs_init()
     struct perf_event_attr pe;
     memset(&pe, 0, sizeof(struct perf_event_attr));
 
-    // TODO get event coding from pfm_get_perf_event_encoding
-    // https://man7.org/linux/man-pages/man3/pfm_get_perf_event_encoding.3.html
-    pe.type = PERF_TYPE_RAW;
-    pe.config = 0x1cd;
-    pe.config1 = 0x3;
-    pe.precise_ip = 2;
-
-    // TODO how to link libpfm?
-    /*
+    // NOTE: code bellow requires link to libpfm
     int ret = pfm_initialize();
-    if (ret != PFM_SUCCESS)
+    if (ret != PFM_SUCCESS) {
+        printf("pfm_initialize() failed!\n");
         exit(-1);
+    }
 
-    pfm_pmu_encode_t arg;
+    pfm_perf_encode_arg_t arg;
     memset(&arg, 0, sizeof(arg));
-
-    ret = pfm_get_os_event_encoding("RETIRED_INSTRUCTIONS", PFM_PLM3, PFM_OS_NONE, &arg);
-    if (ret != PFM_SUCCESS)
+    arg.attr = &pe;
+    ret = pfm_get_os_event_encoding("MEM_UOPS_RETIRED:ALL_LOADS", PFM_PLM3, 
+        PFM_OS_PERF_EVENT_EXT, &arg);
+    if (ret != PFM_SUCCESS) {
+        printf("pfm_get_os_event_encoding() failed!\n");
         exit(-1);
-    */
+    }
 
     pe.size = sizeof(struct perf_event_attr);
     pe.sample_period = SAMPLE_FREQUENCY;
@@ -109,7 +105,10 @@ void pebs_init()
     pe.exclude_hv = 1;
     pe.wakeup_events = 1;
 
-    pebs_fd = perf_event_open(&pe, 0, -1, -1, 0); // TODO add vars
+    pid_t pid = 0;          // measure current process
+    int cpu = -1;           // .. on any CPU
+    int group_fd = -1;      // use single event group
+    pebs_fd = perf_event_open(&pe, pid, cpu, group_fd, 0);
 
     int mmap_pages = 1 + MMAP_DATA_SIZE;
     int map_size = mmap_pages * getpagesize();
