@@ -29,6 +29,7 @@ libmemkind_la_SOURCES = src/hbwmalloc.c \
                         src/memkind_pmem.c \
                         src/memkind_regular.c \
                         src/tbb_wrapper.c \
+                        src/bthash.c \
                         # end
 
 

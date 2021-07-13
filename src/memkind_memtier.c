@@ -5,6 +5,7 @@
 
 #include <memkind/internal/memkind_arena.h>
 #include <memkind/internal/memkind_log.h>
+#include <memkind/internal/bthash.h>
 
 #include "config.h"
 #include <assert.h>
@@ -235,6 +236,7 @@ memtier_policy_data_hotness_get_kind(struct memtier_memory *memory,
                                      size_t *size)
 {
     // TODO modifiy size if needed in case when we decide to allocate new pool
+    bthash(*size);
     return MEMKIND_DEFAULT;
 }
 
@@ -597,6 +599,7 @@ builder_hot_create_memory(struct memtier_builder *builder)
 {
     // TODO create and initialize structures here
 
+    read_maps();
     struct memtier_memory *memory =
         memtier_memory_init(builder->cfg_size, false, true);
 
