@@ -19,12 +19,11 @@
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>         /* Definition of SYS_* constants */
+#include <sys/types.h>
 
 #include <perfmon/pfmlib.h>     // pfm_get_os_event_encoding
 #include <perfmon/pfmlib_perf_event.h>
 
-
-void *pebs_monitor(void *);
 
 void pebs_init();
 void pebs_fini();

@@ -1,8 +1,8 @@
 
 #include <memkind/internal/pebs.h>
 
-#define SAMPLE_FREQUENCY 1000000
-#define MMAP_DATA_SIZE   8 // TODO what is this?
+#define SAMPLE_FREQUENCY 10000000 // smaller value -> more frequent sampling
+#define MMAP_DATA_SIZE   8
 #define rmb() asm volatile("lfence":::"memory")
 
 pthread_t pebs_thread;
@@ -19,17 +19,15 @@ int perf_event_open(struct perf_event_attr *hw_event_uptr, pid_t pid, int cpu,
 }
 */
 
-void *pebs_monitor(void *a)
+
+static void *pebs_monitor(void *a)
 {
     // set low priority
     int policy;
     struct sched_param param;
     pthread_getschedparam(pthread_self(), &policy, &param);
-    param.sched_priority = sched_get_priority_max(policy);
+    param.sched_priority = sched_get_priority_min(policy);
     pthread_setschedparam(pthread_self(), policy, &param);
-
-    ioctl(pebs_fd, PERF_EVENT_IOC_RESET, 0);
-    ioctl(pebs_fd, PERF_EVENT_IOC_ENABLE, 0);
 
     __u64 last_head = 0;
 
@@ -37,20 +35,29 @@ void *pebs_monitor(void *a)
         struct perf_event_mmap_page* pebs_metadata =
             (struct perf_event_mmap_page*)pebs_mmap;
 
-        if (last_head < pebs_metadata->data_head) {
-	        char *data_mmap = pebs_mmap + getpagesize();
-            printf("new data!\n");
+        // must call this before read from data head
+		rmb();
 
-            while (last_head != pebs_metadata->data_head) {
+        // DEBUG
+        // printf("head: %llu size: %lld\n", pebs_metadata->data_head, pebs_metadata->data_head - last_head);
+        if (last_head < pebs_metadata->data_head) {
+            printf("new data from PEBS!\n");
+
+            while (last_head < pebs_metadata->data_head) {
+	            char *data_mmap = pebs_mmap + getpagesize() +
+                    last_head % (MMAP_DATA_SIZE * getpagesize());
+
                 struct perf_event_header *event =
                     (struct perf_event_header *)data_mmap;
 
                 switch (event->type) {
                     case PERF_RECORD_SAMPLE:
                     {
-                         char* x = data_mmap + sizeof(struct perf_event_header);
-                         printf("a: %p\n", (__u64*)x);
-                         printf("head: %llu\n", pebs_metadata->data_head);
+                        // 'x' is the acessed address
+                        char* x = data_mmap + sizeof(struct perf_event_header);
+                        // DEBUG
+                        printf("last: %llu, head: %llu x: %llx\n",
+                            last_head, pebs_metadata->data_head, *(__u64*)x);
                     }
                     break;
                 default:
@@ -62,9 +69,11 @@ void *pebs_monitor(void *a)
             }
         }
 
-        sleep(1);
-        ioctl(pebs_fd, PERF_EVENT_IOC_REFRESH, 1);
-        rmb();
+		ioctl(pebs_fd, PERF_EVENT_IOC_REFRESH, 0);
+        last_head = pebs_metadata->data_head;
+        pebs_metadata->data_tail = pebs_metadata->data_head;
+
+		sleep(1);
     }
 
     return NULL;
@@ -87,7 +96,7 @@ void pebs_init()
     pfm_perf_encode_arg_t arg;
     memset(&arg, 0, sizeof(arg));
     arg.attr = &pe;
-    ret = pfm_get_os_event_encoding("MEM_UOPS_RETIRED:ALL_LOADS", PFM_PLM3, 
+    ret = pfm_get_os_event_encoding("MEM_UOPS_RETIRED:ALL_LOADS", PFM_PLM3,
         PFM_OS_PERF_EVENT_EXT, &arg);
     if (ret != PFM_SUCCESS) {
         printf("pfm_get_os_event_encoding() failed!\n");
@@ -98,26 +107,33 @@ void pebs_init()
     pe.sample_period = SAMPLE_FREQUENCY;
     pe.sample_type = PERF_SAMPLE_ADDR;
 
+    pe.precise_ip = 2; // NOTE: this is reqired but was not set
+                       // by pfm_get_os_event_encoding()
     pe.read_format = 0;
     pe.disabled = 1;
-    pe.pinned = 1; // TODO comment what is this
+    pe.pinned = 1;
     pe.exclude_kernel = 1;
     pe.exclude_hv = 1;
     pe.wakeup_events = 1;
 
-    pid_t pid = 0;          // measure current process
-    int cpu = -1;           // .. on any CPU
-    int group_fd = -1;      // use single event group
-    pebs_fd = perf_event_open(&pe, pid, cpu, group_fd, 0);
+    pid_t pid = 0;              // measure current process
+    int cpu = -1;               // .. on any CPU
+    int group_fd = -1;          // use single event group
+    unsigned long flags = 0;
+    pebs_fd = perf_event_open(&pe, pid, cpu, group_fd, flags);
 
     int mmap_pages = 1 + MMAP_DATA_SIZE;
     int map_size = mmap_pages * getpagesize();
     pebs_mmap = mmap(NULL, map_size,
                      PROT_READ | PROT_WRITE, MAP_SHARED, pebs_fd, 0);
 
-    // printf("PEBS start\n");
+    // DEBUG
+    //printf("PEBS thread start\n");
 
     pthread_create(&pebs_thread, NULL, &pebs_monitor, NULL);
+
+	ioctl(pebs_fd, PERF_EVENT_IOC_RESET, 0);
+	ioctl(pebs_fd, PERF_EVENT_IOC_ENABLE, 0);
 }
 
 void pebs_fini()
@@ -128,5 +144,6 @@ void pebs_fini()
     munmap(pebs_mmap, mmap_pages * getpagesize());
     close(pebs_fd);
 
-    // printf("PEBS end\n");
+    // DEBUG
+    //printf("PEBS thread end\n");
 }
