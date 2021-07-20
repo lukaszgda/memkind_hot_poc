@@ -3,12 +3,14 @@
 
 #include "../config.h"
 #include <memkind/internal/memkind_memtier.h>
+#include <memkind/internal/pebs.h>
 
 #include <tiering/ctl.h>
 #include <tiering/memtier_log.h>
 
 #include <pthread.h>
 #include <string.h>
+#include <dlfcn.h>
 
 #define MEMTIER_EXPORT __attribute__((visibility("default")))
 #define MEMTIER_INIT   __attribute__((constructor))
@@ -200,4 +202,17 @@ MEMTIER_EXPORT int mt_posix_memalign(void **memptr, size_t alignment,
 MEMTIER_EXPORT size_t mt_malloc_usable_size(void *ptr)
 {
     return malloc_usable_size(ptr);
+}
+
+MEMTIER_EXPORT pid_t fork(void)
+{
+    pid_t (*_fork)(void) = dlsym(RTLD_NEXT, "fork");
+    pid_t pid = _fork();
+
+    if (MEMTIER_LIKELY(current_memory)) {
+        log_info("fork: %d!", pid);
+        pebs_fork(pid);
+    }
+
+    return pid;
 }

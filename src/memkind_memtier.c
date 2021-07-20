@@ -606,7 +606,7 @@ builder_hot_create_memory(struct memtier_builder *builder)
     struct memtier_memory *memory =
         memtier_memory_init(builder->cfg_size, false, true);
 
-    pebs_init();
+    pebs_init(getpid());
 
     return memory;
 }

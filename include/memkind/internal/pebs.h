@@ -27,3 +27,4 @@
 
 void pebs_init();
 void pebs_fini();
+void pebs_fork(pid_t pid);

@@ -1,7 +1,8 @@
 
 #include <memkind/internal/pebs.h>
+#include <memkind/internal/memkind_private.h>
 
-#define SAMPLE_FREQUENCY 10000000 // smaller value -> more frequent sampling
+#define SAMPLE_FREQUENCY 100000 // smaller value -> more frequent sampling
 #define MMAP_DATA_SIZE   8
 #define rmb() asm volatile("lfence":::"memory")
 
@@ -9,18 +10,9 @@ pthread_t pebs_thread;
 int pebs_fd;
 static char *pebs_mmap;
 
-/*
-// defined in perfmon/perf_event.h
-int perf_event_open(struct perf_event_attr *hw_event_uptr, pid_t pid, int cpu,
-                    int group_fd, unsigned long flags)
-{
-    return syscall(__NR_perf_event_open, hw_event_uptr, pid, cpu, group_fd,
-                   flags);
-}
-*/
+#define LOG_TO_FILE 0
 
-
-static void *pebs_monitor(void *a)
+void *pebs_monitor(void *a)
 {
     // set low priority
     int policy;
@@ -30,6 +22,21 @@ static void *pebs_monitor(void *a)
     pthread_setschedparam(pthread_self(), policy, &param);
 
     __u64 last_head = 0;
+
+    // DEBUG
+    char buf[4096];
+#if LOG_TO_FILE
+    static int pid;
+    static int log_file;
+    int cur_pid = getpid();
+    int cur_tid = gettid();
+    if (pid != cur_pid) {
+        char name[255] = {0};
+        sprintf(name, "tier_pid_%d_tid_%d.log", cur_pid, cur_tid);
+        log_file = open(name, O_CREAT | O_WRONLY, S_IRWXU);
+    }
+    lseek(log_file, 0, SEEK_END);
+#endif
 
     while (1) {
         struct perf_event_mmap_page* pebs_metadata =
@@ -56,8 +63,12 @@ static void *pebs_monitor(void *a)
                         // 'x' is the acessed address
                         char* x = data_mmap + sizeof(struct perf_event_header);
                         // DEBUG
-                        printf("last: %llu, head: %llu x: %llx\n",
+                        sprintf(buf, "last: %llu, head: %llu x: %llx\n",
                             last_head, pebs_metadata->data_head, *(__u64*)x);
+                        printf("%s", buf);
+#if LOG_TO_FILE
+                        write(log_file, buf, strlen(buf));
+#endif
                     }
                     break;
                 default:
@@ -79,7 +90,7 @@ static void *pebs_monitor(void *a)
     return NULL;
 }
 
-void pebs_init()
+void pebs_init(pid_t pid)
 {
     // TODO add code that writes to /proc/sys/kernel/perf_event_paranoid ?
 
@@ -116,7 +127,7 @@ void pebs_init()
     pe.exclude_hv = 1;
     pe.wakeup_events = 1;
 
-    pid_t pid = 0;              // measure current process
+    //pid_t pid = 0;              // measure current process
     int cpu = -1;               // .. on any CPU
     int group_fd = -1;          // use single event group
     unsigned long flags = 0;
@@ -146,4 +157,9 @@ void pebs_fini()
 
     // DEBUG
     //printf("PEBS thread end\n");
+}
+
+MEMKIND_EXPORT void pebs_fork(pid_t pid)
+{
+    pebs_init(pid);
 }
