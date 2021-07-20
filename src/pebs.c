@@ -10,7 +10,7 @@ pthread_t pebs_thread;
 int pebs_fd;
 static char *pebs_mmap;
 
-#define LOG_TO_FILE 0
+#define LOG_TO_FILE 1
 
 void *pebs_monitor(void *a)
 {
@@ -65,7 +65,7 @@ void *pebs_monitor(void *a)
                         // DEBUG
                         sprintf(buf, "last: %llu, head: %llu x: %llx\n",
                             last_head, pebs_metadata->data_head, *(__u64*)x);
-                        printf("%s", buf);
+                        //printf("%s", buf);
 #if LOG_TO_FILE
                         write(log_file, buf, strlen(buf));
 #endif
@@ -107,7 +107,7 @@ void pebs_init(pid_t pid)
     pfm_perf_encode_arg_t arg;
     memset(&arg, 0, sizeof(arg));
     arg.attr = &pe;
-    ret = pfm_get_os_event_encoding("MEM_UOPS_RETIRED:ALL_LOADS", PFM_PLM3,
+    ret = pfm_get_os_event_encoding("MEM_LOAD_RETIRED:L3_MISS", PFM_PLM3,
         PFM_OS_PERF_EVENT_EXT, &arg);
     if (ret != PFM_SUCCESS) {
         printf("pfm_get_os_event_encoding() failed!\n");
