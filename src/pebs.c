@@ -67,7 +67,7 @@ void *pebs_monitor(void *a)
                             last_head, pebs_metadata->data_head, *(__u64*)x);
                         //printf("%s", buf);
 #if LOG_TO_FILE
-                        write(log_file, buf, strlen(buf));
+                        if (write(log_file, buf, strlen(buf))) ;
 #endif
                     }
                     break;
