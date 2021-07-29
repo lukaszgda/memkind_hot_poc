@@ -6,6 +6,7 @@
 #include <memkind/internal/bthash.h>
 #include <memkind/internal/memkind_memtier.h>
 #include <memkind/internal/pebs.h>
+#include <memkind/internal/tachanka.h>
 
 #include "config.h"
 #include <assert.h>
@@ -235,6 +236,9 @@ static memkind_t
 memtier_policy_data_hotness_get_kind(struct memtier_memory *memory,
                                      size_t *size)
 {
+    uint64_t h = bthash(*size);
+    char buf[128];
+    if (write(1, buf, sprintf(buf, "hash %016zx size %zd is %s\n", h, *size, is_hot(h) ? "♨": "❄")));
     // TODO modifiy size if needed in case when we decide to allocate new pool
     //bthash(*size);
     return MEMKIND_DEFAULT;
@@ -602,7 +606,7 @@ builder_hot_create_memory(struct memtier_builder *builder)
 {
     // TODO create and initialize structures here
 
-    //read_maps();
+    tachanka_init();
     struct memtier_memory *memory =
         memtier_memory_init(builder->cfg_size, false, true);
 

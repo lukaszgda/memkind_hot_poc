@@ -32,6 +32,7 @@ libmemkind_la_SOURCES = src/hbwmalloc.c \
                         src/bthash.c \
                         src/critnib.c \
                         src/pebs.c \
+                        src/tachanka.c \
                         # end
 
 

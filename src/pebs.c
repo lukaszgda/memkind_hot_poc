@@ -1,6 +1,7 @@
 
 #include <memkind/internal/pebs.h>
 #include <memkind/internal/memkind_private.h>
+#include <memkind/internal/tachanka.h>
 
 #define SAMPLE_FREQUENCY 100000 // smaller value -> more frequent sampling
 #define MMAP_DATA_SIZE   8
@@ -66,6 +67,7 @@ void *pebs_monitor(void *a)
                         sprintf(buf, "last: %llu, head: %llu x: %llx\n",
                             last_head, pebs_metadata->data_head, *(__u64*)x);
                         //printf("%s", buf);
+                        touch(x);
 #if LOG_TO_FILE
                         if (write(log_file, buf, strlen(buf))) ;
 #endif
