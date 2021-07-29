@@ -1,8 +1,5 @@
-// SPDX-License-Identifier: BSD-2-Clause
-/* Copyright (C) 2021 Intel Corporation. */
-
-#include <stdint.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
@@ -11,9 +8,8 @@
 
 static void *start[1024], *end[1024];
 static int nm;
+static void *stack0;
 static void *pthread_start, *pthread_end; // hax!
-
-extern void _start(void);
 
 void read_maps(void)
 {
@@ -27,11 +23,12 @@ void read_maps(void)
         char *file = 0;
         size_t dummy = 0;
         if (getline(&file, &dummy, f)) ;
+        if (strstr(file, "[stack]"))
+            stack0 = end[nm];
         if (exec != 'x')
             continue;
-        if (file && strstr(file, "libpthread"))
+        if (strstr(file, "libpthread"))
             pthread_start = start[nm], pthread_end = end[nm];
-        free(file);
         if (nm++ >= ARRAYSZ(start))
             break;
     }
@@ -45,7 +42,7 @@ uint64_t bthash(uint64_t size)
     const int R = 47;
     uint64_t h = size ^ M;
 
-    for (void **sp = __builtin_frame_address(0);; sp++)
+    for (void **sp = __builtin_frame_address(0); sp != stack0; sp++)
     {
         void *addr = *sp;
         int s;
@@ -54,7 +51,7 @@ uint64_t bthash(uint64_t size)
                 break;
         if (s-- && addr < end[s])
         {
-            if (addr == _start || (addr >= pthread_start && addr < pthread_end))
+            if (addr >= pthread_start && addr < pthread_end)
                 break;
 
             uint64_t k = (uintptr_t)addr;
