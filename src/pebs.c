@@ -1,7 +1,7 @@
 
 #include <memkind/internal/pebs.h>
-#include <memkind/internal/memkind_private.h>
 #include <memkind/internal/tachanka.h>
+#include <memkind/internal/memkind_private.h>
 
 #define SAMPLE_FREQUENCY 100000 // smaller value -> more frequent sampling
 #define MMAP_DATA_SIZE   8
@@ -61,13 +61,15 @@ void *pebs_monitor(void *a)
                 switch (event->type) {
                     case PERF_RECORD_SAMPLE:
                     {
-                        // 'x' is the acessed address
-                        char* x = data_mmap + sizeof(struct perf_event_header);
+                        __u64 timestamp = *(__u64*)(data_mmap + sizeof(struct perf_event_header));
+                        // 'addr' is the acessed address
+                        void* addr = (void*)(data_mmap + sizeof(struct perf_event_header) + sizeof(__u64));
                         // DEBUG
-                        sprintf(buf, "last: %llu, head: %llu x: %llx\n",
-                            last_head, pebs_metadata->data_head, *(__u64*)x);
+                        //sprintf(buf, "last: %llu, head: %llu t: %llu x: %llx\n",
+                        //    last_head, pebs_metadata->data_head,
+                        //    timestamp, addr);
                         //printf("%s", buf);
-                        touch(x);
+                        touch(addr, timestamp);
 #if LOG_TO_FILE
                         if (write(log_file, buf, strlen(buf))) ;
 #endif
@@ -109,8 +111,11 @@ void pebs_init(pid_t pid)
     pfm_perf_encode_arg_t arg;
     memset(&arg, 0, sizeof(arg));
     arg.attr = &pe;
-    ret = pfm_get_os_event_encoding("MEM_LOAD_RETIRED:L3_MISS", PFM_PLM3,
-        PFM_OS_PERF_EVENT_EXT, &arg);
+
+    char event[] = "MEM_LOAD_RETIRED:L3_MISS";
+   // char* event[] = "MEM_UOPS_RETIRED:ALL_LOADS";
+
+    ret = pfm_get_os_event_encoding(event, PFM_PLM3, PFM_OS_PERF_EVENT_EXT, &arg);
     if (ret != PFM_SUCCESS) {
         printf("pfm_get_os_event_encoding() failed!\n");
         exit(-1);
@@ -118,7 +123,7 @@ void pebs_init(pid_t pid)
 
     pe.size = sizeof(struct perf_event_attr);
     pe.sample_period = SAMPLE_FREQUENCY;
-    pe.sample_type = PERF_SAMPLE_ADDR;
+    pe.sample_type = PERF_SAMPLE_ADDR | PERF_SAMPLE_TIME;
 
     pe.precise_ip = 2; // NOTE: this is reqired but was not set
                        // by pfm_get_os_event_encoding()
