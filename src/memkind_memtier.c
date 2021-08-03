@@ -614,7 +614,7 @@ builder_hot_create_memory(struct memtier_builder *builder)
     struct memtier_memory *memory =
         memtier_memory_init(builder->cfg_size, false, true);
     memory->cfg[0].kind = builder->cfg[0].kind;
-    memory->cfg[1].kind = builder->cfg[1].kind;
+    memory->cfg[1].kind = builder->cfg[!(builder->cfg_size == 1)].kind;
 
     printf("②\n");
 
@@ -763,8 +763,6 @@ MEMKIND_EXPORT void *memtier_malloc(struct memtier_memory *memory, size_t size)
     if (memory->get_kind == memtier_policy_data_hotness_get_kind) {
         uint64_t hash = bthash(size);
         int nk = !is_hot(hash);
-        if (memory->cfg_size <= 1)
-            nk = 0;
         ptr = memtier_kind_malloc(memory->cfg[nk].kind, size);
         register_block(hash, ptr, size);
     }
@@ -795,8 +793,6 @@ MEMKIND_EXPORT void *memtier_calloc(struct memtier_memory *memory, size_t num,
     if (memory->get_kind == memtier_policy_data_hotness_get_kind) {
         uint64_t hash = bthash(num * size);
         int nk = !is_hot(hash);
-        if (memory->cfg_size <= 1)
-            nk = 0;
         ptr = memtier_kind_calloc(memory->cfg[nk].kind, num, size);
         register_block(hash, ptr, size);
     }
