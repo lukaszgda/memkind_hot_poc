@@ -608,18 +608,13 @@ builder_hot_create_memory(struct memtier_builder *builder)
 {
     // TODO create and initialize structures here
 
-    printf("⓪\n");
     tachanka_init();
-    printf("①\n");
     struct memtier_memory *memory =
         memtier_memory_init(builder->cfg_size, false, true);
     memory->cfg[0].kind = builder->cfg[0].kind;
     memory->cfg[1].kind = builder->cfg[!(builder->cfg_size == 1)].kind;
 
-    printf("②\n");
-
     pebs_init(getpid());
-    printf("③\n");
 
     return memory;
 }
