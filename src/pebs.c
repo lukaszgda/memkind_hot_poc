@@ -64,15 +64,18 @@ void *pebs_monitor(void *a)
                         __u64 timestamp = *(__u64*)(data_mmap + sizeof(struct perf_event_header));
                         // 'addr' is the acessed address
                         void* addr = (void*)(data_mmap + sizeof(struct perf_event_header) + sizeof(__u64));
-                        // DEBUG
-                        //sprintf(buf, "last: %llu, head: %llu t: %llu x: %llx\n",
-                        //    last_head, pebs_metadata->data_head,
-                        //    timestamp, addr);
-                        //printf("%s", buf);
+
+                        // TODO - is this a global or per-core timestamp? If per-core, this could lead to some problems
+
                         touch(addr, timestamp);
 #if LOG_TO_FILE
+                        // DEBUG
+                        sprintf(buf, "last: %llu, head: %llu t: %llu addr: %llx\n",
+                            last_head, pebs_metadata->data_head,
+                            timestamp, *(long long unsigned int*)addr);
                         if (write(log_file, buf, strlen(buf))) ;
 #endif
+                        //printf("%s", buf);
                     }
                     break;
                 default:
