@@ -62,15 +62,11 @@
 
 typedef pthread_mutex_t os_mutex_t;
 
-#define Malloc jemk_malloc
 #define Free jemk_free
 
 static void *Zalloc(size_t s)
 {
-	void *m = Malloc(s);
-	if (m)
-		memset(m, 0, s);
-	return m;
+	return jemk_calloc(1, s);
 }
 
 #define ERR(x) do fprintf(stderr, x); while(0)
