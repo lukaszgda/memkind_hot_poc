@@ -236,6 +236,8 @@ static memkind_t
 memtier_policy_data_hotness_get_kind(struct memtier_memory *memory,
                                      size_t *size)
 {
+    // UNUSED
+
     uint64_t h = bthash(*size);
     char buf[128];
     if (write(1, buf, sprintf(buf, "hash %016zx size %zd is %s\n", h, *size, is_hot(h) ? "♨": "❄")));
@@ -606,11 +608,18 @@ builder_hot_create_memory(struct memtier_builder *builder)
 {
     // TODO create and initialize structures here
 
+    printf("⓪\n");
     tachanka_init();
+    printf("①\n");
     struct memtier_memory *memory =
         memtier_memory_init(builder->cfg_size, false, true);
+    memory->cfg[0].kind = builder->cfg[0].kind;
+    memory->cfg[1].kind = builder->cfg[1].kind;
+
+    printf("②\n");
 
     pebs_init(getpid());
+    printf("③\n");
 
     return memory;
 }
@@ -748,7 +757,19 @@ MEMKIND_EXPORT int memtier_ctl_set(struct memtier_builder *builder,
 
 MEMKIND_EXPORT void *memtier_malloc(struct memtier_memory *memory, size_t size)
 {
-    void *ptr = memtier_kind_malloc(memory->get_kind(memory, &size), size);
+    void *ptr;
+
+    // TODO: rethink the layering
+    if (memory->get_kind == memtier_policy_data_hotness_get_kind) {
+        uint64_t hash = bthash(size);
+        int nk = !is_hot(hash);
+        if (memory->cfg_size <= 1)
+            nk = 0;
+        ptr = memtier_kind_malloc(memory->cfg[nk].kind, size);
+        register_block(hash, ptr, size);
+    }
+    else
+        ptr = memtier_kind_malloc(memory->get_kind(memory, &size), size);
     memory->update_cfg(memory);
 
     return ptr;
@@ -768,7 +789,19 @@ MEMKIND_EXPORT void *memtier_kind_malloc(memkind_t kind, size_t size)
 MEMKIND_EXPORT void *memtier_calloc(struct memtier_memory *memory, size_t num,
                                     size_t size)
 {
-    void *ptr = memtier_kind_calloc(memory->get_kind(memory, &size), num, size);
+    void *ptr;
+
+    // TODO: rethink the layering
+    if (memory->get_kind == memtier_policy_data_hotness_get_kind) {
+        uint64_t hash = bthash(num * size);
+        int nk = !is_hot(hash);
+        if (memory->cfg_size <= 1)
+            nk = 0;
+        ptr = memtier_kind_calloc(memory->cfg[nk].kind, num, size);
+        register_block(hash, ptr, size);
+    }
+    else
+        ptr = memtier_kind_calloc(memory->get_kind(memory, &size), num, size);
     memory->update_cfg(memory);
 
     return ptr;
@@ -799,10 +832,7 @@ MEMKIND_EXPORT void *memtier_realloc(struct memtier_memory *memory, void *ptr,
         return ptr;
     }
 
-    ptr = memtier_kind_malloc(memory->get_kind(memory, &size), size);
-    memory->update_cfg(memory);
-
-    return ptr;
+    return memtier_malloc(memory, size);
 }
 
 MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
@@ -844,6 +874,7 @@ MEMKIND_EXPORT int memtier_posix_memalign(struct memtier_memory *memory,
 MEMKIND_EXPORT int memtier_kind_posix_memalign(memkind_t kind, void **memptr,
                                                size_t alignment, size_t size)
 {
+    // TODO: hotness
     int res = memkind_posix_memalign(kind, memptr, alignment, size);
     increment_alloc_size(kind->partition, jemk_malloc_usable_size(*memptr));
 #ifdef MEMKIND_DECORATION_ENABLED

@@ -50,6 +50,7 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include "memkind/internal/memkind_arena.h"
 #include "memkind/internal/critnib.h"
 
 // pmdk-compat
@@ -61,8 +62,8 @@
 
 typedef pthread_mutex_t os_mutex_t;
 
-#define Malloc malloc
-#define Free free
+#define Malloc jemk_malloc
+#define Free jemk_free
 
 static void *Zalloc(size_t s)
 {
