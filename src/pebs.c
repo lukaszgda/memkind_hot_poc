@@ -1,15 +1,19 @@
 
 #include <memkind/internal/pebs.h>
 #include <memkind/internal/tachanka.h>
+#include <memkind/internal/critnib.h>
 #include <memkind/internal/memkind_private.h>
 
-#define SAMPLE_FREQUENCY 100000 // smaller value -> more frequent sampling
+#define SAMPLE_FREQUENCY 10000 // smaller value -> more frequent sampling
 #define MMAP_DATA_SIZE   8
 #define rmb() asm volatile("lfence":::"memory")
 
 pthread_t pebs_thread;
 int pebs_fd;
 static char *pebs_mmap;
+
+// DEBUG
+extern critnib* hash_to_block;
 
 #define LOG_TO_FILE 1
 
@@ -74,7 +78,7 @@ void *pebs_monitor(void *a)
                         sprintf(buf, "last: %llu, head: %llu t: %llu addr: %llx\n",
                             last_head, pebs_metadata->data_head,
                             timestamp, addr);
-                        if (write(log_file, buf, strlen(buf))) ;
+                        //if (write(log_file, buf, strlen(buf))) ;
 #endif
                         //printf("%s", buf);
                     }
@@ -87,8 +91,24 @@ void *pebs_monitor(void *a)
                 data_mmap += event->size;
                 samples++;
             }
-            
+
             printf("%d samples\n", samples);
+
+#if LOG_TO_FILE
+            // DEBUG
+            int nchars = 0;
+            int total_chars = 0;
+            for (int i = 0; i < 20; i++) {
+                struct tblock* tb = (struct tblock*)critnib_get_leaf(hash_to_block, i);
+                int n = 0;
+                if (tb != NULL)
+                    n = tb->n2;
+                sprintf(buf + total_chars, "%d, %n", n, &nchars);
+                total_chars += nchars;
+            }
+            sprintf(buf + total_chars, "\n");
+            if (write(log_file, buf, strlen(buf)));
+#endif
         }
 
 		ioctl(pebs_fd, PERF_EVENT_IOC_REFRESH, 0);

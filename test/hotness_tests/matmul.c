@@ -10,6 +10,7 @@
 #include <dirent.h>
 
 #define MATRIX_SIZE 512
+#define MUL_STEP 1
 #define OBJS_NUM 10
 #define LOOP_LEN 100000
 #define AGE_THRESHOLD 20
@@ -18,14 +19,14 @@ double s;
 int i,j,k;
 
 void naive_matrix_multiply(double *a, double *b, double *c) {
-    for(i=0;i<MATRIX_SIZE;i++) {
+    for(i=0;i<MATRIX_SIZE;i+=MUL_STEP) {
         for(j=0;j<MATRIX_SIZE;j++) {
             a[i * MATRIX_SIZE + j]=(double)i*(double)j;
             b[i * MATRIX_SIZE + j]=(double)i/(double)(j+5);
         }
     }
 
-    for(j=0;j<MATRIX_SIZE;j++) {
+    for(j=0;j<MATRIX_SIZE;j+=MUL_STEP) {
         for(i=0;i<MATRIX_SIZE;i++) {
             s=0;
             for(k=0;k<MATRIX_SIZE;k++) {
@@ -36,7 +37,7 @@ void naive_matrix_multiply(double *a, double *b, double *c) {
     }
 
     s = 0.0;
-    for(i=0;i<MATRIX_SIZE;i++) {
+    for(i=0;i<MATRIX_SIZE;i+=MUL_STEP) {
         for(j=0;j<MATRIX_SIZE;j++) {
             s+=c[i * MATRIX_SIZE + j];
         }
@@ -49,8 +50,6 @@ void naive_matrix_multiply(double *a, double *b, double *c) {
 int main(int argc, char **argv) {
 
     int mat_size = sizeof(double) * MATRIX_SIZE * MATRIX_SIZE;
-    double *a = malloc(mat_size);
-    double *b = malloc(mat_size);
 
     double* objs[OBJS_NUM];
     int ages[OBJS_NUM] = {0};
@@ -85,23 +84,34 @@ int main(int argc, char **argv) {
     int sel = 0;
 	for (it = 0; it < LOOP_LEN; it++) {
 
-        // select dest object
+        // select src1, src2 and dest objects
         sel++;
         sel = sel % FREQ_ARRAY_LEN;
-        int obj_id = freq[sel];
 
-	    naive_matrix_multiply(a, b, objs[obj_id]);
+        int dest_obj_id = freq[sel];
+        int src1_obj_id = dest_obj_id + 1;
+        int src2_obj_id = dest_obj_id + 2;
+
+        if (src1_obj_id >= OBJS_NUM) {
+            src1_obj_id -= OBJS_NUM;
+        }
+
+        if (src2_obj_id >= OBJS_NUM) {
+            src2_obj_id -= OBJS_NUM;
+        }
+
+	    naive_matrix_multiply(objs[src1_obj_id], objs[src2_obj_id], objs[dest_obj_id]);
 
         // each object has an age - if it goes above AGE_THRESHOLD
         // object is reallocated
-        ages[obj_id]++;
-        if (ages[obj_id] > AGE_THRESHOLD) {
-            free(objs[obj_id]);
-            objs[obj_id] = malloc(mat_size + obj_id * sizeof(double));
-            ages[obj_id] = 0;
+        ages[dest_obj_id]++;
+        if (ages[dest_obj_id] > AGE_THRESHOLD) {
+            free(objs[dest_obj_id]);
+            objs[dest_obj_id] = malloc(mat_size + dest_obj_id * sizeof(double));
+            ages[dest_obj_id] = 0;
         }
 
-        printf("obj: %d, res: %f\n", obj_id, s);
+        printf("obj: %d, res: %f\n", dest_obj_id, s);
         fflush(stdout);
 	}
 }
