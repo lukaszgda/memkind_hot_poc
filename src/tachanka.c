@@ -18,6 +18,7 @@ struct tblock {
     float f2;   // num of access in prev window
     float f1;   // num of access in current window
     int hot_or_not; // -1 - not enough data, 0 - cold, 1 - hot
+    int parent;
 } tblocks[MAXBLOCKS];
 
 static int nblocks = 0;
@@ -40,7 +41,14 @@ void register_block(uint64_t hash, void *addr, size_t size)
     bl->addr = addr;
     bl->size = size;
 
-    critnib_insert(hash_to_block, hash, bl, 0);
+    struct tblock *pbl = critnib_get(hash_to_block, hash);
+    if (pbl)
+        bl->parent = pbl - tblocks;
+    else {
+        bl->parent = -1;
+        critnib_insert(hash_to_block, hash, bl, 0);
+    }
+
     critnib_insert(addr_to_block, (uintptr_t)addr, bl, 0);
 }
 
@@ -51,6 +59,8 @@ void touch(void *addr, __u64 timestamp)
         return;
     if (addr >= bl->addr + bl->size)
         return;
+    if (bl->parent != -1)
+        bl = &tblocks[bl->parent];
 
     // TODO - is this thread safeness needed? or best effor will be enough?
     //__sync_fetch_and_add(&bl->accesses, 1);
