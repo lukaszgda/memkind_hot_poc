@@ -76,7 +76,7 @@ int main(int argc, char **argv) {
         objs[it] = malloc(mat_size + it * sizeof(double));
 
         // print start - end address of object
-        printf("malloc: %d, start %llx, end %llx\n", it, 
+        printf("malloc: %d, start %llx, end %llx\n", it,
             (long long unsigned int)(&objs[it][0]),
             (long long unsigned int)(&objs[it][MATRIX_SIZE * MATRIX_SIZE - 1]));
         fflush(stdout);

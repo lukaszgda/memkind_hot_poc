@@ -49,7 +49,8 @@ void *pebs_monitor(void *a)
         // DEBUG
         // printf("head: %llu size: %lld\n", pebs_metadata->data_head, pebs_metadata->data_head - last_head);
         if (last_head < pebs_metadata->data_head) {
-            printf("new data from PEBS!\n");
+            printf("new data from PEBS: ");
+            int samples = 0;
 
             while (last_head < pebs_metadata->data_head) {
 	            char *data_mmap = pebs_mmap + getpagesize() +
@@ -63,16 +64,16 @@ void *pebs_monitor(void *a)
                     {
                         __u64 timestamp = *(__u64*)(data_mmap + sizeof(struct perf_event_header));
                         // 'addr' is the acessed address
-                        void* addr = (void*)(data_mmap + sizeof(struct perf_event_header) + sizeof(__u64));
+                        __u64 addr = *(__u64*)(data_mmap + sizeof(struct perf_event_header) + sizeof(__u64));
 
                         // TODO - is this a global or per-core timestamp? If per-core, this could lead to some problems
 
-                        touch(addr, timestamp);
+                        touch((void*)addr, timestamp);
 #if LOG_TO_FILE
                         // DEBUG
                         sprintf(buf, "last: %llu, head: %llu t: %llu addr: %llx\n",
                             last_head, pebs_metadata->data_head,
-                            timestamp, *(long long unsigned int*)addr);
+                            timestamp, addr);
                         if (write(log_file, buf, strlen(buf))) ;
 #endif
                         //printf("%s", buf);
@@ -84,7 +85,10 @@ void *pebs_monitor(void *a)
 
                 last_head += event->size;
                 data_mmap += event->size;
+                samples++;
             }
+            
+            printf("%d samples\n", samples);
         }
 
 		ioctl(pebs_fd, PERF_EVENT_IOC_REFRESH, 0);

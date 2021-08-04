@@ -29,13 +29,17 @@ int is_hot(uint64_t hash)
     return 1;
 }
 
-#define HOTNESS_MEASURE_WINDOW 1000
+#define HOTNESS_MEASURE_WINDOW 100000
 
 void register_block(uint64_t hash, void *addr, size_t size)
 {
     struct tblock *bl = &tblocks[__sync_fetch_and_add(&nblocks, 1)];
     if (bl >= &tblocks[MAXBLOCKS])
         fprintf(stderr, "Too many allocated blocks\n"), exit(1);
+
+    bl->addr = addr;
+    bl->size = size;
+
     critnib_insert(hash_to_block, hash, bl, 0);
     critnib_insert(addr_to_block, (uintptr_t)addr, bl, 0);
 }
@@ -71,6 +75,7 @@ void touch(void *addr, __u64 timestamp)
             float f1 = bl->f1 * bl->t1 / (bl->t2 - bl->t0);
             bl->f2 = f2 + f1; // TODO we could use weighted sum here
             bl->t2 = bl->t1;
+            bl->t1 = bl->t0;
             bl->f1 = 0;
         }
     }
