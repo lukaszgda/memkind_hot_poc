@@ -760,6 +760,8 @@ MEMKIND_EXPORT void *memtier_malloc(struct memtier_memory *memory, size_t size)
         int nk = !is_hot(hash);
         ptr = memtier_kind_malloc(memory->cfg[nk].kind, size);
         register_block(hash, ptr, size);
+
+        touch(ptr, 0, 1 /*not from malloc*/);
     }
     else
         ptr = memtier_kind_malloc(memory->get_kind(memory, &size), size);

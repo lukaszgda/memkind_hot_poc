@@ -72,7 +72,7 @@ void *pebs_monitor(void *a)
 
                         // TODO - is this a global or per-core timestamp? If per-core, this could lead to some problems
 
-                        touch((void*)addr, timestamp);
+                        touch((void*)addr, timestamp, 0 /* from malloc */);
 #if LOG_TO_FILE
                         // DEBUG
                         sprintf(buf, "last: %llu, head: %llu t: %llu addr: %llx\n",

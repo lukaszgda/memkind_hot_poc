@@ -22,6 +22,7 @@ int is_hot(uint64_t hash)
 }
 
 #define HOTNESS_MEASURE_WINDOW 1000000000ULL
+#define MALLOC_HOTNESS 20
 
 void register_block(uint64_t hash, void *addr, size_t size)
 {
@@ -44,7 +45,7 @@ void register_block(uint64_t hash, void *addr, size_t size)
     critnib_insert(addr_to_block, (uintptr_t)addr, bl, 0);
 }
 
-void touch(void *addr, __u64 timestamp)
+void touch(void *addr, __u64 timestamp, int from_malloc)
 {
     struct tblock *bl = critnib_find_le(addr_to_block, (uintptr_t)addr);
     if (!bl)
@@ -57,12 +58,15 @@ void touch(void *addr, __u64 timestamp)
     // TODO - is this thread safeness needed? or best effort will be enough?
     //__sync_fetch_and_add(&bl->accesses, 1);
 
-    if (bl->hot_or_not == -2) {
-        bl->t2 = timestamp;
-        bl->hot_or_not = -1;
+    if (from_malloc) {
+        bl->n2 += MALLOC_HOTNESS;
+    } else {
+        bl->t0 = timestamp;
+        if (bl->hot_or_not == -2) {
+            bl->t2 = timestamp;
+            bl->hot_or_not = -1;
+        }
     }
-
-    bl->t0 = timestamp;
 
     // check if type needs classification
     if (bl->hot_or_not == -1) {
