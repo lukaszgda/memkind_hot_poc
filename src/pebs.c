@@ -100,10 +100,16 @@ void *pebs_monitor(void *a)
             int total_chars = 0;
             for (int i = 0; i < 20; i++) {
                 struct tblock* tb = (struct tblock*)critnib_get_leaf(hash_to_block, i);
-                int n = 0;
-                if (tb != NULL)
-                    n = tb->n2;
-                sprintf(buf + total_chars, "%d, %n", n, &nchars);
+
+                if (tb != NULL && tb->hot_or_not >= 0)
+                {
+                    float f = tb->f;
+                    sprintf(buf + total_chars, "%f,%n", f, &nchars);
+                }
+                else {
+                    sprintf(buf + total_chars, "N/A,%n", &nchars);
+                }
+
                 total_chars += nchars;
             }
             sprintf(buf + total_chars, "\n");

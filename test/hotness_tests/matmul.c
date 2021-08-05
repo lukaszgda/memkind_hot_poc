@@ -10,26 +10,26 @@
 #include <dirent.h>
 
 #define MATRIX_SIZE 512
-#define MUL_STEP 1
-#define OBJS_NUM 10
+#define MUL_STEP 5
+#define OBJS_NUM 3
 #define LOOP_LEN 100000
-#define AGE_THRESHOLD 20
+#define AGE_THRESHOLD 10
 
 double s;
 int i,j,k;
 
 void naive_matrix_multiply(double *a, double *b, double *c) {
-    for(i=0;i<MATRIX_SIZE;i+=MUL_STEP) {
-        for(j=0;j<MATRIX_SIZE;j++) {
+    for(i=0;i<MATRIX_SIZE;i++) {
+        for(j=0;j<MATRIX_SIZE;j+=MUL_STEP) {
             a[i * MATRIX_SIZE + j]=(double)i*(double)j;
             b[i * MATRIX_SIZE + j]=(double)i/(double)(j+5);
         }
     }
 
-    for(j=0;j<MATRIX_SIZE;j+=MUL_STEP) {
+    for(j=0;j<MATRIX_SIZE;j++) {
         for(i=0;i<MATRIX_SIZE;i++) {
             s=0;
-            for(k=0;k<MATRIX_SIZE;k++) {
+            for(k=0;k<MATRIX_SIZE;k+=MUL_STEP) {
                 s+=a[i * MATRIX_SIZE + k]*b[k * MATRIX_SIZE + j];
             }
             c[i * MATRIX_SIZE + j] = s;
@@ -37,8 +37,8 @@ void naive_matrix_multiply(double *a, double *b, double *c) {
     }
 
     s = 0.0;
-    for(i=0;i<MATRIX_SIZE;i+=MUL_STEP) {
-        for(j=0;j<MATRIX_SIZE;j++) {
+    for(i=0;i<MATRIX_SIZE;i++) {
+        for(j=0;j<MATRIX_SIZE;j+=MUL_STEP) {
             s+=c[i * MATRIX_SIZE + j];
         }
     }
@@ -46,13 +46,12 @@ void naive_matrix_multiply(double *a, double *b, double *c) {
     return;
 }
 
-
 int main(int argc, char **argv) {
 
     int mat_size = sizeof(double) * MATRIX_SIZE * MATRIX_SIZE;
 
-    double* objs[OBJS_NUM];
-    int ages[OBJS_NUM] = {0};
+    double* objs[OBJS_NUM] = {0};
+    int ages[OBJS_NUM];
     int it;
 
     // fill frequency array
@@ -70,15 +69,9 @@ int main(int argc, char **argv) {
         }
     }
 
-    // allocate objects with different sizes
+    // set age of each object to AGE_THRESHOLD to reallocate it immediately
     for (it = 0; it < OBJS_NUM; it++) {
-        objs[it] = malloc(mat_size + it * sizeof(double));
-
-        // print start - end address of object
-        printf("malloc: %d, start %llx, end %llx\n", it,
-            (long long unsigned int)(&objs[it][0]),
-            (long long unsigned int)(&objs[it][MATRIX_SIZE * MATRIX_SIZE - 1]));
-        fflush(stdout);
+        ages[it] = AGE_THRESHOLD;
     }
 
     int sel = 0;
@@ -89,7 +82,7 @@ int main(int argc, char **argv) {
         sel = sel % FREQ_ARRAY_LEN;
 
         int dest_obj_id = freq[sel];
-        int src1_obj_id = dest_obj_id + 1;
+        /*int src1_obj_id = dest_obj_id + 1;
         int src2_obj_id = dest_obj_id + 2;
 
         if (src1_obj_id >= OBJS_NUM) {
@@ -98,9 +91,7 @@ int main(int argc, char **argv) {
 
         if (src2_obj_id >= OBJS_NUM) {
             src2_obj_id -= OBJS_NUM;
-        }
-
-	    naive_matrix_multiply(objs[src1_obj_id], objs[src2_obj_id], objs[dest_obj_id]);
+        }*/
 
         // each object has an age - if it goes above AGE_THRESHOLD
         // object is reallocated
@@ -109,9 +100,15 @@ int main(int argc, char **argv) {
             free(objs[dest_obj_id]);
             objs[dest_obj_id] = malloc(mat_size + dest_obj_id * sizeof(double));
             ages[dest_obj_id] = 0;
+            printf("remalloc %d, start %llx, end %llx\n", dest_obj_id,
+                (long long unsigned int)(&objs[dest_obj_id][0]),
+                (long long unsigned int)(&objs[dest_obj_id][MATRIX_SIZE * MATRIX_SIZE - 1]));
         }
 
-        printf("obj: %d, res: %f\n", dest_obj_id, s);
+	    //naive_matrix_multiply(objs[src1_obj_id], objs[src2_obj_id], objs[dest_obj_id]);
+	    naive_matrix_multiply(objs[dest_obj_id], objs[dest_obj_id], objs[dest_obj_id]);
+
+        printf("dst %d\n", dest_obj_id);
         fflush(stdout);
 	}
 }

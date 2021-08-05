@@ -19,8 +19,8 @@ struct tblock {
     int n1;   // num of access in current window
 
     float f;  // frequency
-    int hot_or_not; // -2 - timestamp not set,
-                    // -1 - not enough data (first window),
+    int hot_or_not; // -2 - timestamp not set yet,
+                    // -1 - not enough data to classify (first window),
                     // 0 - cold,
                     // 1 - hot
 

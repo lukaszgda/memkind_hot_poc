@@ -765,6 +765,7 @@ MEMKIND_EXPORT void *memtier_malloc(struct memtier_memory *memory, size_t size)
     }
     else
         ptr = memtier_kind_malloc(memory->get_kind(memory, &size), size);
+
     memory->update_cfg(memory);
 
     return ptr;

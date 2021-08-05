@@ -35,8 +35,11 @@ void register_block(uint64_t hash, void *addr, size_t size)
     bl->hot_or_not = -2; // no time set
 
     struct tblock *pbl = critnib_get(hash_to_block, hash);
-    if (pbl)
+    if (pbl) {
         bl->parent = pbl - tblocks;
+        pbl->num_allocs++;
+        pbl->total_size += size;
+    }
     else {
         bl->parent = -1;
         critnib_insert(hash_to_block, hash, bl, 0);
@@ -68,8 +71,8 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
         }
     }
 
-    // check if type needs classification
-    if (bl->hot_or_not == -1) {
+    // check if type is ready for classification
+    if (bl->hot_or_not < 0) {
         bl->n2 ++; // TODO - not thread safe is ok?
 
         // check if data is measured for time enough to classify hotness
@@ -84,7 +87,7 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
             // move to next measurement window
             float f2 = (float)bl->n2 * bl->t2 / (bl->t2 - bl->t0);
             float f1 = (float)bl->n1 * bl->t1 / (bl->t2 - bl->t0);
-            bl->f = f2 + f1; // TODO we could use weighted sum here
+            bl->f = f2 * 0.3 + f1 * 0.7; // TODO weighted sum or sth else?
             bl->t2 = bl->t1;
             bl->t1 = bl->t0;
             bl->n2 = bl->n1;
