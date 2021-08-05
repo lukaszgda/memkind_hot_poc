@@ -11,19 +11,21 @@ extern "C" {
 //  2) tests
 //  3) optimisation: AVL trees with additional cached data in nodes
 
+// hotness: entry->n2
+
 using namespace std;
 
 struct ranking {
     double hotThreshold;
-    std::vector<ranking_entry_t*> entries; /// ordered hottest -> coldest
+    std::vector<struct tblock*> entries; /// ordered hottest -> coldest
 };
 
 // IF to implement:
 // TODO mapping ranking_entry -> RankingEntry
 
 //--------private function implementation---------
-static bool is_hotter(ranking_entry_t *a, ranking_entry_t *b) {
-    return a->hotness > b->hotness;
+static bool is_hotter(struct tblock *a, struct tblock *b) {
+    return a->n2 > b->n2;
 }
 
 //--------public function implementation---------
@@ -54,27 +56,28 @@ double ranking_calculate_hot_threshold(
     }
     size_t threshold_size=dram_pmem_ratio*total_size;
     total_size=0;
+    ranking->hotThreshold=ranking->entries.back()->n2;
     for (auto &entry : ranking->entries) {
         total_size += entry->size;
         if (total_size >= threshold_size) {
-            return entry->hotness;
+            ranking->hotThreshold=entry->n2;
+            break;;
         }
     }
-    ranking->hotThreshold=ranking->entries.back()->hotness;
     return ranking_get_hot_threshold(ranking);
 }
 
-void ranking_add(ranking_t *ranking, ranking_entry_t *entry) {
+void ranking_add(ranking_t *ranking, struct tblock *entry) {
     // O(N) -> needs to be upgraded to O(log(N)) by using a tree
     ranking->entries.push_back(entry);
     sort(ranking->entries.begin(), ranking->entries.end(), is_hotter);
 }
 
-bool ranking_is_hot(ranking_t *ranking, ranking_entry_t *entry) {
-    return entry->hotness > ranking_get_hot_threshold(ranking);
+bool ranking_is_hot(ranking_t *ranking, struct tblock *entry) {
+    return entry->n2 >= ranking_get_hot_threshold(ranking);
 }
 
-void ranking_remove(ranking_t *ranking, const ranking_entry_t *entry) {
+void ranking_remove(ranking_t *ranking, const struct tblock *entry) {
     auto &t = ranking->entries;
     t.erase(remove(t.begin(), t.end(), entry), t.end());
 }

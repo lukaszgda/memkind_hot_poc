@@ -205,7 +205,7 @@ test_allocator_perf_tool_tests_SOURCES = $(allocator_perf_tool_library_sources) 
 
 test_allocator_perf_tool_tests_CPPFLAGS = -Itest/allocator_perf_tool/ -O0 -Wno-error $(AM_CPPFLAGS)
 test_allocator_perf_tool_tests_CXXFLAGS = -Itest/allocator_perf_tool/ -O0 -Wno-error $(AM_CPPFLAGS)
-test_allocator_perf_tool_tests_LDFLAGS = -lpthread -lnuma -pfm
+test_allocator_perf_tool_tests_LDFLAGS = -lpthread -lnuma -lpfm
 
 NUMAKIND_MAX = 2048
 test_all_tests_CXXFLAGS = $(AM_CXXFLAGS) $(CXXFLAGS) $(OPENMP_CFLAGS) -DNUMAKIND_MAX=$(NUMAKIND_MAX)
