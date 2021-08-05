@@ -9,6 +9,7 @@
 #define rmb() asm volatile("lfence":::"memory")
 
 pthread_t pebs_thread;
+int thread_state = 0; // 0: normal, -1: stop thread
 int pebs_fd;
 static char *pebs_mmap;
 
@@ -17,8 +18,10 @@ extern critnib* hash_to_block;
 
 #define LOG_TO_FILE 1
 
-void *pebs_monitor(void *a)
+void *pebs_monitor(void *state)
 {
+    int* pthread_state = state;
+
     // set low priority
     int policy;
     struct sched_param param;
@@ -44,11 +47,16 @@ void *pebs_monitor(void *a)
 #endif
 
     while (1) {
-        struct perf_event_mmap_page* pebs_metadata =
-            (struct perf_event_mmap_page*)pebs_mmap;
+        // TODO - use mutex?
+        if (*pthread_state == -1) {
+            return NULL;
+        }
 
         // must call this before read from data head
 		rmb();
+
+        struct perf_event_mmap_page* pebs_metadata =
+            (struct perf_event_mmap_page*)pebs_mmap;
 
         // DEBUG
         // printf("head: %llu size: %lld\n", pebs_metadata->data_head, pebs_metadata->data_head - last_head);
@@ -181,7 +189,8 @@ void pebs_init(pid_t pid)
     // DEBUG
     //printf("PEBS thread start\n");
 
-    pthread_create(&pebs_thread, NULL, &pebs_monitor, NULL);
+    thread_state = 0;
+    pthread_create(&pebs_thread, NULL, &pebs_monitor, (void*)&thread_state);
 
 	ioctl(pebs_fd, PERF_EVENT_IOC_RESET, 0);
 	ioctl(pebs_fd, PERF_EVENT_IOC_ENABLE, 0);
@@ -191,8 +200,14 @@ void pebs_fini()
 {
     ioctl(pebs_fd, PERF_EVENT_IOC_DISABLE, 0);
 
+    // TODO - use mutex?
+    thread_state = -1;
+    void* ret;
+    pthread_join(pebs_thread, &ret);
+
     int mmap_pages = 1 + MMAP_DATA_SIZE;
     munmap(pebs_mmap, mmap_pages * getpagesize());
+    pebs_mmap = 0;
     close(pebs_fd);
 
     // DEBUG
