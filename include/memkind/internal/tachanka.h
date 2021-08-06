@@ -4,10 +4,8 @@ void *new_block(size_t size);
 void touch(void *addr, __u64 timestamp, int from_malloc);
 void tachanka_init(void);
 
-struct tblock {
-    void *addr;
+struct ttype {
     size_t size;
-
     int num_allocs; // TODO
     int total_size; // TODO
 
@@ -23,6 +21,11 @@ struct tblock {
                     // -1 - not enough data to classify (first window),
                     // 0 - cold,
                     // 1 - hot
+};
 
-    int parent;
+struct tblock
+{
+    void *addr;
+    ssize_t size;
+    int type;
 };

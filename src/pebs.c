@@ -14,7 +14,7 @@ int pebs_fd;
 static char *pebs_mmap;
 
 // DEBUG
-extern critnib* hash_to_block;
+extern critnib* hash_to_type;
 
 #define LOG_TO_FILE 1
 
@@ -107,7 +107,7 @@ void *pebs_monitor(void *state)
             int nchars = 0;
             int total_chars = 0;
             for (int i = 0; i < 20; i++) {
-                struct tblock* tb = (struct tblock*)critnib_get_leaf(hash_to_block, i);
+                struct ttype* tb = critnib_get_leaf(hash_to_type, i);
 
                 if (tb != NULL && tb->hot_or_not >= 0)
                 {
