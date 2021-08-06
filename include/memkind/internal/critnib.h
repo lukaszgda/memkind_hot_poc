@@ -20,6 +20,7 @@ int critnib_insert(struct critnib *c, uint64_t key, void *value, int update);
 void *critnib_remove(struct critnib *c, uint64_t key);
 void *critnib_get(struct critnib *c, uint64_t key);
 void *critnib_find_le(struct critnib *c, uint64_t key);
+void critnib_iter(struct critnib *c, int (*func)(uint64_t key, void *value));
 
 // DEBUG
 void *critnib_get_leaf(struct critnib *c, uint64_t n);

@@ -688,3 +688,32 @@ void *
 critnib_get_leaf(struct critnib *c, uint64_t n) {
 	return c->leaves[n].value;
 }
+
+static int
+iter(struct critnib *c, cn_t n, int (*func)(uint64_t key, void *value))
+{
+	if (is_leaf(n))
+		return func(L(to_leaf(n)).key, L(to_leaf(n)).value);
+
+	for (int i=0; i < SLNODES; i++) {
+		cn_t m = N(n).child[i];
+		if (m)
+			if (iter(c, m, func))
+				return 1;
+	}
+	return 0;
+}
+
+/*
+ * critnib_iter -- visit the whole struct, calling func() for every key:value
+ *
+ * If func() returns 1, the walk is aborted.
+ */
+void
+critnib_iter(struct critnib *c, int (*func)(uint64_t key, void *value))
+{
+	util_mutex_lock(&c->mutex);
+	if (c->root)
+		iter(c, c->root, func);
+	util_mutex_unlock(&c->mutex);
+}
