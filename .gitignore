@@ -133,3 +133,6 @@
 /vs
 autom4te.cache/
 memkind.pc
+tier_pid_*.log
+core
+*~
