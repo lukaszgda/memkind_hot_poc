@@ -108,6 +108,7 @@
 /test/memkind_stat_test
 /test/memkind_memtier_dax_kmem_test
 /test/memkind_memtier_test
+/test/memkind_memtier_hotness_test
 /test/perf_tool
 /test/performance_test
 /test/performance/.deps/
@@ -128,7 +129,6 @@
 /test/stats_print_test_helper
 /test/trace_mechanism_test_helper
 /test/defrag_reallocate
-/test/hotness_tests/matmul
 /utils/memtier_counter_bench/memtier_counter_bench
 /vs
 autom4te.cache/

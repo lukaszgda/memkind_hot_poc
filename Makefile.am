@@ -548,7 +548,6 @@ jemalloc_deps:
 unit_tests: checkprogs
 	test/all_tests --gtest_filter=*free_with_NULL_kind_4096_bytes:NegativeTest.*:ErrorMessage.*:GetArenaTest.*:MemkindVersioningTests.*
 	test/decorator_test
-	test/hotness_tests/matmul
 
 PMEM_PATH=/tmp/
 unit_tests_pmem: checkprogs
@@ -564,6 +563,7 @@ unit_tests_dax_kmem: checkprogs
 unit_tests_tiering: tiering/libmemtier.la checkprogs
 	test/memkind_memtier_dax_kmem_test
 	test/memkind_memtier_test
+	test/memkind_memtier_hotness_test
 	PMEM_PATH=$(PMEM_PATH) @pytest@ -rs test/tiering_tests.py
 
 code-style-check:
@@ -589,4 +589,3 @@ include src/Makefile.mk
 include tiering/Makefile.mk
 include utils/memory_matrix/Makefile.mk
 include utils/memtier_counter_bench/Makefile.mk
-include test/hotness_tests/Makefile.mk

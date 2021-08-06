@@ -28,7 +28,8 @@ check_PROGRAMS += test/pmem_test \
                   test/environ_err_hbw_threshold_test \
                   test/defrag_reallocate \
                   test/memkind_memtier_dax_kmem_test \
-                  test/memkind_memtier_test
+                  test/memkind_memtier_test \
+                  test/memkind_memtier_hotness_test
 endif
 
 TESTS += test/test.sh
@@ -87,6 +88,8 @@ test_memkind_memtier_dax_kmem_test_SOURCES = $(fused_gtest) test/memkind_memtier
 test_memkind_memtier_dax_kmem_test_LDADD = libmemkind.la
 test_memkind_memtier_test_SOURCES = $(fused_gtest) test/memkind_memtier_test.cpp
 test_memkind_memtier_test_LDADD = libmemkind.la
+test_memkind_memtier_hotness_test_SOURCES = $(fused_gtest) test/memkind_memtier_hotness_test.cpp
+test_memkind_memtier_hotness_test_LDADD = libmemkind.la
 endif
 
 fused_gtest = test/gtest_fused/gtest/gtest-all.cc \
@@ -205,7 +208,7 @@ test_allocator_perf_tool_tests_SOURCES = $(allocator_perf_tool_library_sources) 
 
 test_allocator_perf_tool_tests_CPPFLAGS = -Itest/allocator_perf_tool/ -O0 -Wno-error $(AM_CPPFLAGS)
 test_allocator_perf_tool_tests_CXXFLAGS = -Itest/allocator_perf_tool/ -O0 -Wno-error $(AM_CPPFLAGS)
-test_allocator_perf_tool_tests_LDFLAGS = -lpthread -lnuma -pfm
+test_allocator_perf_tool_tests_LDFLAGS = -lpthread -lnuma
 
 NUMAKIND_MAX = 2048
 test_all_tests_CXXFLAGS = $(AM_CXXFLAGS) $(CXXFLAGS) $(OPENMP_CFLAGS) -DNUMAKIND_MAX=$(NUMAKIND_MAX)

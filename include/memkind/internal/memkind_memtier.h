@@ -224,6 +224,10 @@ size_t memtier_kind_allocated_size(memkind_t kind);
 int memtier_ctl_set(struct memtier_builder *builder, const char *name,
                     const void *val);
 
+
+// DEBUG
+float get_obj_hotness(int size);
+
 #ifdef __cplusplus
 }
 #endif

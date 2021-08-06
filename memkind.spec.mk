@@ -203,6 +203,7 @@ $(memkind_test_dir)/memkind_get_stat
 ${memkind_test_dir}/memkind_highcapacity_test
 ${memkind_test_dir}/memkind_memtier_dax_kmem_test
 ${memkind_test_dir}/memkind_memtier_test
+${memkind_test_dir}/memkind_memtier_hotness_test
 $(memkind_test_dir)/memkind_stat_test
 $(memkind_test_dir)/autohbw_candidates
 ${memkind_test_dir}/pmem_kinds

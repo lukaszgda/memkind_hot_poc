@@ -102,3 +102,23 @@ void tachanka_init(void)
     hash_to_block = critnib_new();
     addr_to_block = critnib_new();
 }
+
+
+// DEBUG
+
+#ifndef MEMKIND_EXPORT
+#define MEMKIND_EXPORT __attribute__((visibility("default")))
+#endif
+
+MEMKIND_EXPORT float get_obj_hotness(int size)
+{
+    for (int i = 0; i < 20; i++) {
+        struct tblock* tb = (struct tblock*)critnib_get_leaf(hash_to_block, i);
+
+        if (tb != NULL && tb->size == size) {
+             return tb->f;
+        }
+    }
+
+    return -1;
+}
