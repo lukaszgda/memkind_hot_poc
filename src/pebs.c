@@ -4,7 +4,9 @@
 #include <memkind/internal/critnib.h>
 #include <memkind/internal/memkind_private.h>
 
-#define SAMPLE_FREQUENCY 10000 // smaller value -> more frequent sampling
+// smaller value -> more frequent sampling
+// 10000 = around 100 samples on *my machine* / sec in matmul test
+#define SAMPLE_FREQUENCY 10000
 #define MMAP_DATA_SIZE   8
 #define rmb() asm volatile("lfence":::"memory")
 
