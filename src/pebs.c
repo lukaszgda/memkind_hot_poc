@@ -156,12 +156,15 @@ void pebs_init(pid_t pid)
     arg.attr = &pe;
 
     char event[] = "MEM_LOAD_RETIRED:L3_MISS";
-   // char* event[] = "MEM_UOPS_RETIRED:ALL_LOADS";
+    //char event[] = "MEM_UOPS_RETIRED:ALL_LOADS";
 
     ret = pfm_get_os_event_encoding(event, PFM_PLM3, PFM_OS_PERF_EVENT_EXT, &arg);
     if (ret != PFM_SUCCESS) {
-        printf("pfm_get_os_event_encoding() failed!\n");
-        exit(-1);
+        //printf("pfm_get_os_event_encoding() failed!\n");
+        //exit(-1);
+
+        pe.type = 4;
+        pe.config = 0x5120D1;
     }
 
     pe.size = sizeof(struct perf_event_attr);
