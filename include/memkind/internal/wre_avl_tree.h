@@ -34,7 +34,8 @@ extern void wre_destroy(wre_tree_t *tree);
 // TODO - possibly: provide error handling/extend the MAX_INT32 limitation
 extern void wre_put(wre_tree_t *tree, void *data, size_t weight);
 /// @return true if found and removed, false otherwise
-extern bool wre_remove(wre_tree_t *tree, const void *data);
+extern void *wre_remove(wre_tree_t *tree, const void *data);
 /// @p ratio: left_subtree_weight/(left_subtree_weight+right_subtree_weight)
 /// always between 0 and 1
+extern void* wre_find(wre_tree_t *tree, const void* data);
 extern void* wre_find_weighted(wre_tree_t *tree, double ratio);

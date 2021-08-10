@@ -52,16 +52,123 @@ TEST_CASE("Ranking test") {
         CHECK_EQ(n, 70); // calculated by hand
         double thresh_equal =
             ranking_calculate_hot_threshold(ranking, RATIO_EQUAL);
-        CHECK_EQ(thresh_equal, 30);
+        CHECK_EQ(thresh_equal, 29);
         for (int i=0; i<29; ++i) {
             CHECK(!ranking_is_hot(ranking, &blocks[i]));
         }
-        for (int i=30; i<100; ++i) {
+        for (int i=29; i<100; ++i) {
             CHECK(ranking_is_hot(ranking, &blocks[i]));
         }
         CHECK_EQ(BLOCKS_SIZE, 100);
     }
+    SUBCASE("check hotness 50:50, removed") {
+        const size_t SUBSIZE=10u;
+        for (int i=SUBSIZE; i<BLOCKS_SIZE; ++i) {
+            ranking_remove(ranking, &blocks[i]);
+        }
+        double RATIO_EQUAL=0.5;
+        double thresh_equal =
+            ranking_calculate_hot_threshold(ranking, RATIO_EQUAL);
+        // hand calculations:
+        // 100, 99, 98, 97, 96, 95, 94, 93, 92, 91
+        // sum:
+        // 100, 199, 297, 394, 490 <- this is the one we are looking for
+        CHECK_EQ(thresh_equal, 4);
+        for (int i=0; i<4; ++i) {
+            CHECK(!ranking_is_hot(ranking, &blocks[i]));
+        }
+        for (int i=4; i<10; ++i) {
+            CHECK(ranking_is_hot(ranking, &blocks[i]));
+        }
+        CHECK_EQ(BLOCKS_SIZE, 100);
+        CHECK_EQ(SUBSIZE, 10);
+    }
 
+    ranking_destroy(ranking);
+}
+
+TEST_CASE("Ranking test same hotness") {
+    ranking_t *ranking;
+    ranking_create(&ranking);
+
+    const size_t BLOCKS_SIZE=100u;
+    struct tblock blocks[BLOCKS_SIZE];
+    for (int i=0; i<BLOCKS_SIZE; ++i) {
+        blocks[i].size=BLOCKS_SIZE-i;
+        blocks[i].n2=i%50;
+        ranking_add(ranking, &blocks[i]);
+    }
+    // initialized
+    SUBCASE("check hotness highest") {
+        double RATIO_PMEM_ONLY=0;
+        double thresh_highest =
+            ranking_calculate_hot_threshold(ranking, RATIO_PMEM_ONLY);
+        CHECK_EQ(thresh_highest, (BLOCKS_SIZE-1)%50);
+        CHECK_EQ(thresh_highest, 49);
+        for (int i=0; i<BLOCKS_SIZE-1; ++i) {
+            CHECK_EQ(ranking_is_hot(ranking, &blocks[i]), i==49);
+        }
+        CHECK(ranking_is_hot(ranking, &blocks[BLOCKS_SIZE-1]));
+    }
+    SUBCASE("check hotness lowest") {
+        double RATIO_DRAM_ONLY=1;
+        double thresh_lowest =
+            ranking_calculate_hot_threshold(ranking, RATIO_DRAM_ONLY);
+        CHECK_EQ(thresh_lowest, 0);
+        for (int i=0; i<BLOCKS_SIZE; ++i) {
+            CHECK(ranking_is_hot(ranking, &blocks[i]));
+        }
+    }
+    SUBCASE("check hotness 50:50") {
+        double RATIO_EQUAL=0.5;
+        // when grouped in pairs, we get 150, 148, .., 52
+        // arithmetic series a0 = 150, r=-2, n=50
+        // we now want to find n_50: s_n_50 = s_n/2
+        // sn == 5050 => sn/2 == 2525
+        // the equation to solve for n_50:
+        // 2525 == n_50*(150-2*(n_50-1))/2
+        // 5050 = 150*n_50-2*n_50^2+2*n_50 = 152*n_50-2*n_50^2
+        // n_50^2-76*n_50+2525 = 0
+        // delta = 76^2-4*2525 = 5776-10000
+        double thresh_equal =
+            ranking_calculate_hot_threshold(ranking, RATIO_EQUAL);
+        CHECK_EQ(thresh_equal, 19);
+        for (int i=0; i<19; ++i) {
+            CHECK(!ranking_is_hot(ranking, &blocks[i]));
+        }
+        for (int i=19; i<50; ++i) {
+            CHECK(ranking_is_hot(ranking, &blocks[i]));
+        }
+        for (int i=50; i<69; ++i) {
+            CHECK(!ranking_is_hot(ranking, &blocks[i]));
+        }
+        for (int i=69; i<100; ++i) {
+            CHECK(ranking_is_hot(ranking, &blocks[i]));
+        }
+        CHECK_EQ(BLOCKS_SIZE, 100);
+    }
+    SUBCASE("check hotness 50:50, removed") {
+        const size_t SUBSIZE=10u;
+        for (int i=SUBSIZE; i<BLOCKS_SIZE; ++i) {
+            ranking_remove(ranking, &blocks[i]);
+        }
+        double RATIO_EQUAL=0.5;
+        double thresh_equal =
+            ranking_calculate_hot_threshold(ranking, RATIO_EQUAL);
+        // hand calculations:
+        // 100, 99, 98, 97, 96, 95, 94, 93, 92, 91
+        // sum:
+        // 100, 199, 297, 394, 490 <- this is the one we are looking for
+        CHECK_EQ(thresh_equal, 4);
+        for (int i=0; i<4; ++i) {
+            CHECK(!ranking_is_hot(ranking, &blocks[i]));
+        }
+        for (int i=4; i<10; ++i) {
+            CHECK(ranking_is_hot(ranking, &blocks[i]));
+        }
+        CHECK_EQ(BLOCKS_SIZE, 100);
+        CHECK_EQ(SUBSIZE, 10);
+    }
     ranking_destroy(ranking);
 }
 
@@ -82,7 +189,7 @@ TEST_CASE("Weight-Ratio-Extended tree test") {
     wre_test_struct_t blocks[EXTENDED_TAB_SIZE];
     for (int i=0; i<EXTENDED_TAB_SIZE; ++i) {
         blocks[i].val=i;
-        blocks[i].weight=abs(((int64_t)TAB_SIZE)-i); // TODO handle corner case: 0
+        blocks[i].weight=abs(((int64_t)TAB_SIZE)-i);
     }
 
     wre_tree_t *tree;
@@ -129,7 +236,8 @@ TEST_CASE("Weight-Ratio-Extended tree test") {
         CHECK_EQ(tree->rootNode->data, &blocks[6]);
         CHECK_EQ(((wre_test_struct_t*)tree->rootNode->data)->val, 6);
         CHECK_EQ(((wre_test_struct_t*)tree->rootNode->data)->weight, 94);
-        wre_remove(tree, &blocks[6]);
+        void* data = wre_remove(tree, &blocks[6]);
+        CHECK_EQ(data, &blocks[6]);
         CHECK_EQ(tree->rootNode, nullptr);
         wre_put(tree, &blocks[6], blocks[6].weight); // value 6, weight: 94
         wre_put(tree, &blocks[3], blocks[3].weight); // value 3, weight: 97
@@ -147,7 +255,8 @@ TEST_CASE("Weight-Ratio-Extended tree test") {
         CHECK_EQ(tree->rootNode->data, &blocks[6]);
         CHECK_EQ(((wre_test_struct_t*)tree->rootNode->data)->val, 6);
         CHECK_EQ(((wre_test_struct_t*)tree->rootNode->data)->weight, 94);
-        wre_remove(tree, &blocks[3]);
+        data = wre_remove(tree, &blocks[3]);
+        CHECK_EQ(data, &blocks[3]);
         CHECK_EQ(tree->rootNode->subtreeWeight, 94u);
         CHECK_EQ(tree->rootNode->height, 0u);
         CHECK_EQ(tree->rootNode->left, nullptr);
@@ -158,7 +267,8 @@ TEST_CASE("Weight-Ratio-Extended tree test") {
         CHECK_EQ(((wre_test_struct_t*)tree->rootNode->data)->val, 6);
         CHECK_EQ(((wre_test_struct_t*)tree->rootNode->data)->weight, 94);
         wre_put(tree, &blocks[3], blocks[3].weight); // value 3, weight: 97
-        wre_remove(tree, &blocks[6]);
+        data = wre_remove(tree, &blocks[6]);
+        CHECK_EQ(data, &blocks[6]);
         CHECK_EQ(tree->rootNode->subtreeWeight, 97u);
         CHECK_EQ(tree->rootNode->height, 0u);
         CHECK_EQ(tree->rootNode->left, nullptr);
@@ -194,8 +304,8 @@ TEST_CASE("Weight-Ratio-Extended tree test") {
         }
         CHECK_EQ(tree->rootNode->height, 7);
         for (int i=TAB_SIZE; i<EXTENDED_TAB_SIZE; ++i) {
-            bool removed = wre_remove(tree, &blocks[i]);
-            CHECK_EQ(removed, true);
+            void* removed = wre_remove(tree, &blocks[i]);
+            CHECK_EQ(removed, &blocks[i]);
             accumulated_weight -= blocks[i].weight;
             CHECK_EQ(tree->rootNode->subtreeWeight, accumulated_weight);
         }
@@ -214,8 +324,8 @@ TEST_CASE("Weight-Ratio-Extended tree test") {
         }
         CHECK_EQ(tree->rootNode->height, 7);
         for (int i=EXTENDED_TAB_SIZE-1; i>=TAB_SIZE; --i) {
-            bool removed = wre_remove(tree, &blocks[i]);
-            CHECK_EQ(removed, true);
+            void* removed = wre_remove(tree, &blocks[i]);
+            CHECK_EQ(removed, &blocks[i]);
             accumulated_weight -= blocks[i].weight;
             CHECK_EQ(tree->rootNode->subtreeWeight, accumulated_weight);
         }
@@ -223,7 +333,6 @@ TEST_CASE("Weight-Ratio-Extended tree test") {
         // check contents
         CHECK_EQ(tree->rootNode->subtreeWeight, 5050u);
     }
-    // TODO check scenario - two structures, same hotness!!!
     // the case should still be correctly handled!!!
     wre_destroy(tree);
 }

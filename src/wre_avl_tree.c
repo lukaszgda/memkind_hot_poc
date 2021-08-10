@@ -86,7 +86,6 @@ static void rotate_left(wre_tree_t *tree, wre_node_t *node) {
 ///    t   Z
 /// @pre X and Y should exist (non-null)
 static void rotate_right(wre_tree_t *tree, wre_node_t *node) {
-    // TODO
     wre_node_t **root_placeholder = get_root_placeholder(tree, node);
     wre_node_t *x = node;
     wre_node_t *y = node->left;
@@ -134,6 +133,23 @@ static void fix_rotate_right(wre_tree_t *tree, wre_node_t *node) {
     if (diff == 1)
         rotate_left(tree, left_node);
     rotate_right(tree, node);
+}
+
+static wre_node_t* find_node(wre_tree_t *tree, const void* data) {
+    wre_node_t *cnode = tree->rootNode; // double pointer - ptr modified
+    while (cnode) {
+        // descend further
+        if (tree->is_lower(cnode->data, data)) {
+            cnode = cnode->right;   // search right branch
+        } else {
+            // check equality: if none is lower, they are the same
+            if (!tree->is_lower(data, cnode->data))
+                break;                  // node found, can exit
+            // new data is lower: search right branch
+            cnode = cnode->left;        // search left branch
+        }
+    }
+    return cnode;
 }
 
 /// @pre subtree that starts at @p node is balanced
@@ -216,23 +232,12 @@ void wre_put(wre_tree_t *tree, void *data, size_t weight) {
     tree->size++;
 }
 
-bool wre_remove(wre_tree_t *tree, const void *data) {
-    bool node_found=false;
-    wre_node_t *cnode = tree->rootNode; // double pointer - ptr modified
-    while (cnode) {
-        // descend further
-        if (tree->is_lower(cnode->data, data)) {
-            cnode = cnode->right;   // search right branch
-        } else {
-            if (cnode->data == data)    // check for equality (pointer)
-                break;                  // node found, can exit
-            // new data is lower: search right branch
-            cnode = cnode->left;        // search left branch
-        }
-    }
+void* wre_remove(wre_tree_t *tree, const void *data) {
+    void* ret_data=NULL;
+    wre_node_t *cnode = find_node(tree, data);
     // cnode is either the searched node, or NULL
     if (cnode) {
-        node_found = true;
+        ret_data=cnode->data;
         // handle the easy case:
         //  1) check if right/left are null
         wre_node_t *replacer=NULL; // TODO put it elsewhere - wre_find
@@ -309,7 +314,6 @@ bool wre_remove(wre_tree_t *tree, const void *data) {
             // its (possible) children: replacer->right, need to be attached in
             // its place
             // attach replacer->parent --> replacer->right
-//             switch (cnode->which) {
             switch (replacer->which) {
                 case LEFT_NODE:
                     replacer->parent->left=replacer->right;
@@ -320,7 +324,6 @@ bool wre_remove(wre_tree_t *tree, const void *data) {
                     break;
                 case ROOT_NODE:
                     assert(false); // entry should be impossible by definition
-//                     tree->rootNode = replacer->right;
                     break;
             }
             // attach replacer->right --> replacer->parent
@@ -328,7 +331,6 @@ bool wre_remove(wre_tree_t *tree, const void *data) {
                 replacer->right->parent=replacer->parent;
                 replacer->right->which=replacer->which;
             } // else : no right,
-            // TODO here - balanced node was NULL!!!
             balanced_node = replacer->right ?
                 replacer->right
                 : (replacer->parent->right ?
@@ -368,7 +370,15 @@ bool wre_remove(wre_tree_t *tree, const void *data) {
         node_destroy(cnode);
         tree->size--;
     }
-    return node_found;
+    return ret_data;
+}
+
+void* wre_find(wre_tree_t *tree, const void* data) {
+    void *ret=NULL;
+    wre_node_t *cnode = find_node(tree, data);
+    if (cnode)
+        ret = cnode->data;
+    return ret;
 }
 
 void* wre_find_weighted(wre_tree_t *tree, double ratio) {
@@ -384,7 +394,7 @@ void* wre_find_weighted(wre_tree_t *tree, double ratio) {
             // 2) the function should return in the next iteration
         } else {
             size_t left_weight = cnode->left ? cnode->left->subtreeWeight : 0;
-            size_t left_plus_own_weight = left_weight+=cnode->ownWeight;
+            size_t left_plus_own_weight = left_weight+cnode->ownWeight;
             double nratio_left = ((double)left_weight)/cnode->subtreeWeight;
             double nratio_right =
                 ((double)left_plus_own_weight)/cnode->subtreeWeight;
