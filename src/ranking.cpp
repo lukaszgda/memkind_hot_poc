@@ -50,8 +50,7 @@ double ranking_get_hot_threshold(ranking_t *ranking) {
     return ranking->hotThreshold;
 }
 
-/// @pre ranking should be sorted
-double ranking_calculate_hot_threshold(
+double ranking_calculate_hot_threshold_dram_total(
     ranking_t *ranking, double dram_pmem_ratio) {
 
     ranking->hotThreshold=0;
@@ -62,6 +61,12 @@ double ranking_calculate_hot_threshold(
     }
 
     return ranking_get_hot_threshold(ranking);
+}
+
+double ranking_calculate_hot_threshold_dram_pmem(
+    ranking_t *ranking, double dram_pmem_ratio) {
+    double ratio = dram_pmem_ratio/(1+dram_pmem_ratio);
+    return ranking_calculate_hot_threshold_dram_total(ranking, ratio);
 }
 
 void ranking_add(ranking_t *ranking, struct tblock *entry) {

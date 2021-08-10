@@ -20,7 +20,11 @@ TEST_CASE("Ranking test") {
     SUBCASE("check hotness highest") {
         double RATIO_PMEM_ONLY=0;
         double thresh_highest =
-            ranking_calculate_hot_threshold(ranking, RATIO_PMEM_ONLY);
+            ranking_calculate_hot_threshold_dram_total(
+                ranking, RATIO_PMEM_ONLY);
+        double thresh_highest_pmem =
+            ranking_calculate_hot_threshold_dram_pmem(ranking, 0);
+        CHECK_EQ(thresh_highest, thresh_highest_pmem); // double for equality
         CHECK_EQ(thresh_highest, BLOCKS_SIZE-1);
         CHECK_EQ(thresh_highest, 99);
         for (int i=0; i<BLOCKS_SIZE-1; ++i) {
@@ -31,7 +35,12 @@ TEST_CASE("Ranking test") {
     SUBCASE("check hotness lowest") {
         double RATIO_DRAM_ONLY=1;
         double thresh_lowest =
-            ranking_calculate_hot_threshold(ranking, RATIO_DRAM_ONLY);
+            ranking_calculate_hot_threshold_dram_total(
+                ranking, RATIO_DRAM_ONLY);
+        double thresh_lowest_pmem =
+            ranking_calculate_hot_threshold_dram_pmem(
+                ranking, std::numeric_limits<double>::max());
+        CHECK_EQ(thresh_lowest, thresh_lowest_pmem); // double for equality
         CHECK_EQ(thresh_lowest, 0);
         for (int i=0; i<BLOCKS_SIZE; ++i) {
             CHECK(ranking_is_hot(ranking, &blocks[i]));
@@ -51,7 +60,10 @@ TEST_CASE("Ranking test") {
         size_t n = floor((-1+sqrt(delta))/2);
         CHECK_EQ(n, 70); // calculated by hand
         double thresh_equal =
-            ranking_calculate_hot_threshold(ranking, RATIO_EQUAL);
+            ranking_calculate_hot_threshold_dram_total(ranking, RATIO_EQUAL);
+        double thresh_equal_pmem =
+            ranking_calculate_hot_threshold_dram_pmem(ranking, 1);
+        CHECK_EQ(thresh_equal, thresh_equal_pmem);
         CHECK_EQ(thresh_equal, 29);
         for (int i=0; i<29; ++i) {
             CHECK(!ranking_is_hot(ranking, &blocks[i]));
@@ -66,14 +78,18 @@ TEST_CASE("Ranking test") {
         for (int i=SUBSIZE; i<BLOCKS_SIZE; ++i) {
             ranking_remove(ranking, &blocks[i]);
         }
-        double RATIO_EQUAL=0.5;
-        double thresh_equal =
-            ranking_calculate_hot_threshold(ranking, RATIO_EQUAL);
+        double RATIO_EQUAL_TOTAL=0.5;
+        double RATIO_EQUAL_PMEM=1;
+        double thresh_equal = ranking_calculate_hot_threshold_dram_total(
+            ranking, RATIO_EQUAL_TOTAL);
+        double thresh_equal_pmem = ranking_calculate_hot_threshold_dram_pmem(
+            ranking, RATIO_EQUAL_PMEM);
         // hand calculations:
         // 100, 99, 98, 97, 96, 95, 94, 93, 92, 91
         // sum:
         // 100, 199, 297, 394, 490 <- this is the one we are looking for
         CHECK_EQ(thresh_equal, 4);
+        CHECK_EQ(thresh_equal, thresh_equal_pmem);
         for (int i=0; i<4; ++i) {
             CHECK(!ranking_is_hot(ranking, &blocks[i]));
         }
@@ -100,11 +116,15 @@ TEST_CASE("Ranking test same hotness") {
     }
     // initialized
     SUBCASE("check hotness highest") {
-        double RATIO_PMEM_ONLY=0;
-        double thresh_highest =
-            ranking_calculate_hot_threshold(ranking, RATIO_PMEM_ONLY);
+        double RATIO_PMEM_ONLY_TOTAL=0;
+        double RATIO_PMEM_ONLY_PMEM=0;
+        double thresh_highest = ranking_calculate_hot_threshold_dram_total(
+            ranking, RATIO_PMEM_ONLY_TOTAL);
+        double thresh_highest_pmem = ranking_calculate_hot_threshold_dram_pmem(
+            ranking, RATIO_PMEM_ONLY_PMEM);
         CHECK_EQ(thresh_highest, (BLOCKS_SIZE-1)%50);
         CHECK_EQ(thresh_highest, 49);
+        CHECK_EQ(thresh_highest, thresh_highest_pmem);
         for (int i=0; i<BLOCKS_SIZE-1; ++i) {
             CHECK_EQ(ranking_is_hot(ranking, &blocks[i]), i==49);
         }
@@ -112,15 +132,19 @@ TEST_CASE("Ranking test same hotness") {
     }
     SUBCASE("check hotness lowest") {
         double RATIO_DRAM_ONLY=1;
-        double thresh_lowest =
-            ranking_calculate_hot_threshold(ranking, RATIO_DRAM_ONLY);
+        double thresh_lowest = ranking_calculate_hot_threshold_dram_total(
+            ranking, RATIO_DRAM_ONLY);
+        double thresh_lowest_pmem = ranking_calculate_hot_threshold_dram_pmem(
+            ranking, std::numeric_limits<double>::max());
         CHECK_EQ(thresh_lowest, 0);
+        CHECK_EQ(thresh_lowest, thresh_lowest_pmem);
         for (int i=0; i<BLOCKS_SIZE; ++i) {
             CHECK(ranking_is_hot(ranking, &blocks[i]));
         }
     }
     SUBCASE("check hotness 50:50") {
-        double RATIO_EQUAL=0.5;
+        double RATIO_EQUAL_TOTAL=0.5;
+        double RATIO_EQUAL_DRAM=1;
         // when grouped in pairs, we get 150, 148, .., 52
         // arithmetic series a0 = 150, r=-2, n=50
         // we now want to find n_50: s_n_50 = s_n/2
@@ -130,8 +154,8 @@ TEST_CASE("Ranking test same hotness") {
         // 5050 = 150*n_50-2*n_50^2+2*n_50 = 152*n_50-2*n_50^2
         // n_50^2-76*n_50+2525 = 0
         // delta = 76^2-4*2525 = 5776-10000
-        double thresh_equal =
-            ranking_calculate_hot_threshold(ranking, RATIO_EQUAL);
+        double thresh_equal = ranking_calculate_hot_threshold_dram_total(
+            ranking, RATIO_EQUAL_TOTAL);
         CHECK_EQ(thresh_equal, 19);
         for (int i=0; i<19; ++i) {
             CHECK(!ranking_is_hot(ranking, &blocks[i]));
@@ -152,14 +176,18 @@ TEST_CASE("Ranking test same hotness") {
         for (int i=SUBSIZE; i<BLOCKS_SIZE; ++i) {
             ranking_remove(ranking, &blocks[i]);
         }
-        double RATIO_EQUAL=0.5;
-        double thresh_equal =
-            ranking_calculate_hot_threshold(ranking, RATIO_EQUAL);
+        double RATIO_EQUAL_TOTAL=0.5;
+        double RATIO_EQUAL_PMEM=1;
+        double thresh_equal = ranking_calculate_hot_threshold_dram_total(
+            ranking, RATIO_EQUAL_TOTAL);
+        double thresh_equal_pmem = ranking_calculate_hot_threshold_dram_pmem(
+            ranking, RATIO_EQUAL_PMEM);
         // hand calculations:
         // 100, 99, 98, 97, 96, 95, 94, 93, 92, 91
         // sum:
         // 100, 199, 297, 394, 490 <- this is the one we are looking for
         CHECK_EQ(thresh_equal, 4);
+        CHECK_EQ(thresh_equal, thresh_equal_pmem);
         for (int i=0; i<4; ++i) {
             CHECK(!ranking_is_hot(ranking, &blocks[i]));
         }
