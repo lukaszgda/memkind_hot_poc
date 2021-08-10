@@ -52,7 +52,7 @@ TEST_CASE("Ranking test") {
         CHECK_EQ(n, 70); // calculated by hand
         double thresh_equal =
             ranking_calculate_hot_threshold(ranking, RATIO_EQUAL);
-        CHECK_EQ(thresh_equal, 29);
+        CHECK_EQ(thresh_equal, 30);
         for (int i=0; i<29; ++i) {
             CHECK(!ranking_is_hot(ranking, &blocks[i]));
         }
@@ -72,25 +72,28 @@ typedef struct {
 } wre_test_struct_t;
 
 static bool is_lower_int(const void* i1, const void* i2) {
-    return ((wre_test_struct_t*)i1)->val < ((wre_test_struct_t*)i1)->val;
+    return ((wre_test_struct_t*)i1)->val < ((wre_test_struct_t*)i2)->val;
 }
 }
 
 TEST_CASE("Weight-Ratio-Extended tree test") {
     const size_t TAB_SIZE=100u;
-    wre_test_struct_t blocks[TAB_SIZE];
-    for (int i=0; i<TAB_SIZE; ++i) {
+    const size_t EXTENDED_TAB_SIZE=200u;
+    wre_test_struct_t blocks[EXTENDED_TAB_SIZE];
+    for (int i=0; i<EXTENDED_TAB_SIZE; ++i) {
         blocks[i].val=i;
-        blocks[i].weight=TAB_SIZE-i; // TODO handle corner case: 0
+        blocks[i].weight=abs(((int64_t)TAB_SIZE)-i); // TODO handle corner case: 0
     }
 
     wre_tree_t *tree;
     wre_create(&tree, is_lower_int);
 
+
+
     SUBCASE("Simple adds") {
         wre_put(tree, &blocks[6], blocks[6].weight); // value 6, weight: 94
         CHECK_EQ(tree->rootNode->subtreeWeight, 94u);
-        CHECK_EQ(tree->rootNode->subtreeNodesNum, 0u);
+        CHECK_EQ(tree->rootNode->height, 0u);
         CHECK_EQ(tree->rootNode->left, nullptr);
         CHECK_EQ(tree->rootNode->right, nullptr);
         CHECK_EQ(tree->rootNode->parent, nullptr);
@@ -100,9 +103,9 @@ TEST_CASE("Weight-Ratio-Extended tree test") {
         CHECK_EQ(((wre_test_struct_t*)tree->rootNode->data)->weight, 94);
         wre_put(tree, &blocks[3], blocks[3].weight); // value 3, weight: 97
         CHECK_EQ(tree->rootNode->subtreeWeight, 191u);
-        CHECK_EQ(tree->rootNode->subtreeNodesNum, 1u);
+        CHECK_EQ(tree->rootNode->height, 1u);
         CHECK_EQ(tree->rootNode->left->subtreeWeight, 97);
-        CHECK_EQ(tree->rootNode->left->subtreeNodesNum, 0);
+        CHECK_EQ(tree->rootNode->left->height, 0);
         CHECK_EQ(tree->rootNode->left->left, nullptr);
         CHECK_EQ(tree->rootNode->left->right, nullptr);
         CHECK_EQ(tree->rootNode->left->parent, tree->rootNode);
@@ -115,6 +118,58 @@ TEST_CASE("Weight-Ratio-Extended tree test") {
         CHECK_EQ(((wre_test_struct_t*)tree->rootNode->data)->weight, 94);
     }
 
+    SUBCASE("Simple adds-removes") {
+        wre_put(tree, &blocks[6], blocks[6].weight); // value 6, weight: 94
+        CHECK_EQ(tree->rootNode->subtreeWeight, 94u);
+        CHECK_EQ(tree->rootNode->height, 0u);
+        CHECK_EQ(tree->rootNode->left, nullptr);
+        CHECK_EQ(tree->rootNode->right, nullptr);
+        CHECK_EQ(tree->rootNode->parent, nullptr);
+        CHECK_EQ(tree->rootNode->which, ROOT_NODE);
+        CHECK_EQ(tree->rootNode->data, &blocks[6]);
+        CHECK_EQ(((wre_test_struct_t*)tree->rootNode->data)->val, 6);
+        CHECK_EQ(((wre_test_struct_t*)tree->rootNode->data)->weight, 94);
+        wre_remove(tree, &blocks[6]);
+        CHECK_EQ(tree->rootNode, nullptr);
+        wre_put(tree, &blocks[6], blocks[6].weight); // value 6, weight: 94
+        wre_put(tree, &blocks[3], blocks[3].weight); // value 3, weight: 97
+        CHECK_EQ(tree->rootNode->subtreeWeight, 191u);
+        CHECK_EQ(tree->rootNode->height, 1u);
+        CHECK_EQ(tree->rootNode->left->subtreeWeight, 97);
+        CHECK_EQ(tree->rootNode->left->height, 0);
+        CHECK_EQ(tree->rootNode->left->left, nullptr);
+        CHECK_EQ(tree->rootNode->left->right, nullptr);
+        CHECK_EQ(tree->rootNode->left->parent, tree->rootNode);
+        CHECK_EQ(tree->rootNode->left->which, LEFT_NODE);
+        CHECK_EQ(tree->rootNode->right, nullptr);
+        CHECK_EQ(tree->rootNode->parent, nullptr);
+        CHECK_EQ(tree->rootNode->which, ROOT_NODE);
+        CHECK_EQ(tree->rootNode->data, &blocks[6]);
+        CHECK_EQ(((wre_test_struct_t*)tree->rootNode->data)->val, 6);
+        CHECK_EQ(((wre_test_struct_t*)tree->rootNode->data)->weight, 94);
+        wre_remove(tree, &blocks[3]);
+        CHECK_EQ(tree->rootNode->subtreeWeight, 94u);
+        CHECK_EQ(tree->rootNode->height, 0u);
+        CHECK_EQ(tree->rootNode->left, nullptr);
+        CHECK_EQ(tree->rootNode->right, nullptr);
+        CHECK_EQ(tree->rootNode->parent, nullptr);
+        CHECK_EQ(tree->rootNode->which, ROOT_NODE);
+        CHECK_EQ(tree->rootNode->data, &blocks[6]);
+        CHECK_EQ(((wre_test_struct_t*)tree->rootNode->data)->val, 6);
+        CHECK_EQ(((wre_test_struct_t*)tree->rootNode->data)->weight, 94);
+        wre_put(tree, &blocks[3], blocks[3].weight); // value 3, weight: 97
+        wre_remove(tree, &blocks[6]);
+        CHECK_EQ(tree->rootNode->subtreeWeight, 97u);
+        CHECK_EQ(tree->rootNode->height, 0u);
+        CHECK_EQ(tree->rootNode->left, nullptr);
+        CHECK_EQ(tree->rootNode->right, nullptr);
+        CHECK_EQ(tree->rootNode->parent, nullptr);
+        CHECK_EQ(tree->rootNode->which, ROOT_NODE);
+        CHECK_EQ(tree->rootNode->data, &blocks[3]);
+        CHECK_EQ(((wre_test_struct_t*)tree->rootNode->data)->val, 3);
+        CHECK_EQ(((wre_test_struct_t*)tree->rootNode->data)->weight, 97);
+    }
+
     SUBCASE("Add multiple nodes") {
         size_t accumulated_weight=0u;
         // add all nodes in regular order
@@ -123,6 +178,28 @@ TEST_CASE("Weight-Ratio-Extended tree test") {
             accumulated_weight += blocks[i].weight;
             CHECK_EQ(tree->rootNode->subtreeWeight, accumulated_weight);
         }
+        CHECK_EQ(tree->rootNode->height, 6);
+        // check contents
+        CHECK_EQ(tree->rootNode->subtreeWeight, 5050u);
+        // TODO more checks!
+    }
+
+    SUBCASE("Add-remove multiple nodes") {
+        size_t accumulated_weight=0u;
+        // add all nodes in regular order
+        for (int i=0; i<EXTENDED_TAB_SIZE; ++i) {
+            wre_put(tree, &blocks[i], blocks[i].weight);
+            accumulated_weight += blocks[i].weight;
+            CHECK_EQ(tree->rootNode->subtreeWeight, accumulated_weight);
+        }
+        CHECK_EQ(tree->rootNode->height, 7);
+        for (int i=TAB_SIZE; i<EXTENDED_TAB_SIZE; ++i) {
+            bool removed = wre_remove(tree, &blocks[i]);
+            CHECK_EQ(removed, true);
+            accumulated_weight -= blocks[i].weight;
+            CHECK_EQ(tree->rootNode->subtreeWeight, accumulated_weight);
+        }
+        CHECK_EQ(tree->rootNode->height, 7);
         // check contents
         CHECK_EQ(tree->rootNode->subtreeWeight, 5050u);
         // TODO more checks!

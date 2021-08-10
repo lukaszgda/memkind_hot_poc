@@ -1,5 +1,6 @@
 extern "C" {
 #include "memkind/internal/ranking.h"
+#include "memkind/internal/wre_avl_tree.h"
 }
 
 #include <vector>
@@ -17,21 +18,23 @@ using namespace std;
 
 struct ranking {
     double hotThreshold;
-    std::vector<struct tblock*> entries; /// ordered hottest -> coldest
+    wre_tree_t *entries;
 };
 
 // IF to implement:
 // TODO mapping ranking_entry -> RankingEntry
 
 //--------private function implementation---------
-static bool is_hotter(struct tblock *a, struct tblock *b) {
-    return a->n2 > b->n2;
+
+static bool is_hotter_tblock(const void *a, const void *b) {
+    return ((struct tblock*)a)->n2 > ((struct tblock*)b)->n2;
 }
 
 //--------public function implementation---------
 
 void ranking_create(ranking_t **ranking) {
     *ranking = new struct ranking();
+    wre_create(&(*ranking)->entries, is_hotter_tblock);
 }
 
 void ranking_destroy(ranking_t *ranking) {
@@ -46,31 +49,19 @@ double ranking_get_hot_threshold(ranking_t *ranking) {
 double ranking_calculate_hot_threshold(
     ranking_t *ranking, double dram_pmem_ratio) {
 
-    // O(N) -> needs to be upgraded to O(log(N)) by using a tree
-    if (ranking->entries.size() == 0)
-        return std::numeric_limits<double>::min();
+    ranking->hotThreshold=0;
 
-    size_t total_size=0;
-    for (auto &entry : ranking->entries) {
-        total_size += entry->size;
+    struct tblock *block =
+        (struct tblock*)wre_find_weighted(ranking->entries, dram_pmem_ratio);
+    if (block) {
+        ranking->hotThreshold=block->n2;
     }
-    size_t threshold_size=dram_pmem_ratio*total_size;
-    total_size=0;
-    ranking->hotThreshold=ranking->entries.back()->n2;
-    for (auto &entry : ranking->entries) {
-        total_size += entry->size;
-        if (total_size >= threshold_size) {
-            ranking->hotThreshold=entry->n2;
-            break;;
-        }
-    }
+
     return ranking_get_hot_threshold(ranking);
 }
 
 void ranking_add(ranking_t *ranking, struct tblock *entry) {
-    // O(N) -> needs to be upgraded to O(log(N)) by using a tree
-    ranking->entries.push_back(entry);
-    sort(ranking->entries.begin(), ranking->entries.end(), is_hotter);
+    wre_put(ranking->entries, entry, entry->size);
 }
 
 bool ranking_is_hot(ranking_t *ranking, struct tblock *entry) {
@@ -78,6 +69,8 @@ bool ranking_is_hot(ranking_t *ranking, struct tblock *entry) {
 }
 
 void ranking_remove(ranking_t *ranking, const struct tblock *entry) {
-    auto &t = ranking->entries;
-    t.erase(remove(t.begin(), t.end(), entry), t.end());
+    bool removed = wre_remove(ranking->entries, entry);
+    if (!removed) {
+        // element to remove not found; TODO handle error
+    }
 }
