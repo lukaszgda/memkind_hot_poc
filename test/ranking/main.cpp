@@ -199,10 +199,29 @@ TEST_CASE("Weight-Ratio-Extended tree test") {
             accumulated_weight -= blocks[i].weight;
             CHECK_EQ(tree->rootNode->subtreeWeight, accumulated_weight);
         }
-        CHECK_EQ(tree->rootNode->height, 7);
+        CHECK_EQ(tree->rootNode->height, 6);
         // check contents
         CHECK_EQ(tree->rootNode->subtreeWeight, 5050u);
-        // TODO more checks!
+    }
+
+    SUBCASE("Add-remove multiple nodes, descending order") {
+        size_t accumulated_weight=0u;
+        // add all nodes in regular order
+        for (int i=0; i<EXTENDED_TAB_SIZE; ++i) {
+            wre_put(tree, &blocks[i], blocks[i].weight);
+            accumulated_weight += blocks[i].weight;
+            CHECK_EQ(tree->rootNode->subtreeWeight, accumulated_weight);
+        }
+        CHECK_EQ(tree->rootNode->height, 7);
+        for (int i=EXTENDED_TAB_SIZE-1; i>=TAB_SIZE; --i) {
+            bool removed = wre_remove(tree, &blocks[i]);
+            CHECK_EQ(removed, true);
+            accumulated_weight -= blocks[i].weight;
+            CHECK_EQ(tree->rootNode->subtreeWeight, accumulated_weight);
+        }
+        CHECK_EQ(tree->rootNode->height, 6);
+        // check contents
+        CHECK_EQ(tree->rootNode->subtreeWeight, 5050u);
     }
     // TODO check scenario - two structures, same hotness!!!
     // the case should still be correctly handled!!!

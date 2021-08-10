@@ -113,6 +113,29 @@ static void rotate_right(wre_tree_t *tree, wre_node_t *node) {
     update_node_subtree_metadata(y);
 }
 
+/// handle case of rightleft rotation
+static void fix_rotate_left(wre_tree_t *tree, wre_node_t *node) {
+    // descend-check right balance
+    wre_node_t *right_node = node->right;
+    int64_t left_nodes = right_node->left ? right_node->left->height+1 : 0;
+    int64_t right_nodes = right_node->right ? right_node->right->height+1 : 0;
+    int64_t diff = right_nodes-left_nodes;
+    if (diff == -1)
+        rotate_right(tree, right_node);
+    rotate_left(tree, node);
+}
+
+/// handle case of leftright rotation
+static void fix_rotate_right(wre_tree_t *tree, wre_node_t *node) {
+    wre_node_t *left_node = node->left;
+    int64_t left_nodes = left_node->left ? left_node->left->height+1 : 0;
+    int64_t right_nodes = left_node->right ? left_node->right->height+1 : 0;
+    int64_t diff = right_nodes-left_nodes;
+    if (diff == 1)
+        rotate_left(tree, left_node);
+    rotate_right(tree, node);
+}
+
 /// @pre subtree that starts at @p node is balanced
 /// @pre the whole tree is off balance with +-2 value at most
 /// (node was added to/removed from a balanced tree)
@@ -128,9 +151,9 @@ static void balance_upwards(wre_tree_t *tree, wre_node_t *node) {
         int64_t right_nodes = node->right ? node->right->height+1 : 0;
         int64_t diff = right_nodes-left_nodes;
         if (diff>1) {
-            rotate_left(tree, node);
+            fix_rotate_left(tree, node);
         } else if (diff<-1) {
-            rotate_right(tree, node);
+            fix_rotate_right(tree, node);
         } else {
             // no balancing required, but metadata needs an update
             update_node_subtree_metadata(node);
