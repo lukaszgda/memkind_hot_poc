@@ -144,7 +144,7 @@ TEST_CASE("Ranking test same hotness") {
     }
     SUBCASE("check hotness 50:50") {
         double RATIO_EQUAL_TOTAL=0.5;
-        double RATIO_EQUAL_DRAM=1;
+        double RATIO_EQUAL_PMEM=1;
         // when grouped in pairs, we get 150, 148, .., 52
         // arithmetic series a0 = 150, r=-2, n=50
         // we now want to find n_50: s_n_50 = s_n/2
@@ -156,7 +156,10 @@ TEST_CASE("Ranking test same hotness") {
         // delta = 76^2-4*2525 = 5776-10000
         double thresh_equal = ranking_calculate_hot_threshold_dram_total(
             ranking, RATIO_EQUAL_TOTAL);
+        double thresh_equal_pmem = ranking_calculate_hot_threshold_dram_total(
+            ranking, RATIO_EQUAL_PMEM);
         CHECK_EQ(thresh_equal, 19);
+        CHECK_EQ(thresh_equal, thresh_equal_pmem);
         for (int i=0; i<19; ++i) {
             CHECK(!ranking_is_hot(ranking, &blocks[i]));
         }
