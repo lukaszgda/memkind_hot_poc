@@ -4,21 +4,26 @@
 #include <memkind/internal/critnib.h>
 #include <memkind/internal/memkind_private.h>
 
-#define SAMPLE_FREQUENCY 10000 // smaller value -> more frequent sampling
+// smaller value -> more frequent sampling
+// 10000 = around 100 samples on *my machine* / sec in matmul test
+#define SAMPLE_FREQUENCY 10000
 #define MMAP_DATA_SIZE   8
 #define rmb() asm volatile("lfence":::"memory")
 
 pthread_t pebs_thread;
+int thread_state = 0; // 0: normal, -1: stop thread
 int pebs_fd;
 static char *pebs_mmap;
 
 // DEBUG
-extern critnib* hash_to_block;
+extern critnib* hash_to_type;
 
 #define LOG_TO_FILE 1
 
-void *pebs_monitor(void *a)
+void *pebs_monitor(void *state)
 {
+    int* pthread_state = state;
+
     // set low priority
     int policy;
     struct sched_param param;
@@ -44,11 +49,16 @@ void *pebs_monitor(void *a)
 #endif
 
     while (1) {
-        struct perf_event_mmap_page* pebs_metadata =
-            (struct perf_event_mmap_page*)pebs_mmap;
+        // TODO - use mutex?
+        if (*pthread_state == -1) {
+            return NULL;
+        }
 
         // must call this before read from data head
 		rmb();
+
+        struct perf_event_mmap_page* pebs_metadata =
+            (struct perf_event_mmap_page*)pebs_mmap;
 
         // DEBUG
         // printf("head: %llu size: %lld\n", pebs_metadata->data_head, pebs_metadata->data_head - last_head);
@@ -99,11 +109,17 @@ void *pebs_monitor(void *a)
             int nchars = 0;
             int total_chars = 0;
             for (int i = 0; i < 20; i++) {
-                struct tblock* tb = (struct tblock*)critnib_get_leaf(hash_to_block, i);
-                int n = 0;
-                if (tb != NULL)
-                    n = tb->n2;
-                sprintf(buf + total_chars, "%d, %n", n, &nchars);
+                struct ttype* tb = critnib_get_leaf(hash_to_type, i);
+
+                if (tb != NULL && tb->hot_or_not >= 0)
+                {
+                    float f = tb->f;
+                    sprintf(buf + total_chars, "%f,%n", f, &nchars);
+                }
+                else {
+                    sprintf(buf + total_chars, "N/A,%n", &nchars);
+                }
+
                 total_chars += nchars;
             }
             sprintf(buf + total_chars, "\n");
@@ -140,12 +156,15 @@ void pebs_init(pid_t pid)
     arg.attr = &pe;
 
     char event[] = "MEM_LOAD_RETIRED:L3_MISS";
-   // char* event[] = "MEM_UOPS_RETIRED:ALL_LOADS";
+    //char event[] = "MEM_UOPS_RETIRED:ALL_LOADS";
 
     ret = pfm_get_os_event_encoding(event, PFM_PLM3, PFM_OS_PERF_EVENT_EXT, &arg);
     if (ret != PFM_SUCCESS) {
-        printf("pfm_get_os_event_encoding() failed!\n");
-        exit(-1);
+        //printf("pfm_get_os_event_encoding() failed!\n");
+        //exit(-1);
+
+        pe.type = 4;
+        pe.config = 0x5120D1;
     }
 
     pe.size = sizeof(struct perf_event_attr);
@@ -175,7 +194,8 @@ void pebs_init(pid_t pid)
     // DEBUG
     //printf("PEBS thread start\n");
 
-    pthread_create(&pebs_thread, NULL, &pebs_monitor, NULL);
+    thread_state = 0;
+    pthread_create(&pebs_thread, NULL, &pebs_monitor, (void*)&thread_state);
 
 	ioctl(pebs_fd, PERF_EVENT_IOC_RESET, 0);
 	ioctl(pebs_fd, PERF_EVENT_IOC_ENABLE, 0);
@@ -185,8 +205,14 @@ void pebs_fini()
 {
     ioctl(pebs_fd, PERF_EVENT_IOC_DISABLE, 0);
 
+    // TODO - use mutex?
+    thread_state = -1;
+    void* ret;
+    pthread_join(pebs_thread, &ret);
+
     int mmap_pages = 1 + MMAP_DATA_SIZE;
     munmap(pebs_mmap, mmap_pages * getpagesize());
+    pebs_mmap = 0;
     close(pebs_fd);
 
     // DEBUG

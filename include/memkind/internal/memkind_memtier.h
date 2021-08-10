@@ -32,6 +32,9 @@ typedef enum memtier_policy_t
      */
     MEMTIER_POLICY_DYNAMIC_THRESHOLD = 1,
 
+    /**
+     * Hotness prediction policy
+     */
     MEMTIER_POLICY_DATA_HOTNESS = 2,
 
     /**
@@ -223,6 +226,10 @@ size_t memtier_kind_allocated_size(memkind_t kind);
 ///
 int memtier_ctl_set(struct memtier_builder *builder, const char *name,
                     const void *val);
+
+
+// DEBUG
+float get_obj_hotness(int size);
 
 #ifdef __cplusplus
 }

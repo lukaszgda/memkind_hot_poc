@@ -69,7 +69,7 @@ double ranking_calculate_hot_threshold_dram_pmem(
     return ranking_calculate_hot_threshold_dram_total(ranking, ratio);
 }
 
-void ranking_add(ranking_t *ranking, struct tblock *entry) {
+void ranking_add(ranking_t *ranking, struct ttype *entry) {
     AggregatedHotness temp;
     temp.hotness=entry->n2; // only hotness matters for lookup
     AggregatedHotness_t* value =
@@ -85,11 +85,11 @@ void ranking_add(ranking_t *ranking, struct tblock *entry) {
     wre_put(ranking->entries, value, value->size);
 }
 
-bool ranking_is_hot(ranking_t *ranking, struct tblock *entry) {
+bool ranking_is_hot(ranking_t *ranking, struct ttype *entry) {
     return entry->n2 >= ranking_get_hot_threshold(ranking);
 }
 
-void ranking_remove(ranking_t *ranking, const struct tblock *entry) {
+void ranking_remove(ranking_t *ranking, const struct ttype *entry) {
     AggregatedHotness temp;
     temp.hotness=entry->n2; // only hotness matters for lookup
     AggregatedHotness_t *removed =

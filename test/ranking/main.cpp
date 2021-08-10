@@ -10,7 +10,7 @@ TEST_CASE("Ranking test") {
     ranking_create(&ranking);
 
     const size_t BLOCKS_SIZE=100u;
-    struct tblock blocks[BLOCKS_SIZE];
+    struct ttype blocks[BLOCKS_SIZE];
     for (int i=0; i<BLOCKS_SIZE; ++i) {
         blocks[i].size=BLOCKS_SIZE-i;
         blocks[i].n2=i;
@@ -108,7 +108,7 @@ TEST_CASE("Ranking test same hotness") {
     ranking_create(&ranking);
 
     const size_t BLOCKS_SIZE=100u;
-    struct tblock blocks[BLOCKS_SIZE];
+    struct ttype blocks[BLOCKS_SIZE];
     for (int i=0; i<BLOCKS_SIZE; ++i) {
         blocks[i].size=BLOCKS_SIZE-i;
         blocks[i].n2=i%50;

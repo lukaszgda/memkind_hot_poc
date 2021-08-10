@@ -125,8 +125,11 @@ struct memtier_memory {
     float thres_trigger;                 // Difference between ratios to update
                                          // threshold
     float thres_degree; // % of threshold change in case of update
+    int hot_tier_id;                     // ID of "hot" tier
+
     // memtier_memory operations
-    memkind_t (*get_kind)(struct memtier_memory *memory, size_t *size);
+    memkind_t (*get_kind)(struct memtier_memory *memory, size_t size, uint64_t *data);
+    void (*post_alloc)(uint64_t data, void *addr, size_t size);
     void (*update_cfg)(struct memtier_memory *memory);
 };
 // clang-format on
@@ -193,14 +196,14 @@ static inline void decrement_alloc_size(unsigned kind_id, size_t size)
 }
 
 static memkind_t memtier_single_get_kind(struct memtier_memory *memory,
-                                         size_t *size)
+                                         size_t size, uint64_t *data)
 {
     return memory->cfg[0].kind;
 }
 
 static memkind_t
 memtier_policy_static_ratio_get_kind(struct memtier_memory *memory,
-                                     size_t *size)
+                                     size_t size, uint64_t *data)
 {
     struct memtier_tier_cfg *cfg = memory->cfg;
 
@@ -219,31 +222,45 @@ memtier_policy_static_ratio_get_kind(struct memtier_memory *memory,
 
 static memkind_t
 memtier_policy_dynamic_threshold_get_kind(struct memtier_memory *memory,
-                                          size_t *size)
+                                          size_t size, uint64_t* data)
 {
     struct memtier_threshold_cfg *thres = memory->thres;
     int i;
 
     for (i = 0; i < THRESHOLD_NUM(memory); ++i) {
-        if (*size < thres[i].val) {
+        if (size < thres[i].val) {
             break;
         }
     }
     return memory->cfg[i].kind;
 }
 
-static memkind_t
-memtier_policy_data_hotness_get_kind(struct memtier_memory *memory,
-                                     size_t *size)
+static int memtier_policy_data_hotness_is_hot(uint64_t hash)
 {
-    // UNUSED
+    // TODO use memory->hot_tier_id here
+    return 1;
+}
 
-    uint64_t h = bthash(*size);
+static memkind_t
+memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
+                                     uint64_t *data)
+{
+    *data = bthash(size);
+    int dest_tier = memtier_policy_data_hotness_is_hot(*data) ?
+        memory->hot_tier_id : 1 - memory->hot_tier_id;
+
     char buf[128];
-    if (write(1, buf, sprintf(buf, "hash %016zx size %zd is %s\n", h, *size, is_hot(h) ? "♨": "❄")));
-    // TODO modifiy size if needed in case when we decide to allocate new pool
-    //bthash(*size);
-    return MEMKIND_DEFAULT;
+    if (write(1, buf, sprintf(buf, "hash %016zx size %zd is %s\n", *data, size,
+                   memtier_policy_data_hotness_is_hot(*data) ? "♨": "❄")));
+
+    return memory->cfg[dest_tier].kind;
+}
+
+static void
+memtier_policy_data_hotness_post_alloc(uint64_t hash, void *addr, size_t size)
+{
+    register_block(hash, addr, size);
+    touch(addr, 0, 1 /*called from malloc*/);
 }
 
 /*
@@ -311,6 +328,10 @@ memtier_policy_static_ratio_update_config(struct memtier_memory *memory)
 
 static void
 memtier_policy_data_hotness_update_config(struct memtier_memory *memory)
+{}
+
+static void
+memtier_empty_post_alloc(uint64_t data, void *addr, size_t size)
 {}
 
 static void
@@ -394,10 +415,12 @@ memtier_memory_init(size_t tier_size, bool is_dynamic_threshold,
     }
     if (is_dynamic_threshold) {
         memory->get_kind = memtier_policy_dynamic_threshold_get_kind;
+        memory->post_alloc = memtier_empty_post_alloc;
         memory->update_cfg = memtier_policy_dynamic_threshold_update_config;
         memory->thres_check_cnt = THRESHOLD_CHECK_CNT;
     } else if (is_data_hotness) {
         memory->get_kind = memtier_policy_data_hotness_get_kind;
+        memory->post_alloc = memtier_policy_data_hotness_post_alloc;
         memory->update_cfg = memtier_policy_data_hotness_update_config;
     } else {
         if (tier_size == 1)
@@ -405,6 +428,7 @@ memtier_memory_init(size_t tier_size, bool is_dynamic_threshold,
         else {
             memory->get_kind = memtier_policy_static_ratio_get_kind;
         }
+        memory->post_alloc = memtier_empty_post_alloc;
         memory->update_cfg = memtier_policy_static_ratio_update_config;
     }
     memory->thres = NULL;
@@ -606,15 +630,34 @@ extern pthread_t pebs_thread;
 static struct memtier_memory *
 builder_hot_create_memory(struct memtier_builder *builder)
 {
-    // TODO create and initialize structures here
+    int i;
 
     tachanka_init();
+    pebs_init(getpid());
+
     struct memtier_memory *memory =
         memtier_memory_init(builder->cfg_size, false, true);
-    memory->cfg[0].kind = builder->cfg[0].kind;
-    memory->cfg[1].kind = builder->cfg[!(builder->cfg_size == 1)].kind;
+    memory->hot_tier_id = -1;
 
-    pebs_init(getpid());
+    for (i = 1; i < memory->cfg_size; ++i) {
+        memory->cfg[i].kind = builder->cfg[i].kind;
+        memory->cfg[i].kind_ratio =
+            builder->cfg[0].kind_ratio / builder->cfg[i].kind_ratio;
+        if (memory->cfg[i].kind == MEMKIND_DEFAULT) {
+            memory->hot_tier_id = i;
+        }
+    }
+
+    memory->cfg[0].kind = builder->cfg[0].kind;
+    memory->cfg[0].kind_ratio = 1.0;
+    if (memory->cfg[0].kind == MEMKIND_DEFAULT) {
+        memory->hot_tier_id = 0;
+    }
+
+    if (memory->hot_tier_id == -1) {        
+        log_err("No tier suitable for HOT memory defined.");
+        return NULL;
+    }
 
     return memory;
 }
@@ -753,18 +796,10 @@ MEMKIND_EXPORT int memtier_ctl_set(struct memtier_builder *builder,
 MEMKIND_EXPORT void *memtier_malloc(struct memtier_memory *memory, size_t size)
 {
     void *ptr;
+    uint64_t data;
 
-    // TODO: rethink the layering
-    if (memory->get_kind == memtier_policy_data_hotness_get_kind) {
-        uint64_t hash = bthash(size);
-        int nk = !is_hot(hash);
-        ptr = memtier_kind_malloc(memory->cfg[nk].kind, size);
-        register_block(hash, ptr, size);
-
-        touch(ptr, 0, 1 /*not from malloc*/);
-    }
-    else
-        ptr = memtier_kind_malloc(memory->get_kind(memory, &size), size);
+    ptr = memtier_kind_malloc(memory->get_kind(memory, size, &data), size);
+    memory->post_alloc(data, ptr, size);
     memory->update_cfg(memory);
 
     return ptr;
@@ -785,16 +820,10 @@ MEMKIND_EXPORT void *memtier_calloc(struct memtier_memory *memory, size_t num,
                                     size_t size)
 {
     void *ptr;
+    uint64_t data;
 
-    // TODO: rethink the layering
-    if (memory->get_kind == memtier_policy_data_hotness_get_kind) {
-        uint64_t hash = bthash(num * size);
-        int nk = !is_hot(hash);
-        ptr = memtier_kind_calloc(memory->cfg[nk].kind, num, size);
-        register_block(hash, ptr, size);
-    }
-    else
-        ptr = memtier_kind_calloc(memory->get_kind(memory, &size), num, size);
+    ptr = memtier_kind_calloc(memory->get_kind(memory, size, &data), num, size);
+    memory->post_alloc(data, ptr, size);
     memory->update_cfg(memory);
 
     return ptr;
@@ -857,8 +886,10 @@ MEMKIND_EXPORT int memtier_posix_memalign(struct memtier_memory *memory,
                                           void **memptr, size_t alignment,
                                           size_t size)
 {
-    int ret = memtier_kind_posix_memalign(memory->get_kind(memory, &size),
+    uint64_t data = 0;
+    int ret = memtier_kind_posix_memalign(memory->get_kind(memory, size, &data),
                                           memptr, alignment, size);
+    memory->post_alloc(data, *memptr, size);
     memory->update_cfg(memory);
 
     return ret;
