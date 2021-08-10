@@ -248,7 +248,7 @@ class RankingTest: public ::testing::Test
 {
 protected:
     ranking_t *ranking;
-    static const size_t BLOCKS_SIZE=100u;
+    static constexpr size_t BLOCKS_SIZE=100u;
     struct ttype blocks[BLOCKS_SIZE];
 private:
     void SetUp()
@@ -267,6 +267,7 @@ private:
         ranking_destroy(ranking);
     }
 };
+constexpr size_t RankingTest::BLOCKS_SIZE;
 
 TEST_F(RankingTest, check_hotness_highest) {
     double RATIO_PMEM_ONLY=0;
@@ -358,7 +359,7 @@ class RankingTestSameHotness: public ::testing::Test
 {
 protected:
     ranking_t *ranking;
-    static const size_t BLOCKS_SIZE=100u;
+    static constexpr size_t BLOCKS_SIZE=100u;
     struct ttype blocks[BLOCKS_SIZE];
 private:
     void SetUp()
@@ -377,6 +378,7 @@ private:
         ranking_destroy(ranking);
     }
 };
+constexpr size_t RankingTestSameHotness::BLOCKS_SIZE;
 
 // initialized
 TEST_F(RankingTestSameHotness, check_hotness_highest) {
@@ -422,7 +424,7 @@ TEST_F(RankingTestSameHotness, check_hotness_50_50) {
     // delta = 76^2-4*2525 = 5776-10000
     double thresh_equal = ranking_calculate_hot_threshold_dram_total(
         ranking, RATIO_EQUAL_TOTAL);
-    double thresh_equal_pmem = ranking_calculate_hot_threshold_dram_total(
+    double thresh_equal_pmem = ranking_calculate_hot_threshold_dram_pmem(
         ranking, RATIO_EQUAL_PMEM);
     ASSERT_EQ(thresh_equal, 19);
     ASSERT_EQ(thresh_equal, thresh_equal_pmem);
@@ -482,8 +484,8 @@ static bool is_lower_int(const void* i1, const void* i2) {
 class WreTreeTest: public ::testing::Test
 {
 protected:
-    const size_t TAB_SIZE=100u;
-    static const size_t EXTENDED_TAB_SIZE=200u;
+    static constexpr size_t TAB_SIZE=100u;
+    static constexpr size_t EXTENDED_TAB_SIZE=200u;
     wre_test_struct_t blocks[EXTENDED_TAB_SIZE];
     wre_tree_t *tree;
 private:

@@ -8,7 +8,7 @@
 
 static wre_node_t **
 get_root_placeholder(wre_tree_t *tree, const wre_node_t *node) {
-    wre_node_t **root_placeholder;
+    wre_node_t **root_placeholder=NULL;
     switch (node->which) {
         case LEFT_NODE:
             root_placeholder = &node->parent->left;
@@ -32,23 +32,24 @@ void update_node_subtree_metadata(wre_node_t *node) {
     node->subtreeWeight = left_weight + right_weight + node->ownWeight;
 }
 
-/// this subtree:
-///    X
-///   / \
-///  Y   Z
-/// / \ / \
-///     t
-/// should be transformed to this:
-///    Z
-///   / \
-///  X
-/// / \
-/// Y  t
-/// @pre X and Z should exist (non-null)
+/**
+ *  this subtree:
+ *     X
+ *    / \
+ *   Y   Z
+ *  / \ / \
+ *      t
+ *  should be transformed to this:
+ *     Z
+ *    / \
+ *   X
+ *  / \
+ *  Y  t
+ * @pre X and Z should exist (non-null)
+ */
 static void rotate_left(wre_tree_t *tree, wre_node_t *node) {
     wre_node_t **root_placeholder = get_root_placeholder(tree, node);
     wre_node_t *x = node;
-    wre_node_t *y = node->left;
     wre_node_t *z = node->right;
     wre_node_t *t = z->left;
     wre_node_t *x_parent = x->parent;
@@ -72,24 +73,25 @@ static void rotate_left(wre_tree_t *tree, wre_node_t *node) {
     update_node_subtree_metadata(z);
 }
 
-/// this subtree:
-///    X
-///   / \
-///  Y   Z
-/// / \ / \
-///   t
-/// should be transformed to this:
-///    Y
-///   / \
-///      X
-///     / \
-///    t   Z
-/// @pre X and Y should exist (non-null)
+/**
+ *  this subtree:
+ *     X
+ *    / \
+ *   Y   Z
+ *  / \ / \
+ *    t
+ *  should be transformed to this:
+ *     Y
+ *    / \
+ *       X
+ *      / \
+ *     t   Z
+ *  @pre X and Y should exist (non-null)
+ */
 static void rotate_right(wre_tree_t *tree, wre_node_t *node) {
     wre_node_t **root_placeholder = get_root_placeholder(tree, node);
     wre_node_t *x = node;
     wre_node_t *y = node->left;
-    wre_node_t *z = node->right;
     wre_node_t *t = y->right;
     wre_node_t *x_parent = x->parent;
     // attach "t" to "x"

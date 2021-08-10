@@ -156,7 +156,7 @@ TEST_CASE("Ranking test same hotness") {
         // delta = 76^2-4*2525 = 5776-10000
         double thresh_equal = ranking_calculate_hot_threshold_dram_total(
             ranking, RATIO_EQUAL_TOTAL);
-        double thresh_equal_pmem = ranking_calculate_hot_threshold_dram_total(
+        double thresh_equal_pmem = ranking_calculate_hot_threshold_dram_pmem(
             ranking, RATIO_EQUAL_PMEM);
         CHECK_EQ(thresh_equal, 19);
         CHECK_EQ(thresh_equal, thresh_equal_pmem);
