@@ -7,6 +7,7 @@ extern "C" {
 #include <limits>
 #include <algorithm>
 #include <cassert>
+#include <mutex>
 
 // approach:
 //  1) STL and inefficient data structures
@@ -20,6 +21,7 @@ using namespace std;
 struct ranking {
     double hotThreshold;
     wre_tree_t *entries;
+    std::mutex mutex;
 };
 
 typedef struct AggregatedHotness {
@@ -35,22 +37,33 @@ static bool is_hotter_agg_hot(const void *a, const void *b) {
     return a_hot > b_hot;
 }
 
-//--------public function implementation---------
+static void ranking_create_internal(ranking_t **ranking);
+static void ranking_destroy_internal(ranking_t *ranking);
+static void ranking_add_internal(ranking_t *ranking, struct ttype *entry);
+static void ranking_remove_internal(ranking_t *ranking, const struct ttype *entry);
+static double ranking_get_hot_threshold_internal(ranking_t *ranking);
+static double ranking_calculate_hot_threshold_dram_total_internal(
+    ranking_t *ranking, double dram_pmem_ratio);
+static double ranking_calculate_hot_threshold_dram_pmem_internal(
+    ranking_t *ranking, double dram_pmem_ratio);
+static bool ranking_is_hot_internal(ranking_t *ranking, struct ttype *entry);
 
-void ranking_create(ranking_t **ranking) {
+//--------private function implementation---------
+
+void ranking_create_internal(ranking_t **ranking) {
     *ranking = new struct ranking();
     wre_create(&(*ranking)->entries, is_hotter_agg_hot);
 }
 
-void ranking_destroy(ranking_t *ranking) {
+void ranking_destroy_internal(ranking_t *ranking) {
     delete ranking;
 }
 
-double ranking_get_hot_threshold(ranking_t *ranking) {
+double ranking_get_hot_threshold_internal(ranking_t *ranking) {
     return ranking->hotThreshold;
 }
 
-double ranking_calculate_hot_threshold_dram_total(
+double ranking_calculate_hot_threshold_dram_total_internal(
     ranking_t *ranking, double dram_pmem_ratio) {
 
     ranking->hotThreshold=0;
@@ -60,16 +73,16 @@ double ranking_calculate_hot_threshold_dram_total(
         ranking->hotThreshold=agg_hot->hotness;
     }
 
-    return ranking_get_hot_threshold(ranking);
+    return ranking_get_hot_threshold_internal(ranking);
 }
 
-double ranking_calculate_hot_threshold_dram_pmem(
+double ranking_calculate_hot_threshold_dram_pmem_internal(
     ranking_t *ranking, double dram_pmem_ratio) {
     double ratio = dram_pmem_ratio/(1+dram_pmem_ratio);
-    return ranking_calculate_hot_threshold_dram_total(ranking, ratio);
+    return ranking_calculate_hot_threshold_dram_total_internal(ranking, ratio);
 }
 
-void ranking_add(ranking_t *ranking, struct ttype *entry) {
+void ranking_add_internal(ranking_t *ranking, struct ttype *entry) {
     AggregatedHotness temp;
     temp.hotness=entry->n2; // only hotness matters for lookup
     AggregatedHotness_t* value =
@@ -85,11 +98,11 @@ void ranking_add(ranking_t *ranking, struct ttype *entry) {
     wre_put(ranking->entries, value, value->size);
 }
 
-bool ranking_is_hot(ranking_t *ranking, struct ttype *entry) {
-    return entry->n2 >= ranking_get_hot_threshold(ranking);
+bool ranking_is_hot_internal(ranking_t *ranking, struct ttype *entry) {
+    return entry->n2 >= ranking_get_hot_threshold_internal(ranking);
 }
 
-void ranking_remove(ranking_t *ranking, const struct ttype *entry) {
+void ranking_remove_internal(ranking_t *ranking, const struct ttype *entry) {
     AggregatedHotness temp;
     temp.hotness=entry->n2; // only hotness matters for lookup
     AggregatedHotness_t *removed =
@@ -105,4 +118,48 @@ void ranking_remove(ranking_t *ranking, const struct ttype *entry) {
         // TODO add error handling instead of assert
         assert(false); // entry does not exist, error occurred
     }
+}
+
+//--------public function implementation---------
+
+void ranking_create(ranking_t **ranking) {
+    ranking_create_internal(ranking);
+}
+
+void ranking_destroy(ranking_t *ranking) {
+    ranking_destroy_internal(ranking);
+}
+
+double ranking_get_hot_threshold(ranking_t *ranking) {
+    std::lock_guard<std::mutex> lock_guard(ranking->mutex);
+    return ranking_get_hot_threshold_internal(ranking);
+}
+
+double ranking_calculate_hot_threshold_dram_total(
+    ranking_t *ranking, double dram_pmem_ratio) {
+    std::lock_guard<std::mutex> lock_guard(ranking->mutex);
+    return ranking_calculate_hot_threshold_dram_total_internal(
+        ranking, dram_pmem_ratio);
+}
+
+double ranking_calculate_hot_threshold_dram_pmem(
+    ranking_t *ranking, double dram_pmem_ratio) {
+    std::lock_guard<std::mutex> lock_guard(ranking->mutex);
+    return ranking_calculate_hot_threshold_dram_pmem_internal(
+        ranking, dram_pmem_ratio);
+}
+
+void ranking_add(ranking_t *ranking, struct ttype *entry) {
+    std::lock_guard<std::mutex> lock_guard(ranking->mutex);
+    ranking_add_internal(ranking, entry);;
+}
+
+bool ranking_is_hot(ranking_t *ranking, struct ttype *entry) {
+    std::lock_guard<std::mutex> lock_guard(ranking->mutex);
+    return ranking_is_hot_internal(ranking, entry);
+}
+
+void ranking_remove(ranking_t *ranking, const struct ttype *entry) {
+    std::lock_guard<std::mutex> lock_guard(ranking->mutex);
+    ranking_remove_internal(ranking, entry);
 }
