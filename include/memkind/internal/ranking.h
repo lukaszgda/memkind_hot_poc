@@ -16,9 +16,10 @@ extern void ranking_remove(ranking_t *ranking, const struct ttype *entry);
 /// get last calculated hot threshold
 extern double ranking_get_hot_threshold(ranking_t *ranking);
 /// @p dram_pmem_ratio : dram/(dram+pmem)
-extern double ranking_calculate_hot_threshold_dram_total(
-    ranking_t *ranking, double dram_pmem_ratio);
+extern double
+ranking_calculate_hot_threshold_dram_total(ranking_t *ranking,
+                                           double dram_pmem_ratio);
 /// @p dram_pmem_ratio : dram/pmem (does not support 0 pmem)
-extern double ranking_calculate_hot_threshold_dram_pmem(
-    ranking_t *ranking, double dram_pmem_ratio);
+extern double ranking_calculate_hot_threshold_dram_pmem(ranking_t *ranking,
+                                                        double dram_pmem_ratio);
 extern bool ranking_is_hot(ranking_t *ranking, struct ttype *entry);

@@ -1,16 +1,17 @@
 #pragma once
-#include "stdlib.h"
 #include "stdbool.h"
+#include "stdlib.h"
 
-typedef bool (*is_lower)(const void* a, const void* b);
+typedef bool (*is_lower)(const void *a, const void *b);
 
-typedef enum {
+typedef enum
+{
     LEFT_NODE,
     RIGHT_NODE,
     ROOT_NODE,
 } which_node_e;
 
-typedef struct wre_node{
+typedef struct wre_node {
     size_t subtreeWeight;
     size_t ownWeight;
     size_t height;
@@ -37,5 +38,5 @@ extern void wre_put(wre_tree_t *tree, void *data, size_t weight);
 extern void *wre_remove(wre_tree_t *tree, const void *data);
 /// @p ratio: left_subtree_weight/(left_subtree_weight+right_subtree_weight)
 /// always between 0 and 1
-extern void* wre_find(wre_tree_t *tree, const void* data);
-extern void* wre_find_weighted(wre_tree_t *tree, double ratio);
+extern void *wre_find(wre_tree_t *tree, const void *data);
+extern void *wre_find_weighted(wre_tree_t *tree, double ratio);
