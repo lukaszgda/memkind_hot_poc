@@ -2,7 +2,12 @@
 #include "stdint.h"
 #include "asm-generic/int-ll64.h"
 
-int is_hot(uint64_t hash);
+typedef enum TimestampState {
+    TIMESTAMP_NOT_SET,
+    TIMESTAMP_INIT,
+    TIMESTAMP_INIT_DONE,
+} TimestampState_t;
+
 void register_block(uint64_t hash, void *addr, size_t size);
 void unregister_block(void *addr);
 void *new_block(size_t size);
@@ -21,11 +26,13 @@ struct ttype {
     int n2;   // num of access in prev window
     int n1;   // num of access in current window
 
-    float f;  // frequency
     int hot_or_not; // -2 - timestamp not set yet,
-                    // -1 - not enough data to classify (first window),
-                    // 0 - cold,
-                    // 1 - hot
+                   // -1 - not enough data to classify (first window),
+                   // 0 - cold,
+                   // 1 - hot
+
+    float f;  // frequency
+    TimestampState_t timestamp_state;
 };
 
 struct tblock

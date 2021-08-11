@@ -9,6 +9,9 @@ extern "C" {
 #include <mutex>
 #include <vector>
 #include <jemalloc/jemalloc.h>
+#include <cstring>
+
+#define HOTNESS_MEASURE_WINDOW 1000000000ULL
 
 // approach:
 //  1) STL and inefficient data structures
@@ -52,8 +55,40 @@ static double
 ranking_calculate_hot_threshold_dram_pmem_internal(ranking_t *ranking,
                                                    double dram_pmem_ratio);
 static bool ranking_is_hot_internal(ranking_t *ranking, struct ttype *entry);
+static void ranking_update_internal(ranking_t *ranking, struct ttype *entry_to_update, const struct ttype *updated_values);
+static void touch_entry(struct ttype *entry, uint64_t timestamp, uint64_t add_hotness);
 
 //--------private function implementation---------
+
+void touch_entry(struct ttype *entry, uint64_t timestamp, uint64_t add_hotness)
+{
+    entry->n2 += add_hotness;
+    entry->t0 = timestamp;
+    if(entry->timestamp_state == TIMESTAMP_NOT_SET) {
+        entry->t2 = timestamp;
+        entry->timestamp_state = TIMESTAMP_INIT;
+    }
+    if (entry->timestamp_state == TIMESTAMP_INIT_DONE) {
+        if ((entry->t0 - entry->t1) > HOTNESS_MEASURE_WINDOW) {
+            // move to next measurement window
+            float f2 = (float)entry->n2 * entry->t2 / (entry->t2 - entry->t0);
+            float f1 = (float)entry->n1 * entry->t1 / (entry->t2 - entry->t0);
+            entry->f = f2 * 0.3 + f1 * 0.7; // TODO weighted sum or sth else?
+            entry->t2 = entry->t1;
+            entry->t1 = entry->t0;
+            entry->n2 = entry->n1;
+            entry->n1 = 0;
+        }
+    } else {
+        // TODO init not done
+        if ((entry->t0 - entry->t2) > HOTNESS_MEASURE_WINDOW) {
+            // TODO - classify hotness
+            entry->timestamp_state = TIMESTAMP_INIT_DONE;;
+            entry->t1 = entry->t0;
+        }
+    }
+
+}
 
 void ranking_create_internal(ranking_t **ranking)
 {
@@ -135,6 +170,20 @@ void ranking_remove_internal(ranking_t *ranking, const struct ttype *entry)
     }
 }
 
+static void ranking_update_internal(ranking_t *ranking, struct ttype *entry_to_update, const struct ttype *updated_values)
+{
+    ranking_remove_internal(ranking, entry_to_update);
+    memcpy(entry_to_update, updated_values, sizeof(*entry_to_update));
+    ranking_add_internal(ranking, entry_to_update);
+}
+
+void ranking_touch_internal(ranking_t *ranking, struct ttype *entry, uint64_t timestamp, uint64_t add_hotness)
+{
+    ranking_remove_internal(ranking, entry);
+    touch_entry(entry, timestamp, add_hotness);
+    ranking_add_internal(ranking, entry);
+}
+
 //--------public function implementation---------
 
 void ranking_create(ranking_t **ranking)
@@ -186,4 +235,16 @@ void ranking_remove(ranking_t *ranking, const struct ttype *entry)
 {
     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
     ranking_remove_internal(ranking, entry);
+}
+
+void ranking_update(ranking_t *ranking, struct ttype *entry_to_update, const struct ttype *updated_value)
+{
+    std::lock_guard<std::mutex> lock_guard(ranking->mutex);
+    ranking_update_internal(ranking, entry_to_update, updated_value);
+}
+
+void ranking_touch(ranking_t *ranking, struct ttype *entry, uint64_t timestamp, uint64_t add_hotness)
+{
+    std::lock_guard<std::mutex> lock_guard(ranking->mutex);
+    ranking_touch_internal(ranking, entry, timestamp, add_hotness);
 }
