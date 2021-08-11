@@ -689,7 +689,7 @@ memtier_builder_new(memtier_policy_t policy)
     struct memtier_builder *b = jemk_calloc(1, sizeof(struct memtier_builder));
     if (b) {
         pol = policy;
-        printf("policy %d\n", pol);
+        //printf("policy %d\n", pol);
         switch (policy) {
             case MEMTIER_POLICY_STATIC_RATIO:
                 b->create_mem = builder_static_create_memory;
@@ -880,6 +880,9 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
     decrement_alloc_size(kind->partition, jemk_malloc_usable_size(ptr));
 
     void *n_ptr = memkind_realloc(kind, ptr, size);
+    if (pol == MEMTIER_POLICY_DATA_HOTNESS) {
+        realloc_block(ptr, n_ptr, size);
+    }
     increment_alloc_size(kind->partition, jemk_malloc_usable_size(n_ptr));
 #ifdef MEMKIND_DECORATION_ENABLED
     if (memtier_kind_realloc_post)

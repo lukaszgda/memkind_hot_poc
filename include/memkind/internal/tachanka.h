@@ -1,5 +1,6 @@
 void register_block(uint64_t hash, void *addr, size_t size);
 void unregister_block(void *addr);
+void realloc_block(void *addr, void *new_addr, size_t size);
 void *new_block(size_t size);
 void touch(void *addr, __u64 timestamp, int from_malloc);
 void tachanka_init(void);
