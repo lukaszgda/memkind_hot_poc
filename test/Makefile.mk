@@ -89,6 +89,7 @@ test_memkind_memtier_dax_kmem_test_LDADD = libmemkind.la
 test_memkind_memtier_test_SOURCES = $(fused_gtest) test/memkind_memtier_test.cpp
 test_memkind_memtier_test_LDADD = libmemkind.la
 test_memkind_memtier_hotness_test_SOURCES = $(fused_gtest) test/memkind_memtier_hotness_test.cpp src/ranking.cpp src/wre_avl_tree.c
+test_memkind_memtier_hotness_test_LDFLAGS = -all-static
 test_memkind_memtier_hotness_test_LDADD = libmemkind.la
 # test_memkind_memtier_hotness_ranking_SOURCES = $(fused_gtest) src/ranking.cpp
 # test_memkind_memtier_hotness_ranking_LDADD = libmemkind.la

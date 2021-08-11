@@ -1,6 +1,7 @@
 #include "memkind/internal/wre_avl_tree.h"
 #include "assert.h"
 #include "stdint.h"
+#include "jemalloc/jemalloc.h"
 
 #define max(X, Y) (((X) > (Y)) ? (X) : (Y))
 
@@ -190,7 +191,7 @@ static void balance_upwards(wre_tree_t *tree, wre_node_t *node)
 /// @brief Allocates and creates a node that is not attached to any structure
 static wre_node_t *node_create(which_node_e which)
 {
-    wre_node_t *ret = (wre_node_t *)calloc(1, sizeof(wre_node_t));
+    wre_node_t *ret = (wre_node_t *)jemk_calloc(1, sizeof(wre_node_t));
     if (ret) {
         // only non-zero fields need to be set
         ret->which = which;
@@ -200,21 +201,21 @@ static wre_node_t *node_create(which_node_e which)
 
 static void node_destroy(wre_node_t *node)
 {
-    free(node);
+    jemk_free(node);
 }
 
 //---public functions
 
 void wre_create(wre_tree_t **tree, is_lower compare)
 {
-    *tree = (wre_tree_t *)malloc(sizeof(wre_tree_t));
+    *tree = (wre_tree_t *)jemk_malloc(sizeof(wre_tree_t));
     (*tree)->is_lower = compare;
     (*tree)->rootNode = NULL;
 }
 
 void wre_destroy(wre_tree_t *tree)
 {
-    free(tree);
+    jemk_free(tree);
 }
 
 void wre_put(wre_tree_t *tree, void *data, size_t weight)

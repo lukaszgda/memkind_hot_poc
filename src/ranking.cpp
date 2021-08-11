@@ -8,6 +8,7 @@ extern "C" {
 #include <limits>
 #include <mutex>
 #include <vector>
+#include <jemalloc/jemalloc.h>
 
 // approach:
 //  1) STL and inefficient data structures
@@ -56,13 +57,13 @@ static bool ranking_is_hot_internal(ranking_t *ranking, struct ttype *entry);
 
 void ranking_create_internal(ranking_t **ranking)
 {
-    *ranking = new struct ranking();
+    *ranking = (ranking_t *)jemk_malloc(sizeof(ranking_t));
     wre_create(&(*ranking)->entries, is_hotter_agg_hot);
 }
 
 void ranking_destroy_internal(ranking_t *ranking)
 {
-    delete ranking;
+    jemk_free(ranking);
 }
 
 double ranking_get_hot_threshold_internal(ranking_t *ranking)
@@ -103,7 +104,7 @@ void ranking_add_internal(ranking_t *ranking, struct ttype *entry)
         // value with the same hotness is already there, should be aggregated
         value->size += entry->size;
     } else {
-        value = (AggregatedHotness_t *)malloc(sizeof(AggregatedHotness_t));
+        value = (AggregatedHotness_t *)jemk_malloc(sizeof(AggregatedHotness_t));
         value->hotness = entry->n2;
         value->size = entry->size;
     }
@@ -125,7 +126,7 @@ void ranking_remove_internal(ranking_t *ranking, const struct ttype *entry)
         assert(entry->size <= removed->size);
         removed->size -= entry->size;
         if (removed->size == 0)
-            free(removed);
+            jemk_free(removed);
         else
             wre_put(ranking->entries, removed, removed->size);
     } else {
