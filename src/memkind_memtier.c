@@ -682,11 +682,15 @@ static int builder_dynamic_update(struct memtier_builder *builder)
     return 0;
 }
 
+static memtier_policy_t pol = 0; // FIXME: not a global
+
 MEMKIND_EXPORT struct memtier_builder *
 memtier_builder_new(memtier_policy_t policy)
 {
     struct memtier_builder *b = jemk_calloc(1, sizeof(struct memtier_builder));
     if (b) {
+        pol = policy;
+        printf("policy %d\n", pol);
         switch (policy) {
             case MEMTIER_POLICY_STATIC_RATIO:
                 b->create_mem = builder_static_create_memory;
@@ -865,6 +869,9 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
         if (memtier_kind_free_pre)
             memtier_kind_free_pre(&ptr);
 #endif
+
+        if (pol == MEMTIER_POLICY_DATA_HOTNESS)
+            unregister_block(ptr);
         decrement_alloc_size(kind->partition, jemk_malloc_usable_size(ptr));
         memkind_free(kind, ptr);
         return NULL;
@@ -930,6 +937,8 @@ MEMKIND_EXPORT void memtier_kind_free(memkind_t kind, void *ptr)
             return;
     }
 
+    if (pol == MEMTIER_POLICY_DATA_HOTNESS)
+        unregister_block(ptr);
     decrement_alloc_size(kind->partition, jemk_malloc_usable_size(ptr));
     memkind_free(kind, ptr);
 }

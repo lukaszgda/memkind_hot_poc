@@ -16,6 +16,7 @@ struct tblock tblocks[MAXBLOCKS];
 
 static int ntypes = 0;
 static int nblocks = 0;
+static int freeblock = -1;
 
 /*static*/ critnib *hash_to_type, *addr_to_block;
 
@@ -23,6 +24,9 @@ int is_hot(uint64_t hash)
 {
     return 1;
 }
+
+#define ADD(var,x) __sync_fetch_and_add(&(var), (x))
+#define SUB(var,x) __sync_fetch_and_sub(&(var), (x))
 
 #define HOTNESS_MEASURE_WINDOW 1000000000ULL
 #define MALLOC_HOTNESS 20
@@ -46,7 +50,19 @@ void register_block(uint64_t hash, void *addr, size_t size)
     t->num_allocs++;
     t->total_size+= size;
 
-    struct tblock *bl = &tblocks[__sync_fetch_and_add(&nblocks, 1)];
+    int fb, nf;
+    do {
+        fb = freeblock;
+        if (fb == -1) {
+            fb = __sync_fetch_and_add(&nblocks, 1);
+            if (fb >= MAXBLOCKS)
+                fprintf(stderr, "Too many allocated blocks\n"), exit(1);
+            break;
+        }
+        nf = tblocks[fb].nextfree;
+    } while (!__atomic_compare_exchange_n(&freeblock, &fb, nf, 1, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE));
+
+    struct tblock *bl = &tblocks[fb];
     if (bl >= &tblocks[MAXBLOCKS])
         fprintf(stderr, "Too many allocated blocks\n"), exit(1);
 
@@ -54,6 +70,21 @@ void register_block(uint64_t hash, void *addr, size_t size)
     bl->size = size;
     bl->type = t - ttypes;
     critnib_insert(addr_to_block, (uintptr_t)addr, bl, 0);
+}
+
+void unregister_block(void *addr)
+{
+    struct tblock *bl = critnib_remove(addr_to_block, (intptr_t)addr);
+    if (!bl)
+        return (void)fprintf(stderr, "Tried deallocating a non-allocated block at %p\n", addr);
+    printf("freeing block at %p size %zu\n", addr, bl->size);
+    struct ttype *t = &ttypes[bl->type];
+    SUB(t->num_allocs, 1);
+    SUB(t->total_size, bl->size);
+    bl->addr = 0;
+    bl->size = 0;
+    int blind = bl - tblocks;
+    __atomic_exchange(&freeblock, &blind, &bl->nextfree, __ATOMIC_ACQ_REL);
 }
 
 void touch(void *addr, __u64 timestamp, int from_malloc)
