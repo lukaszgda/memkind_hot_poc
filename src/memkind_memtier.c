@@ -249,9 +249,9 @@ memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
     int dest_tier = memtier_policy_data_hotness_is_hot(*data) ?
         memory->hot_tier_id : 1 - memory->hot_tier_id;
 
-    char buf[128];
-    if (write(1, buf, sprintf(buf, "hash %016zx size %zd is %s\n", *data, size,
-                   memtier_policy_data_hotness_is_hot(*data) ? "♨": "❄")));
+    //char buf[128];
+    //if (write(1, buf, sprintf(buf, "hash %016zx size %zd is %s\n", *data, size,
+    //               memtier_policy_data_hotness_is_hot(*data) ? "♨": "❄")));
 
     return memory->cfg[dest_tier].kind;
 }
@@ -263,7 +263,6 @@ memtier_policy_data_hotness_post_alloc(uint64_t hash, void *addr, size_t size)
     touch(addr, 0, 1 /*called from malloc*/);
 }
 
-/*
 static void print_memtier_memory(struct memtier_memory *memory)
 {
     int i;
@@ -294,7 +293,7 @@ static void print_memtier_memory(struct memtier_memory *memory)
              memory->thres_init_check_cnt);
     log_info("Threshold counter current value %u", memory->thres_check_cnt);
 }
-*/
+
 static void print_builder(struct memtier_builder *builder)
 {
     int i;
@@ -654,7 +653,7 @@ builder_hot_create_memory(struct memtier_builder *builder)
         memory->hot_tier_id = 0;
     }
 
-    if (memory->hot_tier_id == -1) {        
+    if (memory->hot_tier_id == -1) {
         log_err("No tier suitable for HOT memory defined.");
         return NULL;
     }
@@ -781,7 +780,7 @@ MEMKIND_EXPORT void memtier_delete_memtier_memory(struct memtier_memory *memory)
 {
     pebs_fini();
 
-    //print_memtier_memory(memory);
+    print_memtier_memory(memory);
     jemk_free(memory->thres);
     jemk_free(memory->cfg);
     jemk_free(memory);
