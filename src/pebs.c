@@ -111,7 +111,7 @@ void *pebs_monitor(void *state)
             for (int i = 0; i < 20; i++) {
                 struct ttype* tb = critnib_get_leaf(hash_to_type, i);
 
-                if (tb != NULL && tb->hot_or_not >= 0)
+                if (tb != NULL && tb->timestamp_state == TIMESTAMP_INIT_DONE)
                 {
                     float f = tb->f;
                     sprintf(buf + total_chars, "%f,%n", f, &nchars);

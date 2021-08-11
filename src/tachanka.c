@@ -8,6 +8,9 @@
 #include <memkind/internal/bthash.h>
 #include <memkind/internal/critnib.h>
 #include <memkind/internal/tachanka.h>
+#include <memkind/internal/ranking.h>
+
+#define MALLOC_HOTNESS      20u
 
 #define MAXTYPES   1*1048576
 #define MAXBLOCKS 16*1048576
@@ -18,18 +21,12 @@ static int ntypes = 0;
 static int nblocks = 0;
 static int freeblock = -1;
 
+// TODO (possibly) move elsewhere - make sure multiple rankings are supported!
+ranking_t *ranking;
 /*static*/ critnib *hash_to_type, *addr_to_block;
-
-int is_hot(uint64_t hash)
-{
-    return 1;
-}
 
 #define ADD(var,x) __sync_fetch_and_add(&(var), (x))
 #define SUB(var,x) __sync_fetch_and_sub(&(var), (x))
-
-#define HOTNESS_MEASURE_WINDOW 1000000000ULL
-#define MALLOC_HOTNESS 20
 
 void register_block(uint64_t hash, void *addr, size_t size)
 {
@@ -39,7 +36,7 @@ void register_block(uint64_t hash, void *addr, size_t size)
         if (t >= &ttypes[MAXTYPES])
             fprintf(stderr, "Too many distinct alloc types\n"), exit(1);
         t->size = size;
-        t->hot_or_not = -2; // no time set
+        t->timestamp_state = TIMESTAMP_NOT_SET;
         if (critnib_insert(hash_to_type, hash, t, 0) == EEXIST) {
             t = critnib_get(hash_to_type, hash); // raced with another thread
             if (!t)
@@ -96,43 +93,19 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
         return;
 
     struct ttype *t = &ttypes[bl->type];
-
     // TODO - is this thread safeness needed? or best effort will be enough?
     //__sync_fetch_and_add(&t->accesses, 1);
 
     if (from_malloc) {
-        t->n2 += MALLOC_HOTNESS;
-    } else {
-        t->t0 = timestamp;
-        if (t->hot_or_not == -2) {
-            t->t2 = timestamp;
-            t->hot_or_not = -1;
-        }
+        ranking_add(ranking, t); // first of all, add
     }
-
-    // check if type is ready for classification
-    if (t->hot_or_not < 0) {
-        t->n2 ++; // TODO - not thread safe is ok?
-
-        // check if data is measured for time enough to classify hotness
-        if ((t->t0 - t->t2) > HOTNESS_MEASURE_WINDOW) {
-            // TODO - classify hotness
-            t->hot_or_not = 1;
-            t->t1 = t->t0;
-        }
-    } else {
-        t->n1 ++; // TODO - not thread safe is ok?
-        if ((t->t0 - t->t1) > HOTNESS_MEASURE_WINDOW) {
-            // move to next measurement window
-            float f2 = (float)t->n2 * t->t2 / (t->t2 - t->t0);
-            float f1 = (float)t->n1 * t->t1 / (t->t2 - t->t0);
-            t->f = f2 * 0.3 + f1 * 0.7; // TODO weighted sum or sth else?
-            t->t2 = t->t1;
-            t->t1 = t->t0;
-            t->n2 = t->n1;
-            t->n1 = 0;
-        }
-    }
+    // TODO make decisions regarding thread-safeness
+    // thread-safeness:
+    //  - can we actually touch a removed structure?
+    //  - is it a problem?
+    // current solution: assert(FALSE)
+    // future solution: ignore?
+    ranking_touch(ranking, t, timestamp, MALLOC_HOTNESS);
 }
 
 void tachanka_init(void)
@@ -140,6 +113,7 @@ void tachanka_init(void)
     read_maps();
     hash_to_type = critnib_new();
     addr_to_block = critnib_new();
+    ranking_create(&ranking);
 }
 
 
