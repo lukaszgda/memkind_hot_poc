@@ -11,6 +11,8 @@ extern "C" {
 #include <jemalloc/jemalloc.h>
 #include <cstring>
 
+#include "memkind/internal/memkind_private.h"
+
 #define HOTNESS_MEASURE_WINDOW 1000000000ULL
 
 // approach:
@@ -94,10 +96,16 @@ void ranking_create_internal(ranking_t **ranking)
 {
     *ranking = (ranking_t *)jemk_malloc(sizeof(ranking_t));
     wre_create(&(*ranking)->entries, is_hotter_agg_hot);
+    // placement new for mutex
+    // mutex is already inside a structure, so alignment should be ok
+    (void)new ((void*)(&(*ranking)->mutex)) std::mutex();
 }
 
 void ranking_destroy_internal(ranking_t *ranking)
 {
+    // explicit destructor call for mutex
+    // which was created with placement new
+    ranking->mutex.~mutex();
     jemk_free(ranking);
 }
 
@@ -186,23 +194,23 @@ void ranking_touch_internal(ranking_t *ranking, struct ttype *entry, uint64_t ti
 
 //--------public function implementation---------
 
-void ranking_create(ranking_t **ranking)
+MEMKIND_EXPORT void ranking_create(ranking_t **ranking)
 {
     ranking_create_internal(ranking);
 }
 
-void ranking_destroy(ranking_t *ranking)
+MEMKIND_EXPORT void ranking_destroy(ranking_t *ranking)
 {
     ranking_destroy_internal(ranking);
 }
 
-double ranking_get_hot_threshold(ranking_t *ranking)
+MEMKIND_EXPORT double ranking_get_hot_threshold(ranking_t *ranking)
 {
     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
     return ranking_get_hot_threshold_internal(ranking);
 }
 
-double ranking_calculate_hot_threshold_dram_total(ranking_t *ranking,
+MEMKIND_EXPORT double ranking_calculate_hot_threshold_dram_total(ranking_t *ranking,
                                                   double dram_pmem_ratio)
 {
     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
@@ -210,7 +218,7 @@ double ranking_calculate_hot_threshold_dram_total(ranking_t *ranking,
                                                                dram_pmem_ratio);
 }
 
-double ranking_calculate_hot_threshold_dram_pmem(ranking_t *ranking,
+MEMKIND_EXPORT double ranking_calculate_hot_threshold_dram_pmem(ranking_t *ranking,
                                                  double dram_pmem_ratio)
 {
     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
@@ -218,32 +226,31 @@ double ranking_calculate_hot_threshold_dram_pmem(ranking_t *ranking,
                                                               dram_pmem_ratio);
 }
 
-void ranking_add(ranking_t *ranking, struct ttype *entry)
+MEMKIND_EXPORT void ranking_add(ranking_t *ranking, struct ttype *entry)
 {
     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
     ranking_add_internal(ranking, entry);
-    ;
 }
 
-bool ranking_is_hot(ranking_t *ranking, struct ttype *entry)
+MEMKIND_EXPORT bool ranking_is_hot(ranking_t *ranking, struct ttype *entry)
 {
     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
     return ranking_is_hot_internal(ranking, entry);
 }
 
-void ranking_remove(ranking_t *ranking, const struct ttype *entry)
+MEMKIND_EXPORT void ranking_remove(ranking_t *ranking, const struct ttype *entry)
 {
     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
     ranking_remove_internal(ranking, entry);
 }
 
-void ranking_update(ranking_t *ranking, struct ttype *entry_to_update, const struct ttype *updated_value)
+MEMKIND_EXPORT void ranking_update(ranking_t *ranking, struct ttype *entry_to_update, const struct ttype *updated_value)
 {
     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
     ranking_update_internal(ranking, entry_to_update, updated_value);
 }
 
-void ranking_touch(ranking_t *ranking, struct ttype *entry, uint64_t timestamp, uint64_t add_hotness)
+MEMKIND_EXPORT void ranking_touch(ranking_t *ranking, struct ttype *entry, uint64_t timestamp, uint64_t add_hotness)
 {
     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
     ranking_touch_internal(ranking, entry, timestamp, add_hotness);

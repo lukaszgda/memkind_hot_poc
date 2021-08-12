@@ -1,4 +1,5 @@
 #include "memkind/internal/wre_avl_tree.h"
+#include "memkind/internal/memkind_private.h"
 #include "assert.h"
 #include "stdint.h"
 #include "jemalloc/jemalloc.h"
@@ -206,19 +207,19 @@ static void node_destroy(wre_node_t *node)
 
 //---public functions
 
-void wre_create(wre_tree_t **tree, is_lower compare)
+MEMKIND_EXPORT void wre_create(wre_tree_t **tree, is_lower compare)
 {
     *tree = (wre_tree_t *)jemk_malloc(sizeof(wre_tree_t));
     (*tree)->is_lower = compare;
     (*tree)->rootNode = NULL;
 }
 
-void wre_destroy(wre_tree_t *tree)
+MEMKIND_EXPORT void wre_destroy(wre_tree_t *tree)
 {
     jemk_free(tree);
 }
 
-void wre_put(wre_tree_t *tree, void *data, size_t weight)
+MEMKIND_EXPORT void wre_put(wre_tree_t *tree, void *data, size_t weight)
 {
     // TODO handle cases with two same values!
     // real scenario: two structures might have the same hotness
@@ -248,7 +249,7 @@ void wre_put(wre_tree_t *tree, void *data, size_t weight)
     tree->size++;
 }
 
-void *wre_remove(wre_tree_t *tree, const void *data)
+MEMKIND_EXPORT void *wre_remove(wre_tree_t *tree, const void *data)
 {
     void *ret_data = NULL;
     wre_node_t *cnode = find_node(tree, data);
@@ -390,7 +391,7 @@ void *wre_remove(wre_tree_t *tree, const void *data)
     return ret_data;
 }
 
-void *wre_find(wre_tree_t *tree, const void *data)
+MEMKIND_EXPORT void *wre_find(wre_tree_t *tree, const void *data)
 {
     void *ret = NULL;
     wre_node_t *cnode = find_node(tree, data);
@@ -399,7 +400,7 @@ void *wre_find(wre_tree_t *tree, const void *data)
     return ret;
 }
 
-void *wre_find_weighted(wre_tree_t *tree, double ratio)
+MEMKIND_EXPORT void *wre_find_weighted(wre_tree_t *tree, double ratio)
 {
     void *ret = NULL;
     wre_node_t *best_node = tree->rootNode;
