@@ -69,12 +69,25 @@ void register_block(uint64_t hash, void *addr, size_t size)
     critnib_insert(addr_to_block, (uintptr_t)addr, bl, 0);
 }
 
+void realloc_block(void *addr, void *new_addr, size_t size)
+{
+    struct tblock *bl = critnib_remove(addr_to_block, (intptr_t)addr);
+    if (!bl)
+        return (void)fprintf(stderr, "Tried realloc a non-allocated block at %p\n", addr);
+
+    bl->addr = new_addr;
+    struct ttype *t = &ttypes[bl->type];
+    SUB(t->total_size, bl->size);
+    ADD(t->total_size, size);
+    critnib_insert(addr_to_block, (uintptr_t)new_addr, bl, 0);
+}
+
 void unregister_block(void *addr)
 {
     struct tblock *bl = critnib_remove(addr_to_block, (intptr_t)addr);
     if (!bl)
         return (void)fprintf(stderr, "Tried deallocating a non-allocated block at %p\n", addr);
-    printf("freeing block at %p size %zu\n", addr, bl->size);
+    //printf("freeing block at %p size %zu\n", addr, bl->size);
     struct ttype *t = &ttypes[bl->type];
     SUB(t->num_allocs, 1);
     SUB(t->total_size, bl->size);
