@@ -33,6 +33,8 @@ libmemkind_la_SOURCES = src/hbwmalloc.c \
                         src/critnib.c \
                         src/pebs.c \
                         src/tachanka.c \
+                        src/ranking.cpp \
+                        src/wre_avl_tree.c \
                         # end
 
 
