@@ -58,22 +58,29 @@ test_all_tests_LDADD = libmemkind.la
 test_allocator_perf_tool_tests_LDADD = libmemkind.la
 test_autohbw_test_helper_LDADD = libmemkind.la
 test_dax_kmem_test_LDADD = libmemkind.la
+test_dax_kmem_test_LDFLAGS = $(PTHREAD_CFLAGS)
 test_decorator_test_LDADD = libmemkind.la
+test_decorator_test_LDFLAGS = $(PTHREAD_CFLAGS)
 test_environ_err_hbw_malloc_test_LDADD = libmemkind.la
 test_environ_err_dax_kmem_malloc_test_LDADD = libmemkind.la
 test_environ_err_dax_kmem_malloc_positive_test_LDADD = libmemkind.la
 test_environ_max_bg_threads_test_LDADD = libmemkind.la
 test_freeing_memory_segfault_test_LDADD = libmemkind.la
+test_freeing_memory_segfault_test_LDFLAGS = $(PTHREAD_CFLAGS)
 test_gb_page_tests_bind_policy_LDADD = libmemkind.la
+test_gb_page_tests_bind_policy_LDFLAGS = $(PTHREAD_CFLAGS)
 test_memkind_stat_test_LDADD = libmemkind.la
+test_memkind_stat_test_LDFLAGS = $(PTHREAD_CFLAGS)
 test_stats_print_test_helper_LDADD = libmemkind.la
 test_trace_mechanism_test_helper_LDADD = libmemkind.la
 
 if HAVE_CXX11
 test_pmem_test_SOURCES = $(fused_gtest) test/memkind_pmem_config_tests.cpp test/memkind_pmem_long_time_tests.cpp test/memkind_pmem_tests.cpp
 test_pmem_test_LDADD = libmemkind.la
+test_pmem_test_LDFLAGS = $(PTHREAD_CFLAGS)
 test_memkind_highcapacity_test_SOURCES = $(fused_gtest) test/memkind_highcapacity_tests.cpp
 test_memkind_highcapacity_test_LDADD = libmemkind.la
+test_memkind_highcapacity_test_LDFLAGS = $(PTHREAD_CFLAGS)
 test_hmat_test_SOURCES = $(fused_gtest) test/memkind_hmat_tests.cpp test/memory_topology.h
 test_hmat_test_LDADD = libmemkind.la
 test_environ_err_hbw_threshold_test_CXXFLAGS = $(CXXFLAGS) $(OPENMP_CFLAGS)
@@ -81,15 +88,21 @@ test_environ_err_hbw_threshold_test_SOURCES = test/environ_err_hbw_threshold_tes
 test_environ_err_hbw_threshold_test_LDADD = libmemkind.la
 test_defrag_reallocate_SOURCES = $(fused_gtest) test/memkind_defrag_reallocate.cpp
 test_defrag_reallocate_LDADD = libmemkind.la
+test_defrag_reallocate_LDFLAGS = $(PTHREAD_CFLAGS)
 test_hmat_test_CXXFLAGS = $(AM_CXXFLAGS) $(CXXFLAGS) $(OPENMP_CFLAGS)
 test_background_threads_test_SOURCES = $(fused_gtest) test/background_threads_test.cpp
 test_background_threads_test_LDADD = libmemkind.la
+test_background_threads_test_LDFLAGS = $(PTHREAD_CFLAGS)
 test_memkind_memtier_dax_kmem_test_SOURCES = $(fused_gtest) test/memkind_memtier_dax_kmem_test.cpp
 test_memkind_memtier_dax_kmem_test_LDADD = libmemkind.la
+test_memkind_memtier_dax_kmem_test_LDFLAGS = $(PTHREAD_CFLAGS)
 test_memkind_memtier_test_SOURCES = $(fused_gtest) test/memkind_memtier_test.cpp
 test_memkind_memtier_test_LDADD = libmemkind.la
+test_memkind_memtier_test_LDFLAGS = $(PTHREAD_CFLAGS)
 test_memkind_memtier_hotness_test_SOURCES = $(fused_gtest) test/memkind_memtier_hotness_test.cpp
 test_memkind_memtier_hotness_test_LDADD = libmemkind.la
+# -all-static: access to local symbols in libmemkind
+test_memkind_memtier_hotness_test_LDFLAGS = -all-static $(PTHREAD_CFLAGS)
 endif
 
 fused_gtest = test/gtest_fused/gtest/gtest-all.cc \
@@ -129,6 +142,7 @@ test_performance_test_SOURCES = $(fused_gtest) test/performance/perf_tests.cpp \
                                 test/performance/perf_tests.hpp
 
 test_performance_test_LDADD = libmemkind.la
+test_performance_test_LDFLAGS = $(PTHREAD_CFLAGS)
 
 test_locality_test_SOURCES = $(fused_gtest) test/allocator_perf_tool/Allocation_info.cpp test/locality_test.cpp
 test_locality_test_LDADD = libmemkind.la
@@ -208,11 +222,11 @@ test_allocator_perf_tool_tests_SOURCES = $(allocator_perf_tool_library_sources) 
 
 test_allocator_perf_tool_tests_CPPFLAGS = -Itest/allocator_perf_tool/ -O0 -Wno-error $(AM_CPPFLAGS)
 test_allocator_perf_tool_tests_CXXFLAGS = -Itest/allocator_perf_tool/ -O0 -Wno-error $(AM_CPPFLAGS)
-test_allocator_perf_tool_tests_LDFLAGS = -lpthread -lnuma
+test_allocator_perf_tool_tests_LDFLAGS =  $(PTHREAD_CFLAGS) -lnuma
 
 NUMAKIND_MAX = 2048
 test_all_tests_CXXFLAGS = $(AM_CXXFLAGS) $(CXXFLAGS) $(OPENMP_CFLAGS) -DNUMAKIND_MAX=$(NUMAKIND_MAX)
-test_all_tests_LDFLAGS = -ldl
+test_all_tests_LDFLAGS = $(PTHREAD_CFLAGS) -ldl
 
 #Allocator Perf Tool stand alone app
 check_PROGRAMS += test/perf_tool

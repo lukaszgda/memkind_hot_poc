@@ -5,8 +5,9 @@ noinst_PROGRAMS += utils/memtier_counter_bench/memtier_counter_bench
 
 EXTRA_DIST += utils/memtier_counter_bench/run_perf.sh
 
-utils_memtier_counter_bench_memtier_counter_bench_LDADD = libmemkind.la
 utils_memtier_counter_bench_memtier_counter_bench_SOURCES = utils/memtier_counter_bench/memtier_counter_bench.cpp
+utils_memtier_counter_bench_memtier_counter_bench_LDADD = libmemkind.la
+utils_memtier_counter_bench_memtier_counter_bench_LDFLAGS = $(PTHREAD_CFLAGS)
 
 clean-local: utils_memtier_counter_bench_memtier_counter_bench-clean
 
