@@ -101,8 +101,7 @@ test_memkind_memtier_test_LDADD = libmemkind.la
 test_memkind_memtier_test_LDFLAGS = $(PTHREAD_CFLAGS)
 test_memkind_memtier_hotness_test_SOURCES = $(fused_gtest) test/memkind_memtier_hotness_test.cpp
 test_memkind_memtier_hotness_test_LDADD = libmemkind.la
-# -all-static: access to local symbols in libmemkind
-test_memkind_memtier_hotness_test_LDFLAGS = -all-static $(PTHREAD_CFLAGS)
+test_memkind_memtier_hotness_test_LDFLAGS = $(PTHREAD_CFLAGS)
 endif
 
 fused_gtest = test/gtest_fused/gtest/gtest-all.cc \
