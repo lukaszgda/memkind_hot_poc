@@ -11,6 +11,7 @@
 #include <memkind/internal/ranking.h>
 
 #define MALLOC_HOTNESS      20u
+#define DRAM_TO_PMEM_RATIO  (1./8.)
 
 #define MAXTYPES   1*1048576
 #define MAXBLOCKS 16*1048576
@@ -97,6 +98,17 @@ void unregister_block(void *addr)
     __atomic_exchange(&freeblock, &blind, &bl->nextfree, __ATOMIC_ACQ_REL);
 }
 
+Hotness_e tachanka_is_hot(const void *addr)
+{
+    struct tblock *bl = critnib_find_le(addr_to_block, (uintptr_t)addr);
+    if (!bl || addr >= bl->addr + bl->size)
+        return HOTNESS_NOT_FOUND;
+    struct ttype *t = &ttypes[bl->type];
+    if (ranking_is_hot(ranking, t))
+        return HOTNESS_HOT;
+    return HOTNESS_COLD;
+}
+
 void touch(void *addr, __u64 timestamp, int from_malloc)
 {
     struct tblock *bl = critnib_find_le(addr_to_block, (uintptr_t)addr);
@@ -129,6 +141,16 @@ void tachanka_init(void)
     ranking_create(&ranking);
 }
 
+void tachanka_update_threshold(void)
+{
+    ranking_calculate_hot_threshold_dram_pmem(ranking, DRAM_TO_PMEM_RATIO);
+}
+
+
+void tachanka_destroy(void)
+{
+    ranking_destroy(ranking);
+}
 
 // DEBUG
 
@@ -136,7 +158,7 @@ void tachanka_init(void)
 #define MEMKIND_EXPORT __attribute__((visibility("default")))
 #endif
 
-MEMKIND_EXPORT float get_obj_hotness(int size)
+MEMKIND_EXPORT double tachanka_get_obj_hotness(int size)
 {
     for (int i = 0; i < 20; i++) {
         struct ttype* t = critnib_get_leaf(hash_to_type, i);
@@ -147,4 +169,15 @@ MEMKIND_EXPORT float get_obj_hotness(int size)
     }
 
     return -1;
+}
+
+MEMKIND_EXPORT double tachanka_get_addr_hotness(void *addr)
+{
+    double ret = -1;
+    struct tblock *bl = critnib_find_le(addr_to_block, (uintptr_t)addr);
+    if (bl) {
+        struct ttype *t = &ttypes[bl->type];
+        ret = t->f;
+    }
+    return ret;
 }

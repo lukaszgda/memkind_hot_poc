@@ -229,7 +229,7 @@ int memtier_ctl_set(struct memtier_builder *builder, const char *name,
 
 
 // DEBUG
-float get_obj_hotness(int size);
+// float get_obj_hotness(int size);
 
 #ifdef __cplusplus
 }

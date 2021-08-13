@@ -131,6 +131,7 @@ void *pebs_monitor(void *state)
         last_head = pebs_metadata->data_head;
         pebs_metadata->data_tail = pebs_metadata->data_head;
 
+        tachanka_update_threshold();
 		sleep(1);
     }
 

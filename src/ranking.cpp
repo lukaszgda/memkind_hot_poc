@@ -20,7 +20,9 @@ extern "C" {
 //  2) tests
 //  3) optimisation: AVL trees with additional cached data in nodes
 
-// hotness: entry->n2
+// hotness: hotness (entry)
+
+#define hotness(ttype) ((ttype)->f)
 
 using namespace std;
 
@@ -34,6 +36,7 @@ typedef struct AggregatedHotness {
     size_t size;
     double hotness;
 } AggregatedHotness_t;
+
 
 //--------private function implementation---------
 
@@ -64,7 +67,7 @@ static void touch_entry(struct ttype *entry, uint64_t timestamp, uint64_t add_ho
 
 void touch_entry(struct ttype *entry, uint64_t timestamp, uint64_t add_hotness)
 {
-    entry->n2 += add_hotness;
+    hotness (entry) += add_hotness;
     entry->t0 = timestamp;
     if(entry->timestamp_state == TIMESTAMP_NOT_SET) {
         entry->t2 = timestamp;
@@ -73,12 +76,12 @@ void touch_entry(struct ttype *entry, uint64_t timestamp, uint64_t add_hotness)
     if (entry->timestamp_state == TIMESTAMP_INIT_DONE) {
         if ((entry->t0 - entry->t1) > HOTNESS_MEASURE_WINDOW) {
             // move to next measurement window
-            float f2 = (float)entry->n2 * entry->t2 / (entry->t2 - entry->t0);
+            float f2 = (float)hotness (entry) * entry->t2 / (entry->t2 - entry->t0);
             float f1 = (float)entry->n1 * entry->t1 / (entry->t2 - entry->t0);
             entry->f = f2 * 0.3 + f1 * 0.7; // TODO weighted sum or sth else?
             entry->t2 = entry->t1;
             entry->t1 = entry->t0;
-            entry->n2 = entry->n1;
+            hotness (entry) = entry->n1;
             entry->n1 = 0;
         }
     } else {
@@ -99,6 +102,7 @@ void ranking_create_internal(ranking_t **ranking)
     // placement new for mutex
     // mutex is already inside a structure, so alignment should be ok
     (void)new ((void*)(&(*ranking)->mutex)) std::mutex();
+    (*ranking)->hotThreshold=0.;
 }
 
 void ranking_destroy_internal(ranking_t *ranking)
@@ -140,7 +144,7 @@ ranking_calculate_hot_threshold_dram_pmem_internal(ranking_t *ranking,
 void ranking_add_internal(ranking_t *ranking, struct ttype *entry)
 {
     AggregatedHotness temp;
-    temp.hotness = entry->n2; // only hotness matters for lookup
+    temp.hotness = hotness (entry); // only hotness matters for lookup
     AggregatedHotness_t *value =
         (AggregatedHotness_t *)wre_remove(ranking->entries, &temp);
     if (value) {
@@ -148,7 +152,7 @@ void ranking_add_internal(ranking_t *ranking, struct ttype *entry)
         value->size += entry->size;
     } else {
         value = (AggregatedHotness_t *)jemk_malloc(sizeof(AggregatedHotness_t));
-        value->hotness = entry->n2;
+        value->hotness = hotness (entry);
         value->size = entry->size;
     }
     wre_put(ranking->entries, value, value->size);
@@ -156,13 +160,13 @@ void ranking_add_internal(ranking_t *ranking, struct ttype *entry)
 
 bool ranking_is_hot_internal(ranking_t *ranking, struct ttype *entry)
 {
-    return entry->n2 >= ranking_get_hot_threshold_internal(ranking);
+    return hotness (entry) >= ranking_get_hot_threshold_internal(ranking);
 }
 
 void ranking_remove_internal(ranking_t *ranking, const struct ttype *entry)
 {
     AggregatedHotness temp;
-    temp.hotness = entry->n2; // only hotness matters for lookup
+    temp.hotness = hotness (entry); // only hotness matters for lookup
     AggregatedHotness_t *removed =
         (AggregatedHotness_t *)wre_remove(ranking->entries, &temp);
     if (removed) {

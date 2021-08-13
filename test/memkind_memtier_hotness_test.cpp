@@ -2,6 +2,7 @@
 /* Copyright (C) 2021 Intel Corporation. */
 
 #include <memkind/internal/memkind_memtier.h>
+#include <memkind/internal/tachanka.h>
 
 #include <random>
 #include <thread>
@@ -205,7 +206,7 @@ TEST_P(MemkindMemtierHotnessTest, test_matmul)
 
             if (num_allocated_objs == OBJS_NUM) {
                 for (int it2 = 0; it2 < OBJS_NUM; it2++) {
-                    accum_hotness[it2][it] = get_obj_hotness(mat_size + it2 * sizeof(double));
+                    accum_hotness[it2][it] = tachanka_get_obj_hotness(mat_size + it2 * sizeof(double));
                 }
 
                 if (it > LOOP_CHECK_START) {
@@ -231,6 +232,28 @@ TEST_P(MemkindMemtierHotnessTest, test_matmul)
         // DEBUG
         //printf("dst %d\n", dest_obj_id);
         //fflush(stdout);
+
+        // TODO check object hotness
+        //
+        // How the check for hotness should look like:
+        //  1) sort all objects/types by their frequency
+        //  2) calculate sum of all sizes
+        //  3) hand-calculate which objects should be cold and which ones hot
+        //  4) make a check in two loops: first loop for hot, second loop for cold
+        //
+        // Possible issues:
+        //  1) pebs thread has not done its work; mitigation:
+        //      a) wait (race condition-based mitigation)
+        //      b) explicitly call pebs thread
+        //  2) general race condition with pebs:
+        //      i) cases:
+        //          a) not enough: see point 1,
+        //          b) too many times: old time window is gone,
+        //          latest has 0 measurements
+        //      ii) mitigation:
+        //          a) explicitly call pebs, without separate thread
+        //
+        // For now, only "quickfix": make a test that's vulnerable to race condition
 	}
 }
 
@@ -257,7 +280,7 @@ private:
 
         for (size_t i=0; i<BLOCKS_SIZE; ++i) {
             blocks[i].size=BLOCKS_SIZE-i;
-            blocks[i].n2=i;
+            blocks[i].f=i;
             ranking_add(ranking, &blocks[i]);
         }
 
@@ -368,7 +391,7 @@ private:
 
         for (size_t i=0; i<BLOCKS_SIZE; ++i) {
             blocks[i].size=BLOCKS_SIZE-i;
-            blocks[i].n2=i%50;
+            blocks[i].f=i%50;
             ranking_add(ranking, &blocks[i]);
         }
 
@@ -638,4 +661,195 @@ TEST_F(WreTreeTest, add_remove_multiple_modes_desc) {
     ASSERT_EQ(tree->rootNode->height, 6u);
     // check contents
     ASSERT_EQ(tree->rootNode->subtreeWeight, 5050u);
+}
+
+// ----------------- hotness integration tests
+
+class TestMatrix {
+    const int MATRIX_SIZE = 512;
+    const int MUL_STEP = 5;
+    const int MAT_SIZE = sizeof(double) * MATRIX_SIZE * MATRIX_SIZE;
+    const double frequency; /// @pre  0 < frequency <= 1
+    double accumulated_freq=0;
+    double *data;
+
+public:
+    void operator =(const TestMatrix &mat)=delete;
+    // required for vector<TestMatrix>::reserve:
+    // TestMatrix(const TestMatrix &mat)=delete;
+    TestMatrix(double freq) : frequency(freq) {
+        if (frequency > 1 || frequency <=0) {
+            std::string error_info("Incorrect frequency: ");
+            error_info += frequency;
+            throw std::runtime_error(error_info);
+        }
+
+        data = nullptr;
+    }
+
+    virtual ~TestMatrix() {
+        // DATA IS NOT FREED!
+        // would be best to have a reference counter, or sth - shared ptr?
+    }
+
+    void DoSomeWork() {
+        accumulated_freq+=frequency;
+        if (accumulated_freq>=1) {
+            ::naive_matrix_multiply(MATRIX_SIZE, MUL_STEP, data, data, data);
+            accumulated_freq -=1.;
+        }
+    }
+
+    double GetHotness() {
+        return tachanka_get_addr_hotness(data);
+    }
+
+protected:
+    virtual void FreeData() {
+        memtier_free(data);
+        data=nullptr;
+    }
+
+    virtual void AllocData(struct memtier_memory *m) {
+        memtier_free(data);
+        data = (double*)memtier_malloc(m, MAT_SIZE);
+    }
+
+    virtual void ReallocData(struct memtier_memory *m) {
+        double *data_temp = (double*)memtier_malloc(m, MAT_SIZE);
+        memtier_free(data);
+        data = data_temp;
+    }
+};
+
+// MEMKIND_NO_INLINE is not necessary, these functions are virtual
+// stays here for human visibility - the intent is more verbose and explicit
+#define MEMKIND_NO_INLINE __attribute__((noinline))
+
+// define TestMatrixA and TestMatrixB
+// both of them support the same operations
+// but their Free/Alloc have different backtrace
+
+class TestMatrixA : public TestMatrix {
+public:
+    MEMKIND_NO_INLINE TestMatrixA(struct memtier_memory *m, double freq) :
+        TestMatrix(freq) {
+        AllocData(m);
+    }
+
+    MEMKIND_NO_INLINE void FreeData() {
+        return TestMatrix::FreeData();
+    }
+    MEMKIND_NO_INLINE void AllocData(struct memtier_memory *m) {
+        return TestMatrix::AllocData(m);
+    }
+    MEMKIND_NO_INLINE void ReallocData(struct memtier_memory *m) {
+        return TestMatrix::ReallocData(m);
+    }
+};
+
+class TestMatrixB : public TestMatrix {
+public:
+    MEMKIND_NO_INLINE TestMatrixB(struct memtier_memory *m, double freq) :
+        TestMatrix(freq) {
+        AllocData(m);
+    }
+
+    MEMKIND_NO_INLINE void FreeData() {
+        return TestMatrix::FreeData();
+    }
+    MEMKIND_NO_INLINE void AllocData(struct memtier_memory *m) {
+        return TestMatrix::AllocData(m);
+    }
+    MEMKIND_NO_INLINE void ReallocData(struct memtier_memory *m) {
+        return TestMatrix::ReallocData(m);
+    }
+};
+
+class IntegrationHotnessTest: public ::testing::Test
+{
+protected:
+    // base frequency of 1, 1/2, 1/3, 1/4, ...
+    std::vector<TestMatrixA> matricesA;
+    // base frequency of 1/2, 1/3, 1/4, 1/5, ...
+    std::vector<TestMatrixB> matricesB;
+    static constexpr size_t MATRICES_SIZE=10u;
+    struct memtier_builder *m_builder;
+    struct memtier_memory *m_tier_memory;
+private:
+    void SetUp()
+    {
+        m_builder = memtier_builder_new(MEMTIER_POLICY_DATA_HOTNESS);
+
+        int res = memtier_builder_add_tier(m_builder, MEMKIND_DEFAULT, 1);
+        ASSERT_EQ(0, res);
+        m_tier_memory = memtier_builder_construct_memtier_memory(m_builder);
+        ASSERT_NE(nullptr, m_tier_memory);
+
+        matricesA.reserve(MATRICES_SIZE);
+        matricesB.reserve(MATRICES_SIZE);
+        for (size_t i=0; i<MATRICES_SIZE; ++i) {
+            double base_frequency = 1./(i+1);
+            matricesA.push_back(TestMatrixA(m_tier_memory, base_frequency));
+            matricesB.push_back(TestMatrixB(m_tier_memory, base_frequency/2));
+        }
+    }
+
+    void TearDown()
+    {
+    }
+};
+
+// How the check for hotness should look like:
+//  1) sort all objects/types by their frequency
+//  2) calculate sum of all sizes
+//  3) hand-calculate which objects should be cold and which ones hot
+//  4) make a check in two loops: first loop for hot, second loop for cold
+//
+// Possible issues:
+//  1) pebs thread has not done its work; mitigation:
+//      a) wait (race condition-based mitigation)
+//      b) explicitly call pebs thread
+//  2) general race condition with pebs:
+//      i) cases:
+//          a) not enough: see point 1,
+//          b) too many times: old time window is gone,
+//          latest has 0 measurements
+//      ii) mitigation:
+//          a) explicitly call pebs, without separate thread
+//
+// For now, only "quickfix": make a test that's vulnerable to race condition
+
+TEST_F(IntegrationHotnessTest, test_matmul_hotness)
+{
+    // SIMPLE TEST - use only one Matrix per type
+    TestMatrixA &ma = matricesA[0];
+    TestMatrixB &mb = matricesB[0]; // should do half the work of ma
+    auto start_point = std::chrono::steady_clock::now();
+    auto end_point = start_point;
+    double millis_elapsed=0;
+    const double LIMIT_MILLIS=10000;
+    do {
+        ma.DoSomeWork();
+        mb.DoSomeWork();
+        end_point = std::chrono::steady_clock::now();
+        std::chrono::duration<double> duration = end_point-start_point;
+        millis_elapsed =
+            std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+    } while (millis_elapsed < LIMIT_MILLIS);
+    double hotness_a=ma.GetHotness();
+    double hotness_b=mb.GetHotness();
+
+    // check if address is known and hotness was calculated
+    ASSERT_GT(hotness_a, 0);
+    ASSERT_GT(hotness_b, 0);
+
+    // rough check
+    ASSERT_GT(hotness_a, hotness_b);
+
+    // check if hotness ratio is as expected
+    double ACCURACY = 1e-3;
+    double EXPECTED_HOTNESS_RATIO = 2;
+    double calculated_hotness_ratio = hotness_a/hotness_b;
+    ASSERT_LE(abs(calculated_hotness_ratio - EXPECTED_HOTNESS_RATIO), ACCURACY);
 }
