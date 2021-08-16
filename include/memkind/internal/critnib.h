@@ -22,9 +22,6 @@ int critnib_get(struct critnib *c, uint64_t key);
 int critnib_find_le(struct critnib *c, uint64_t key);
 void critnib_iter(struct critnib *c, int (*func)(int leaf));
 
-// DEBUG
-void *critnib_get_leaf(struct critnib *c, uint64_t n);
-
 #ifdef __cplusplus
 }
 #endif

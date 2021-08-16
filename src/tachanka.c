@@ -169,15 +169,22 @@ void tachanka_init(void)
 #define MEMKIND_EXPORT __attribute__((visibility("default")))
 #endif
 
+static int _size;
+static float _hotness;
+
+static int size_hotness(int nt)
+{
+    if (ttypes[nt].size == _size) {
+        _hotness = ttypes[nt].f;
+        return 1;
+    }
+    return 0;
+}
+
 MEMKIND_EXPORT float get_obj_hotness(int size)
 {
-    for (int i = 0; i < 20; i++) {
-        struct ttype* t = critnib_get_leaf(hash_to_type, i);
-
-        if (t != NULL && t->size == size) {
-             return t->f;
-        }
-    }
-
-    return -1;
+    _size = size;
+    _hotness = -1;
+    critnib_iter(hash_to_type, size_hotness);
+    return _hotness;
 }

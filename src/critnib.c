@@ -619,12 +619,6 @@ critnib_find_le(struct critnib *c, uint64_t key)
 	return res;
 }
 
-// DEBUG
-void *
-critnib_get_leaf(struct critnib *c, uint64_t n) {
-	return (void*)&L(n);
-}
-
 static int
 iter(struct critnib *c, cn_t n, int (*func)(int k))
 {

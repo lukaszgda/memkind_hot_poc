@@ -17,6 +17,17 @@ static char *pebs_mmap;
 
 // DEBUG
 extern critnib* hash_to_type;
+extern struct ttype ttypes[];
+static char *bp;
+static int display_hotness(int nt)
+{
+    const struct ttype *t = &ttypes[nt];
+    if (t->hot_or_not >= 0)
+        bp += sprintf(bp, "%f,", t->f);
+    else
+        bp += sprintf(bp, "N/A,");
+    return 0;
+}
 
 #define LOG_TO_FILE 1
 
@@ -34,8 +45,8 @@ void *pebs_monitor(void *state)
     __u64 last_head = 0;
 
     // DEBUG
-    char buf[4096];
 #if LOG_TO_FILE
+    char buf[4*1048576];
     static int pid;
     static int log_file;
     int cur_pid = getpid();
@@ -106,24 +117,10 @@ void *pebs_monitor(void *state)
 
 #if LOG_TO_FILE
             // DEBUG
-            int nchars = 0;
-            int total_chars = 0;
-            for (int i = 0; i < 20; i++) {
-                struct ttype* tb = critnib_get_leaf(hash_to_type, i);
-
-                if (tb != NULL && tb->hot_or_not >= 0)
-                {
-                    float f = tb->f;
-                    sprintf(buf + total_chars, "%f,%n", f, &nchars);
-                }
-                else {
-                    sprintf(buf + total_chars, "N/A,%n", &nchars);
-                }
-
-                total_chars += nchars;
-            }
-            sprintf(buf + total_chars, "\n");
-            if (write(log_file, buf, strlen(buf)));
+            bp = buf;
+            critnib_iter(hash_to_type, display_hotness);
+            bp += sprintf(bp, "\n");
+            if (write(log_file, buf, bp - buf));
 #endif
         }
 
