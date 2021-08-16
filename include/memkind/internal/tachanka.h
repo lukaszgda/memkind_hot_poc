@@ -6,6 +6,7 @@ void touch(void *addr, __u64 timestamp, int from_malloc);
 void tachanka_init(void);
 
 struct ttype {
+    uint64_t hash;
     size_t size;
     int num_allocs; // TODO
     int total_size; // TODO

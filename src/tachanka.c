@@ -33,18 +33,24 @@ int is_hot(uint64_t hash)
 
 void register_block(uint64_t hash, void *addr, size_t size)
 {
-    struct ttype *t = critnib_get(hash_to_type, hash);
-    if (!t) {
-        t = &ttypes[__sync_fetch_and_add(&ntypes, 1)];
-        if (t >= &ttypes[MAXTYPES])
+    struct ttype *t;
+    int nt = critnib_get(hash_to_type, hash);
+    if (nt == -1) {
+        nt = __sync_fetch_and_add(&ntypes, 1);
+        t = &ttypes[nt];
+        if (nt >= MAXTYPES)
             fprintf(stderr, "Too many distinct alloc types\n"), exit(1);
+        t->hash = hash;
         t->size = size;
         t->hot_or_not = -2; // no time set
-        if (critnib_insert(hash_to_type, hash, t, 0) == EEXIST) {
-            t = critnib_get(hash_to_type, hash); // raced with another thread
-            if (!t)
+        if (critnib_insert(hash_to_type, nt) == EEXIST) {
+            nt = critnib_get(hash_to_type, hash); // raced with another thread
+            if (nt == -1)
                 fprintf(stderr, "Alloc type disappeared?!?\n"), exit(1);
+            t = &ttypes[nt];
         }
+    } else {
+        t = &ttypes[nt];
     }
 
     t->num_allocs++;
@@ -63,48 +69,49 @@ void register_block(uint64_t hash, void *addr, size_t size)
     } while (!__atomic_compare_exchange_n(&freeblock, &fb, nf, 1, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE));
 
     struct tblock *bl = &tblocks[fb];
-    if (bl >= &tblocks[MAXBLOCKS])
+    if (fb >= MAXBLOCKS)
         fprintf(stderr, "Too many allocated blocks\n"), exit(1);
 
     bl->addr = addr;
     bl->size = size;
-    bl->type = t - ttypes;
-    critnib_insert(addr_to_block, (uintptr_t)addr, bl, 0);
+    bl->type = nt;
+    critnib_insert(addr_to_block, fb);
 }
 
 void realloc_block(void *addr, void *new_addr, size_t size)
 {
-    struct tblock *bl = critnib_remove(addr_to_block, (intptr_t)addr);
-    if (!bl)
+    int bln = critnib_remove(addr_to_block, (intptr_t)addr);
+    if (bln == -1)
         return (void)fprintf(stderr, "Tried realloc a non-allocated block at %p\n", addr);
+    struct tblock *bl = &tblocks[bln];
 
     bl->addr = new_addr;
     struct ttype *t = &ttypes[bl->type];
     SUB(t->total_size, bl->size);
     ADD(t->total_size, size);
-    critnib_insert(addr_to_block, (uintptr_t)new_addr, bl, 0);
+    critnib_insert(addr_to_block, bln);
 }
 
 void unregister_block(void *addr)
 {
-    struct tblock *bl = critnib_remove(addr_to_block, (intptr_t)addr);
-    if (!bl)
+    int bln = critnib_remove(addr_to_block, (intptr_t)addr);
+    if (bln == -1)
         return (void)fprintf(stderr, "Tried deallocating a non-allocated block at %p\n", addr);
-    //printf("freeing block at %p size %zu\n", addr, bl->size);
+    struct tblock *bl = &tblocks[bln];
     struct ttype *t = &ttypes[bl->type];
     SUB(t->num_allocs, 1);
     SUB(t->total_size, bl->size);
     bl->addr = 0;
     bl->size = 0;
-    int blind = bl - tblocks;
-    __atomic_exchange(&freeblock, &blind, &bl->nextfree, __ATOMIC_ACQ_REL);
+    __atomic_exchange(&freeblock, &bln, &bl->nextfree, __ATOMIC_ACQ_REL);
 }
 
 void touch(void *addr, __u64 timestamp, int from_malloc)
 {
-    struct tblock *bl = critnib_find_le(addr_to_block, (uintptr_t)addr);
-    if (!bl)
+    int bln = critnib_find_le(addr_to_block, (uintptr_t)addr);
+    if (bln == -1)
         return;
+    struct tblock *bl = &tblocks[bln];
     if (addr >= bl->addr + bl->size)
         return;
 
@@ -151,8 +158,8 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
 void tachanka_init(void)
 {
     read_maps();
-    hash_to_type = critnib_new();
-    addr_to_block = critnib_new();
+    addr_to_block = critnib_new((uint64_t*)tblocks, sizeof(tblocks[0]) / sizeof(uint64_t));
+    hash_to_type = critnib_new((uint64_t*)ttypes, sizeof(ttypes[0]) / sizeof(uint64_t));
 }
 
 

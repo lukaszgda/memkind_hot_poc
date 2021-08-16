@@ -13,14 +13,14 @@ extern "C" {
 struct critnib;
 typedef struct critnib critnib;
 
-struct critnib *critnib_new(void);
+struct critnib *critnib_new(const uint64_t *leaves, int leaf_stride);
 void critnib_delete(struct critnib *c);
 
-int critnib_insert(struct critnib *c, uint64_t key, void *value, int update);
-void *critnib_remove(struct critnib *c, uint64_t key);
-void *critnib_get(struct critnib *c, uint64_t key);
-void *critnib_find_le(struct critnib *c, uint64_t key);
-void critnib_iter(struct critnib *c, int (*func)(uint64_t key, void *value));
+int critnib_insert(struct critnib *c, int leaf);
+int critnib_remove(struct critnib *c, uint64_t key);
+int critnib_get(struct critnib *c, uint64_t key);
+int critnib_find_le(struct critnib *c, uint64_t key);
+void critnib_iter(struct critnib *c, int (*func)(int leaf));
 
 // DEBUG
 void *critnib_get_leaf(struct critnib *c, uint64_t n);
