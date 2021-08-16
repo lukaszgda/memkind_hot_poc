@@ -52,6 +52,22 @@ void naive_matrix_multiply(int matrix_size, int mul_step,
     return;
 }
 
+class RandomIncremeneter {
+public:
+    RandomIncremeneter() {
+//         generator = std::mt19937(rand_dev());
+    }
+    void IncrementRandom(volatile uint8_t *data, size_t size) {
+        assert(data != NULL);
+        std::random_device dev;
+        std::mt19937 generator(dev());
+        std::uniform_int_distribution<uint64_t> distr(0, size-1);
+        size_t index = distr(generator);
+        assert(index < size);
+        data[index]++;
+    }
+};
+
 class MemkindMemtierKindTest: public ::testing::Test
 {
 private:
@@ -665,19 +681,18 @@ TEST_F(WreTreeTest, add_remove_multiple_modes_desc) {
 
 // ----------------- hotness integration tests
 
-class TestMatrix {
-    const int MATRIX_SIZE = 512;
-    const int MUL_STEP = 5;
-    const int MAT_SIZE = sizeof(double) * MATRIX_SIZE * MATRIX_SIZE;
+class TestBuffer {
+    const size_t BUFF_SIZE = 1e8; // 100 MB
     const double frequency; /// @pre  0 < frequency <= 1
     double accumulated_freq=0;
-    double *data;
+    uint8_t *data;
+    RandomIncremeneter incrementer;
 
 public:
-    void operator =(const TestMatrix &mat)=delete;
+    void operator =(const TestBuffer &mat)=delete;
     // required for vector<TestMatrix>::reserve:
     // TestMatrix(const TestMatrix &mat)=delete;
-    TestMatrix(double freq) : frequency(freq) {
+    TestBuffer(double freq) : frequency(freq) {
         if (frequency > 1 || frequency <=0) {
             std::string error_info("Incorrect frequency: ");
             error_info += frequency;
@@ -687,7 +702,7 @@ public:
         data = nullptr;
     }
 
-    virtual ~TestMatrix() {
+    virtual ~TestBuffer() {
         // DATA IS NOT FREED!
         // would be best to have a reference counter, or sth - shared ptr?
     }
@@ -695,9 +710,19 @@ public:
     void DoSomeWork() {
         accumulated_freq+=frequency;
         if (accumulated_freq>=1) {
-            ::naive_matrix_multiply(MATRIX_SIZE, MUL_STEP, data, data, data);
+            incrementer.IncrementRandom(data, BUFF_SIZE);
             accumulated_freq -=1.;
         }
+    }
+
+    uint64_t CalculateSum() {
+        uint64_t sum=0u;
+        if (data) {
+            for (volatile size_t i=0u; i<BUFF_SIZE; ++i) {
+                sum += data[i];
+            }
+        }
+        return sum;
     }
 
     double GetHotness() {
@@ -712,11 +737,16 @@ protected:
 
     virtual void AllocData(struct memtier_memory *m) {
         memtier_free(data);
-        data = (double*)memtier_malloc(m, MAT_SIZE);
+        data = (uint8_t*)memtier_malloc(m, BUFF_SIZE);
+        static size_t counter=0;
+        std::string name = std::string("buff_")+std::to_string(counter)+"]";
+        printf("allocated data [%s] at %p, size: [%lu]", name.c_str(), data, BUFF_SIZE);
+        tachanka_set_monitoring(data, name.c_str());
+        ++counter;
     }
 
     virtual void ReallocData(struct memtier_memory *m) {
-        double *data_temp = (double*)memtier_malloc(m, MAT_SIZE);
+        uint8_t *data_temp = (uint8_t*)memtier_malloc(m, BUFF_SIZE);
         memtier_free(data);
         data = data_temp;
     }
@@ -730,39 +760,38 @@ protected:
 // both of them support the same operations
 // but their Free/Alloc have different backtrace
 
-class TestMatrixA : public TestMatrix {
+class TestBufferA : public TestBuffer {
 public:
-    MEMKIND_NO_INLINE TestMatrixA(struct memtier_memory *m, double freq) :
-        TestMatrix(freq) {
+    MEMKIND_NO_INLINE TestBufferA(struct memtier_memory *m, double freq) :
+        TestBuffer(freq) {
         AllocData(m);
     }
-
     MEMKIND_NO_INLINE void FreeData() {
-        return TestMatrix::FreeData();
+        return TestBuffer::FreeData();
     }
     MEMKIND_NO_INLINE void AllocData(struct memtier_memory *m) {
-        return TestMatrix::AllocData(m);
+        return TestBuffer::AllocData(m);
     }
     MEMKIND_NO_INLINE void ReallocData(struct memtier_memory *m) {
-        return TestMatrix::ReallocData(m);
+        return TestBuffer::ReallocData(m);
     }
 };
 
-class TestMatrixB : public TestMatrix {
+class TestBufferB : public TestBuffer {
 public:
-    MEMKIND_NO_INLINE TestMatrixB(struct memtier_memory *m, double freq) :
-        TestMatrix(freq) {
+    MEMKIND_NO_INLINE TestBufferB(struct memtier_memory *m, double freq) :
+        TestBuffer(freq) {
         AllocData(m);
     }
 
     MEMKIND_NO_INLINE void FreeData() {
-        return TestMatrix::FreeData();
+        return TestBuffer::FreeData();
     }
     MEMKIND_NO_INLINE void AllocData(struct memtier_memory *m) {
-        return TestMatrix::AllocData(m);
+        return TestBuffer::AllocData(m);
     }
     MEMKIND_NO_INLINE void ReallocData(struct memtier_memory *m) {
-        return TestMatrix::ReallocData(m);
+        return TestBuffer::ReallocData(m);
     }
 };
 
@@ -770,10 +799,12 @@ class IntegrationHotnessTest: public ::testing::Test
 {
 protected:
     // base frequency of 1, 1/2, 1/3, 1/4, ...
-    std::vector<TestMatrixA> matricesA;
+    std::vector<TestBufferA> bufferA;
     // base frequency of 1/2, 1/3, 1/4, 1/5, ...
-    std::vector<TestMatrixB> matricesB;
-    static constexpr size_t MATRICES_SIZE=10u;
+    std::vector<TestBufferB> bufferB;
+    const size_t ALLOCATED_SIZE=1e9; // 1 GB
+
+    static constexpr size_t MATRICES_SIZE=1u;
     struct memtier_builder *m_builder;
     struct memtier_memory *m_tier_memory;
 private:
@@ -786,12 +817,12 @@ private:
         m_tier_memory = memtier_builder_construct_memtier_memory(m_builder);
         ASSERT_NE(nullptr, m_tier_memory);
 
-        matricesA.reserve(MATRICES_SIZE);
-        matricesB.reserve(MATRICES_SIZE);
+        bufferA.reserve(MATRICES_SIZE);
+        bufferB.reserve(MATRICES_SIZE);
         for (size_t i=0; i<MATRICES_SIZE; ++i) {
             double base_frequency = 1./(i+1);
-            matricesA.push_back(TestMatrixA(m_tier_memory, base_frequency));
-            matricesB.push_back(TestMatrixB(m_tier_memory, base_frequency/2));
+            bufferA.push_back(TestBufferA(m_tier_memory, base_frequency));
+            bufferB.push_back(TestBufferB(m_tier_memory, base_frequency/2));
         }
     }
 
@@ -820,25 +851,41 @@ private:
 //
 // For now, only "quickfix": make a test that's vulnerable to race condition
 
-TEST_F(IntegrationHotnessTest, test_matmul_hotness)
+TEST_F(IntegrationHotnessTest, test_random_hotness)
 {
     // SIMPLE TEST - use only one Matrix per type
-    TestMatrixA &ma = matricesA[0];
-    TestMatrixB &mb = matricesB[0]; // should do half the work of ma
+    TestBufferA &ma = bufferA[0];
+    TestBufferB &mb = bufferB[0]; // should do half the work of ma
     auto start_point = std::chrono::steady_clock::now();
     auto end_point = start_point;
     double millis_elapsed=0;
     const double LIMIT_MILLIS=10000;
-    do {
+    size_t iterations=0u;
+    for (iterations=0; millis_elapsed < LIMIT_MILLIS; ++iterations) {
         ma.DoSomeWork();
         mb.DoSomeWork();
         end_point = std::chrono::steady_clock::now();
         std::chrono::duration<double> duration = end_point-start_point;
         millis_elapsed =
-            std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
-    } while (millis_elapsed < LIMIT_MILLIS);
+            std::chrono::duration_cast<std::chrono::milliseconds>(duration)
+                .count();
+    }
     double hotness_a=ma.GetHotness();
     double hotness_b=mb.GetHotness();
+
+    uint64_t asum = ma.CalculateSum();
+    uint64_t bsum = mb.CalculateSum();
+    // use calcualted data - prevent all loops from being optimized out
+    printf("Calculated task, total sums: A [%lu], B [%lu]", asum, bsum);
+
+    double ACCURACY = 1e-3;
+    // check if sum ratio is as expected - a measure of work done
+    double EXPECTED_SUM_RATIO = 2;
+    double calculated_sum_ratio = ((double)asum)/bsum;
+    ASSERT_LE(abs(calculated_sum_ratio - EXPECTED_SUM_RATIO), ACCURACY);
+
+    const size_t MIN_SIGNIFICANT_WORK=2;
+    ASSERT_GT(iterations, MIN_SIGNIFICANT_WORK);
 
     // check if address is known and hotness was calculated
     ASSERT_GT(hotness_a, 0);
@@ -848,7 +895,6 @@ TEST_F(IntegrationHotnessTest, test_matmul_hotness)
     ASSERT_GT(hotness_a, hotness_b);
 
     // check if hotness ratio is as expected
-    double ACCURACY = 1e-3;
     double EXPECTED_HOTNESS_RATIO = 2;
     double calculated_hotness_ratio = hotness_a/hotness_b;
     ASSERT_LE(abs(calculated_hotness_ratio - EXPECTED_HOTNESS_RATIO), ACCURACY);

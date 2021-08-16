@@ -5,6 +5,7 @@ extern "C" {
 #endif
 
 #include "stdint.h"
+#include "stdlib.h"
 #include "asm-generic/int-ll64.h"
 
 typedef enum TimestampState {
@@ -29,6 +30,7 @@ void tachanka_destroy(void);
 void tachanka_update_threshold(void);
 double tachanka_get_obj_hotness(int size);
 double tachanka_get_addr_hotness(void *addr);
+double tachanka_set_monitoring(void *addr, const char*name);
 Hotness_e tachanka_is_hot(const void *addr);
 
 struct ttype {
@@ -43,6 +45,7 @@ struct ttype {
     int n2;   // num of access in prev window
     int n1;   // num of access in current window
 
+    char *monitorName;
     double f;  // frequency
     TimestampState_t timestamp_state;
 };

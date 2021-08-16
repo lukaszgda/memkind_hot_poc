@@ -48,3 +48,6 @@ ranking_calculate_hot_threshold_dram_total(ranking_t *ranking,
 extern double ranking_calculate_hot_threshold_dram_pmem(ranking_t *ranking,
                                                         double dram_pmem_ratio);
 extern bool ranking_is_hot(ranking_t *ranking, struct ttype *entry);
+
+
+extern void ranking_set_monitoring(ranking_t *ranking, const char* name, struct ttype *type);

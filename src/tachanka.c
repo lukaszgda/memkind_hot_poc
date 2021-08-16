@@ -43,6 +43,7 @@ void register_block(uint64_t hash, void *addr, size_t size)
             if (!t)
                 fprintf(stderr, "Alloc type disappeared?!?\n"), exit(1);
         }
+        t->monitorName = NULL;
     }
 
     t->num_allocs++;
@@ -178,6 +179,17 @@ MEMKIND_EXPORT double tachanka_get_addr_hotness(void *addr)
     if (bl) {
         struct ttype *t = &ttypes[bl->type];
         ret = t->f;
+    }
+    return ret;
+}
+
+MEMKIND_EXPORT double tachanka_set_monitoring(void *addr, const char *name)
+{
+    double ret = -1;
+    struct tblock *bl = critnib_find_le(addr_to_block, (uintptr_t)addr);
+    if (bl) {
+        struct ttype *t = &ttypes[bl->type];
+        ranking_set_monitoring(ranking, name, t);
     }
     return ret;
 }

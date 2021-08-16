@@ -40,6 +40,7 @@ void *pebs_monitor(void *state)
     static int log_file;
     int cur_pid = getpid();
     int cur_tid = gettid();
+    printf("starting pebs monitor for thread %d", cur_tid);
     if (pid != cur_pid) {
         char name[255] = {0};
         sprintf(name, "tier_pid_%d_tid_%d.log", cur_pid, cur_tid);
@@ -134,6 +135,7 @@ void *pebs_monitor(void *state)
         tachanka_update_threshold();
 		sleep(1);
     }
+    printf("stopping pebs monitor for thread %d", cur_tid);
 
     return NULL;
 }
