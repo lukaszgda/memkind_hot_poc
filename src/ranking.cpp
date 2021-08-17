@@ -20,16 +20,14 @@ extern "C" {
 //  2) tests
 //  3) optimisation: AVL trees with additional cached data in nodes
 
-// hotness: hotness (entry)
-
-#define hotness(ttype) ((ttype)->f)
-
 using namespace std;
 
 struct ranking {
     double hotThreshold;
     wre_tree_t *entries;
     std::mutex mutex;
+    double oldWeight;
+    double newWeight;
 };
 
 typedef struct AggregatedHotness {
@@ -47,7 +45,7 @@ static bool is_hotter_agg_hot(const void *a, const void *b)
     return a_hot > b_hot;
 }
 
-static void ranking_create_internal(ranking_t **ranking);
+static void ranking_create_internal(ranking_t **ranking, double old_weight);
 static void ranking_destroy_internal(ranking_t *ranking);
 static void ranking_add_internal(ranking_t *ranking, struct ttype *entry);
 static void ranking_remove_internal(ranking_t *ranking,
@@ -61,18 +59,18 @@ ranking_calculate_hot_threshold_dram_pmem_internal(ranking_t *ranking,
                                                    double dram_pmem_ratio);
 static bool ranking_is_hot_internal(ranking_t *ranking, struct ttype *entry);
 static void ranking_update_internal(ranking_t *ranking, struct ttype *entry_to_update, const struct ttype *updated_values);
-static void touch_entry(struct ttype *entry, uint64_t timestamp, uint64_t add_hotness);
+static void ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry, uint64_t timestamp, uint64_t add_hotness);
 
 //--------private function implementation---------
 
-#include <stdio.h>
-
-void touch_entry(struct ttype *entry, uint64_t timestamp, uint64_t add_hotness)
+#if 1
+// old touch entry definition - as described in design doc
+void ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry, uint64_t timestamp, uint64_t add_hotness)
 {
     if (entry->touchCb)
         entry->touchCb(entry->touchCbArg);
 
-    hotness (entry) += add_hotness;
+    entry->n1 += add_hotness;
     entry->t0 = timestamp;
     if(entry->timestamp_state == TIMESTAMP_NOT_SET) {
         entry->t2 = timestamp;
@@ -81,12 +79,12 @@ void touch_entry(struct ttype *entry, uint64_t timestamp, uint64_t add_hotness)
     if (entry->timestamp_state == TIMESTAMP_INIT_DONE) {
         if ((entry->t0 - entry->t1) > HOTNESS_MEASURE_WINDOW) {
             // move to next measurement window
-            float f2 = (float)hotness (entry) * entry->t2 / (entry->t2 - entry->t0);
-            float f1 = (float)entry->n1 * entry->t1 / (entry->t2 - entry->t0);
-            entry->f = f2 * 0.3 + f1 * 0.7; // TODO weighted sum or sth else?
+            float f2 = ((float)entry->n2) / (entry->t1 - entry->t2);
+            float f1 = ((float)entry->n1) / (entry->t0 - entry->t1);
+            entry->f = f2 * ranking->oldWeight + f1 * ranking->newWeight;
             entry->t2 = entry->t1;
             entry->t1 = entry->t0;
-            hotness (entry) = entry->n1;
+            entry->n2 = entry->n1;
             entry->n1 = 0;
         }
     } else {
@@ -97,10 +95,21 @@ void touch_entry(struct ttype *entry, uint64_t timestamp, uint64_t add_hotness)
             entry->t1 = entry->t0;
         }
     }
-
 }
 
-void ranking_create_internal(ranking_t **ranking)
+#else
+
+void touch_entry(struct ttype *entry, uint64_t timestamp, uint64_t add_hotness)
+{
+    if (entry->touchCb)
+        entry->touchCb(entry->touchCbArg);
+
+    hotness (entry) += add_hotness;
+}
+
+#endif
+
+void ranking_create_internal(ranking_t **ranking, double old_weight)
 {
     *ranking = (ranking_t *)jemk_malloc(sizeof(ranking_t));
     wre_create(&(*ranking)->entries, is_hotter_agg_hot);
@@ -108,6 +117,8 @@ void ranking_create_internal(ranking_t **ranking)
     // mutex is already inside a structure, so alignment should be ok
     (void)new ((void*)(&(*ranking)->mutex)) std::mutex();
     (*ranking)->hotThreshold=0.;
+    (*ranking)->oldWeight=old_weight;
+    (*ranking)->newWeight=1-old_weight;
 }
 
 void ranking_destroy_internal(ranking_t *ranking)
@@ -149,7 +160,7 @@ ranking_calculate_hot_threshold_dram_pmem_internal(ranking_t *ranking,
 void ranking_add_internal(ranking_t *ranking, struct ttype *entry)
 {
     AggregatedHotness temp;
-    temp.hotness = hotness (entry); // only hotness matters for lookup
+    temp.hotness = entry->f; // only hotness matters for lookup
     AggregatedHotness_t *value =
         (AggregatedHotness_t *)wre_remove(ranking->entries, &temp);
     if (value) {
@@ -157,7 +168,7 @@ void ranking_add_internal(ranking_t *ranking, struct ttype *entry)
         value->size += entry->size;
     } else {
         value = (AggregatedHotness_t *)jemk_malloc(sizeof(AggregatedHotness_t));
-        value->hotness = hotness (entry);
+        value->hotness = entry->f;
         value->size = entry->size;
     }
     wre_put(ranking->entries, value, value->size);
@@ -165,13 +176,13 @@ void ranking_add_internal(ranking_t *ranking, struct ttype *entry)
 
 bool ranking_is_hot_internal(ranking_t *ranking, struct ttype *entry)
 {
-    return hotness (entry) >= ranking_get_hot_threshold_internal(ranking);
+    return entry->f >= ranking_get_hot_threshold_internal(ranking);
 }
 
 void ranking_remove_internal(ranking_t *ranking, const struct ttype *entry)
 {
     AggregatedHotness temp;
-    temp.hotness = hotness (entry); // only hotness matters for lookup
+    temp.hotness = entry->f; // only hotness matters for lookup
     AggregatedHotness_t *removed =
         (AggregatedHotness_t *)wre_remove(ranking->entries, &temp);
     if (removed) {
@@ -197,15 +208,15 @@ static void ranking_update_internal(ranking_t *ranking, struct ttype *entry_to_u
 void ranking_touch_internal(ranking_t *ranking, struct ttype *entry, uint64_t timestamp, uint64_t add_hotness)
 {
     ranking_remove_internal(ranking, entry);
-    touch_entry(entry, timestamp, add_hotness);
+    ranking_touch_entry_internal(ranking, entry, timestamp, add_hotness);
     ranking_add_internal(ranking, entry);
 }
 
 //--------public function implementation---------
 
-MEMKIND_EXPORT void ranking_create(ranking_t **ranking)
+MEMKIND_EXPORT void ranking_create(ranking_t **ranking, double old_weight)
 {
-    ranking_create_internal(ranking);
+    ranking_create_internal(ranking, old_weight);
 }
 
 MEMKIND_EXPORT void ranking_destroy(ranking_t *ranking)

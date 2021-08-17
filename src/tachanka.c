@@ -10,11 +10,19 @@
 #include <memkind/internal/tachanka.h>
 #include <memkind/internal/ranking.h>
 
-#define MALLOC_HOTNESS      20u
+// #define MALLOC_HOTNESS      20u
+#define MALLOC_HOTNESS      1u
 #define DRAM_TO_PMEM_RATIO  (1./8.)
 
 #define MAXTYPES   1*1048576
 #define MAXBLOCKS 16*1048576
+
+// DEBUG
+
+#ifndef MEMKIND_EXPORT
+#define MEMKIND_EXPORT __attribute__((visibility("default")))
+#endif
+
 struct ttype ttypes[MAXTYPES];
 struct tblock tblocks[MAXBLOCKS];
 
@@ -43,6 +51,8 @@ void register_block(uint64_t hash, void *addr, size_t size)
             if (!t)
                 fprintf(stderr, "Alloc type disappeared?!?\n"), exit(1);
         }
+        t->n1=0u;
+        t->n2=0u;
         t->touchCb = NULL;
         t->touchCbArg = NULL;
     }
@@ -100,7 +110,7 @@ void unregister_block(void *addr)
     __atomic_exchange(&freeblock, &blind, &bl->nextfree, __ATOMIC_ACQ_REL);
 }
 
-Hotness_e tachanka_is_hot(const void *addr)
+MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type(const void *addr)
 {
     struct tblock *bl = critnib_find_le(addr_to_block, (uintptr_t)addr);
     if (!bl || addr >= bl->addr + bl->size)
@@ -135,12 +145,12 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
     ranking_touch(ranking, t, timestamp, MALLOC_HOTNESS);
 }
 
-void tachanka_init(void)
+void tachanka_init(double old_window_hotness_weight)
 {
     read_maps();
     hash_to_type = critnib_new();
     addr_to_block = critnib_new();
-    ranking_create(&ranking);
+    ranking_create(&ranking, old_window_hotness_weight);
 }
 
 void tachanka_update_threshold(void)
@@ -153,12 +163,6 @@ void tachanka_destroy(void)
 {
     ranking_destroy(ranking);
 }
-
-// DEBUG
-
-#ifndef MEMKIND_EXPORT
-#define MEMKIND_EXPORT __attribute__((visibility("default")))
-#endif
 
 MEMKIND_EXPORT double tachanka_get_obj_hotness(int size)
 {

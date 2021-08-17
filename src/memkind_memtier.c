@@ -80,6 +80,9 @@
 #define THRESHOLD_DEGREE    0.15 // 15%
 #define THRESHOLD_CHECK_CNT 20
 #define THRESHOLD_STEP      1024
+// time window is 1s
+// #define OLD_TIME_WINDOW_HOTNESS_WEIGHT 0.999
+#define OLD_TIME_WINDOW_HOTNESS_WEIGHT 0.4 // should not stay like this... only for tests and POC
 
 // Macro to get number of thresholds from parent object
 #define THRESHOLD_NUM(obj) ((obj->cfg_size) - 1)
@@ -630,8 +633,7 @@ static struct memtier_memory *
 builder_hot_create_memory(struct memtier_builder *builder)
 {
     int i;
-
-    tachanka_init();
+    tachanka_init(OLD_TIME_WINDOW_HOTNESS_WEIGHT);
     pebs_init(getpid());
 
     struct memtier_memory *memory =

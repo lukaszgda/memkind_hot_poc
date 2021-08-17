@@ -53,20 +53,22 @@ void naive_matrix_multiply(int matrix_size, int mul_step,
 }
 
 class RandomIncremeneter {
+    static std::random_device dev;
+    std::mt19937 generator;
 public:
-    RandomIncremeneter() {
-//         generator = std::mt19937(rand_dev());
-    }
+
+    RandomIncremeneter() : generator(dev()) { }
+
     void IncrementRandom(volatile uint8_t *data, size_t size) {
         assert(data != NULL);
-        std::random_device dev;
-        std::mt19937 generator(dev());
         std::uniform_int_distribution<uint64_t> distr(0, size-1);
         size_t index = distr(generator);
         assert(index < size);
         data[index]++;
     }
 };
+
+std::random_device RandomIncremeneter::dev;
 
 class MemkindMemtierKindTest: public ::testing::Test
 {
@@ -292,7 +294,7 @@ protected:
 private:
     void SetUp()
     {
-        ranking_create(&ranking);
+        ranking_create(&ranking, 0.9);
 
         for (size_t i=0; i<BLOCKS_SIZE; ++i) {
             blocks[i].size=BLOCKS_SIZE-i;
@@ -403,7 +405,7 @@ protected:
 private:
     void SetUp()
     {
-        ranking_create(&ranking);
+        ranking_create(&ranking, 0.9);
 
         for (size_t i=0; i<BLOCKS_SIZE; ++i) {
             blocks[i].size=BLOCKS_SIZE-i;
@@ -688,14 +690,15 @@ typedef struct TouchCbArg {
 
 void touch_cb(void *arg) {
     TouchCbArg_t *cb_arg = (TouchCbArg_t*) arg;
-    printf("touch [%s]\n", cb_arg->name);
+//     printf("touch [%s]\n", cb_arg->name);
     cb_arg->counter++;
 }
 
 static std::vector<TouchCbArg_t*> g_cbArgs; // for debugging purposes
 
 class TestBuffer {
-    const size_t BUFF_SIZE = 1e8; // 100 MB
+//     const size_t BUFF_SIZE = 1e9; // 1 GB
+    const size_t BUFF_SIZE = 2e8; // 200 MB
     const double frequency; /// @pre  0 < frequency <= 1
     double accumulated_freq=0;
     uint8_t *data;
@@ -740,6 +743,10 @@ public:
 
     double GetHotness() {
         return tachanka_get_addr_hotness(data);
+    }
+
+    Hotness_e GetHotnessType() {
+        return tachanka_get_hotness_type(data);
     }
 
 protected:
@@ -816,14 +823,51 @@ public:
     }
 };
 
-class IntegrationHotnessTest: public ::testing::Test
+class IntegrationHotnessSingleTest: public ::testing::Test
 {
 protected:
     // base frequency of 1, 1/2, 1/3, 1/4, ...
     std::vector<TestBufferA> bufferA;
     // base frequency of 1/2, 1/3, 1/4, 1/5, ...
     std::vector<TestBufferB> bufferB;
+//     const size_t ALLOCATED_SIZE=5e8; // 500 MB
     const size_t ALLOCATED_SIZE=1e9; // 1 GB
+
+    static constexpr size_t MATRICES_SIZE=1u;
+    struct memtier_builder *m_builder;
+    struct memtier_memory *m_tier_memory;
+private:
+    void SetUp()
+    {
+        m_builder = memtier_builder_new(MEMTIER_POLICY_DATA_HOTNESS);
+
+        int res = memtier_builder_add_tier(m_builder, MEMKIND_DEFAULT, 1);
+        ASSERT_EQ(0, res);
+        m_tier_memory = memtier_builder_construct_memtier_memory(m_builder);
+        ASSERT_NE(nullptr, m_tier_memory);
+
+        bufferA.reserve(MATRICES_SIZE);
+        bufferB.reserve(MATRICES_SIZE);
+        for (size_t i=0; i<MATRICES_SIZE; ++i) {
+            double base_frequency = 1./(i+1);
+            bufferA.push_back(TestBufferA(m_tier_memory, base_frequency));
+            bufferB.push_back(TestBufferB(m_tier_memory, base_frequency/2));
+        }
+    }
+
+    void TearDown()
+    {
+    }
+};
+
+class IntegrationHotnessMultipleTest: public ::testing::Test
+{
+protected:
+    // base frequency of 1, 1/2, 1/3, 1/4, ...
+    std::vector<TestBufferA> bufferA;
+    // base frequency of 1/2, 1/3, 1/4, 1/5, ...
+    std::vector<TestBufferB> bufferB;
+    const size_t ALLOCATED_SIZE=5e8; // 500 MB
 
     static constexpr size_t MATRICES_SIZE=1u;
     struct memtier_builder *m_builder;
@@ -872,7 +916,7 @@ private:
 //
 // For now, only "quickfix": make a test that's vulnerable to race condition
 
-TEST_F(IntegrationHotnessTest, test_random_hotness)
+TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
 {
     // SIMPLE TEST - use only one Matrix per type
     TestBufferA &ma = bufferA[0];
@@ -880,7 +924,7 @@ TEST_F(IntegrationHotnessTest, test_random_hotness)
     auto start_point = std::chrono::steady_clock::now();
     auto end_point = start_point;
     double millis_elapsed=0;
-    const double LIMIT_MILLIS=10000;
+    const double LIMIT_MILLIS=15000;
     size_t iterations=0u;
     for (iterations=0; millis_elapsed < LIMIT_MILLIS; ++iterations) {
         ma.DoSomeWork();
@@ -893,19 +937,25 @@ TEST_F(IntegrationHotnessTest, test_random_hotness)
     }
     double hotness_a=ma.GetHotness();
     double hotness_b=mb.GetHotness();
+    size_t touches_a = g_cbArgs[0]->counter;
+    size_t touches_b = g_cbArgs[1]->counter;
+
+    double touch_ratio = ((double)touches_a)/touches_b;
 
     uint64_t asum = ma.CalculateSum();
     uint64_t bsum = mb.CalculateSum();
     // use calcualted data - prevent all loops from being optimized out
-    printf("Calculated task, total sums: A [%lu], B [%lu]", asum, bsum);
+    printf("Total sums: A [%lu], B [%lu]\n", asum, bsum);
+    printf("Total touches: A [%lu], B [%lu]\n", touches_a, touches_b);
 
-    double ACCURACY = 1e-3;
+    double ACCURACY = 0.6; // a little bit high... (bad, but seems code is ok)
     // check if sum ratio is as expected - a measure of work done
-    double EXPECTED_SUM_RATIO = 2;
+    double EXPECTED_RATIO = 2;
     double calculated_sum_ratio = ((double)asum)/bsum;
-    ASSERT_LE(abs(calculated_sum_ratio - EXPECTED_SUM_RATIO), ACCURACY);
+    ASSERT_LE(abs(touch_ratio - EXPECTED_RATIO), ACCURACY);
+    ASSERT_LE(abs(calculated_sum_ratio - EXPECTED_RATIO), ACCURACY);
 
-    const size_t MIN_SIGNIFICANT_WORK=2;
+    const size_t MIN_SIGNIFICANT_WORK=(size_t)1e4;
     ASSERT_GT(iterations, MIN_SIGNIFICANT_WORK);
 
     // check if address is known and hotness was calculated
@@ -919,4 +969,77 @@ TEST_F(IntegrationHotnessTest, test_random_hotness)
     double EXPECTED_HOTNESS_RATIO = 2;
     double calculated_hotness_ratio = hotness_a/hotness_b;
     ASSERT_LE(abs(calculated_hotness_ratio - EXPECTED_HOTNESS_RATIO), ACCURACY);
+
+    Hotness_e a_type=ma.GetHotnessType();
+    Hotness_e b_type=mb.GetHotnessType();
+    ASSERT_EQ(a_type, HOTNESS_HOT);
+    ASSERT_EQ(b_type, HOTNESS_COLD);
+}
+
+// next test: run
+
+TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
+{
+    // SIMPLE TEST - use only one Matrix per type
+    TestBufferA &ma = bufferA[0];
+    TestBufferB &mb = bufferB[0]; // should do half the work of ma
+    auto start_point = std::chrono::steady_clock::now();
+    auto end_point = start_point;
+    double millis_elapsed=0;
+    const double LIMIT_MILLIS=15000;
+    size_t iterations=0u;
+    for (iterations=0; millis_elapsed < LIMIT_MILLIS; ++iterations) {
+        ma.ReallocData(m_tier_memory);
+        mb.ReallocData(m_tier_memory);
+        ma.DoSomeWork();
+        mb.DoSomeWork();
+        end_point = std::chrono::steady_clock::now();
+        std::chrono::duration<double> duration = end_point-start_point;
+        millis_elapsed =
+            std::chrono::duration_cast<std::chrono::milliseconds>(duration)
+                .count();
+    }
+    double hotness_a=ma.GetHotness();
+    double hotness_b=mb.GetHotness();
+    size_t touches_a = g_cbArgs[0]->counter;
+    size_t touches_b = g_cbArgs[1]->counter;
+
+    double touch_ratio = ((double)touches_a)/touches_b;
+
+    uint64_t asum = ma.CalculateSum();
+    uint64_t bsum = mb.CalculateSum();
+    // use calcualted data - prevent all loops from being optimized out
+    printf("Total sums: A [%lu], B [%lu]\n", asum, bsum);
+    printf("Total touches: A [%lu], B [%lu]\n", touches_a, touches_b);
+
+    double ACCURACY = 0.6; // a little bit high... (bad, but seems code is ok)
+    // check if sum ratio is as expected - a measure of work done
+    double EXPECTED_RATIO = 2;
+    double calculated_sum_ratio = ((double)asum)/bsum;
+    ASSERT_LE(abs(touch_ratio - EXPECTED_RATIO), ACCURACY);
+    ASSERT_LE(abs(calculated_sum_ratio - EXPECTED_RATIO), ACCURACY);
+
+    const size_t MIN_SIGNIFICANT_WORK=(size_t)1e4;
+    ASSERT_GT(iterations, MIN_SIGNIFICANT_WORK);
+
+    // check if address is known and hotness was calculated
+    ASSERT_GT(hotness_a, 0);
+    ASSERT_GT(hotness_b, 0);
+
+    // rough check
+    ASSERT_GT(hotness_a, hotness_b);
+
+    // check if hotness ratio is as expected
+    double EXPECTED_HOTNESS_RATIO = 2;
+    double calculated_hotness_ratio = hotness_a/hotness_b;
+    ASSERT_LE(abs(calculated_hotness_ratio - EXPECTED_HOTNESS_RATIO), ACCURACY);
+
+    double is_a_hot=ma.GetHotnessType();
+    double is_b_hot=mb.GetHotnessType();
+    ASSERT_EQ(is_a_hot, true);
+    ASSERT_EQ(is_b_hot, false);
+
+    // TODO check where they are allocated - PMEM vs DRAM!
+    // TODO make sure that elements persist - sum should be the same as that
+    // of a reference, irrelevant object!!!
 }

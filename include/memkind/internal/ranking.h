@@ -17,7 +17,13 @@ typedef struct ranking ranking_t;
 //      ranking_touch   // as many times as necessary per entry
 //      ranking_remove  // when entry is no longer used
 
-extern void ranking_create(ranking_t **ranking);
+/// @p old_weight weight of old time window
+///
+/// Hotness is calculated as a weighted sum between old hotness
+/// and current frequency:
+///     - @p old_weight is the weight of old hotness,
+///     - (1 - @p old_weight) is the weight of current frequency
+extern void ranking_create(ranking_t **ranking, double old_weight);
 extern void ranking_destroy(ranking_t *ranking);
 /// @p entry ownership stays with the caller
 /// @p entry should not be freed until it is removed from ranking

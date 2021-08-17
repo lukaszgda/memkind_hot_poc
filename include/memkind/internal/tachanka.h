@@ -27,14 +27,14 @@ void unregister_block(void *addr);
 void realloc_block(void *addr, void *new_addr, size_t size);
 void *new_block(size_t size);
 void touch(void *addr, __u64 timestamp, int from_malloc);
-void tachanka_init(void);
+void tachanka_init(double old_window_hotness_weight);
 void tachanka_destroy(void);
 void tachanka_update_threshold(void);
 double tachanka_get_obj_hotness(int size);
 double tachanka_get_addr_hotness(void *addr);
 // double tachanka_set_touch_callback(void *addr, const char*name);
 int tachanka_set_touch_callback(void *addr, tachanka_touch_callback cb, void* arg);
-Hotness_e tachanka_is_hot(const void *addr);
+Hotness_e tachanka_get_hotness_type(const void *addr);
 
 struct ttype {
     size_t size;
@@ -50,7 +50,7 @@ struct ttype {
 
     tachanka_touch_callback touchCb;
     void *touchCbArg;
-    double f;  // frequency
+    double f;  // frequency - current
     TimestampState_t timestamp_state;
 };
 
