@@ -20,6 +20,8 @@ typedef enum Hotness {
     HOTNESS_NOT_FOUND,
 } Hotness_e;
 
+typedef void (*tachanka_touch_callback)(void*);
+
 void register_block(uint64_t hash, void *addr, size_t size);
 void unregister_block(void *addr);
 void realloc_block(void *addr, void *new_addr, size_t size);
@@ -30,7 +32,8 @@ void tachanka_destroy(void);
 void tachanka_update_threshold(void);
 double tachanka_get_obj_hotness(int size);
 double tachanka_get_addr_hotness(void *addr);
-double tachanka_set_monitoring(void *addr, const char*name);
+// double tachanka_set_touch_callback(void *addr, const char*name);
+int tachanka_set_touch_callback(void *addr, tachanka_touch_callback cb, void* arg);
 Hotness_e tachanka_is_hot(const void *addr);
 
 struct ttype {
@@ -45,7 +48,8 @@ struct ttype {
     int n2;   // num of access in prev window
     int n1;   // num of access in current window
 
-    char *monitorName;
+    tachanka_touch_callback touchCb;
+    void *touchCbArg;
     double f;  // frequency
     TimestampState_t timestamp_state;
 };

@@ -681,6 +681,19 @@ TEST_F(WreTreeTest, add_remove_multiple_modes_desc) {
 
 // ----------------- hotness integration tests
 
+typedef struct TouchCbArg {
+    char *name;
+    size_t counter;
+} TouchCbArg_t;
+
+void touch_cb(void *arg) {
+    TouchCbArg_t *cb_arg = (TouchCbArg_t*) arg;
+    printf("touch [%s]\n", cb_arg->name);
+    cb_arg->counter++;
+}
+
+static std::vector<TouchCbArg_t*> g_cbArgs; // for debugging purposes
+
 class TestBuffer {
     const size_t BUFF_SIZE = 1e8; // 100 MB
     const double frequency; /// @pre  0 < frequency <= 1
@@ -741,7 +754,15 @@ protected:
         static size_t counter=0;
         std::string name = std::string("buff_")+std::to_string(counter)+"]";
         printf("allocated data [%s] at %p, size: [%lu]", name.c_str(), data, BUFF_SIZE);
-        tachanka_set_monitoring(data, name.c_str());
+        size_t str_size = strlen(name.c_str()) +1u;
+        // use regular mallocs here - should not be an issue
+        TouchCbArg_t *cb_arg = (TouchCbArg_t*)malloc(sizeof(TouchCbArg_t));
+        cb_arg->name = (char*)malloc(sizeof(char)*str_size);
+        cb_arg->counter = 0u;
+        snprintf(cb_arg->name, str_size, "%s", name.c_str());
+        int ret = tachanka_set_touch_callback(data, touch_cb, cb_arg);
+        assert(ret==0);
+        g_cbArgs.push_back(cb_arg);
         ++counter;
     }
 

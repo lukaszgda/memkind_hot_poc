@@ -69,8 +69,8 @@ static void touch_entry(struct ttype *entry, uint64_t timestamp, uint64_t add_ho
 
 void touch_entry(struct ttype *entry, uint64_t timestamp, uint64_t add_hotness)
 {
-    if (entry->monitorName)
-        printf("touch [%s]\n", entry->monitorName);
+    if (entry->touchCb)
+        entry->touchCb(entry->touchCbArg);
 
     hotness (entry) += add_hotness;
     entry->t0 = timestamp;
@@ -265,12 +265,9 @@ MEMKIND_EXPORT void ranking_touch(ranking_t *ranking, struct ttype *entry, uint6
     ranking_touch_internal(ranking, entry, timestamp, add_hotness);
 }
 
-
-MEMKIND_EXPORT void ranking_set_monitoring(ranking_t *ranking, const char* name, struct ttype *type)
+MEMKIND_EXPORT void ranking_set_touch_callback(ranking_t *ranking, tachanka_touch_callback cb, void* arg, struct ttype *type)
 {
     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
-
-    size_t monitor_len = strlen(name)+1;
-    type->monitorName = (char*)jemk_malloc(sizeof(char)*(monitor_len)); // TODO currently, we have a memory leak here (never freed)
-    snprintf(type->monitorName, monitor_len, "%s", name);
+    type->touchCb = cb;
+    type->touchCbArg = arg;
 }

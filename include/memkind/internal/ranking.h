@@ -49,5 +49,15 @@ extern double ranking_calculate_hot_threshold_dram_pmem(ranking_t *ranking,
                                                         double dram_pmem_ratio);
 extern bool ranking_is_hot(ranking_t *ranking, struct ttype *entry);
 
-
-extern void ranking_set_monitoring(ranking_t *ranking, const char* name, struct ttype *type);
+/// @warning @p callback will be executed from the context of touch function,
+/// from multiple threads, under mutex (call atomicity is guaranteed)
+/// DO NOT:
+///     1) PERFORM MEMORY ALLOCATIONS traceble by ranking - it might result in:
+///         a) indirect recursion,
+///         b) infinite loops,
+///         c) out of memory errors,
+///         d) other horrors,
+///     2) perform cpu intensive tasks,
+///     3) perform time-consuming tasks: sleeps, networking, intensive io, etc
+/// PLEASE BE CAUTIOUS WHEN USING THIS FEATURE!
+extern void ranking_set_touch_callback(ranking_t *ranking, tachanka_touch_callback cb, void* arg, struct ttype *type);
