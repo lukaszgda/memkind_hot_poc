@@ -741,6 +741,10 @@ public:
         return sum;
     }
 
+    memkind_t DetectKind() {
+        return memkind_detect_kind(data);
+    }
+
     double GetHotness() {
         return tachanka_get_addr_hotness(data);
     }
@@ -823,6 +827,24 @@ public:
     }
 };
 
+class TestBufferC : public TestBuffer {
+public:
+    MEMKIND_NO_INLINE TestBufferC(struct memtier_memory *m, double freq) :
+        TestBuffer(freq) {
+        AllocData(m);
+    }
+
+    MEMKIND_NO_INLINE void FreeData() {
+        return TestBuffer::FreeData();
+    }
+    MEMKIND_NO_INLINE void AllocData(struct memtier_memory *m) {
+        return TestBuffer::AllocData(m);
+    }
+    MEMKIND_NO_INLINE void ReallocData(struct memtier_memory *m) {
+        return TestBuffer::ReallocData(m);
+    }
+};
+
 class IntegrationHotnessSingleTest: public ::testing::Test
 {
 protected:
@@ -830,33 +852,40 @@ protected:
     std::vector<TestBufferA> bufferA;
     // base frequency of 1/2, 1/3, 1/4, 1/5, ...
     std::vector<TestBufferB> bufferB;
+    std::vector<TestBufferC> bufferC;
 //     const size_t ALLOCATED_SIZE=5e8; // 500 MB
     const size_t ALLOCATED_SIZE=1e9; // 1 GB
 
     static constexpr size_t MATRICES_SIZE=1u;
-    struct memtier_builder *m_builder;
     struct memtier_memory *m_tier_memory;
 private:
     void SetUp()
     {
-        m_builder = memtier_builder_new(MEMTIER_POLICY_DATA_HOTNESS);
+        struct memtier_builder *m_builder =
+            memtier_builder_new(MEMTIER_POLICY_DATA_HOTNESS);
 
-        int res = memtier_builder_add_tier(m_builder, MEMKIND_DEFAULT, 1);
+        int res = memtier_builder_add_tier(m_builder, MEMKIND_DEFAULT, 1); // add dram kind
+        ASSERT_EQ(0, res);
+        res = memtier_builder_add_tier(m_builder, MEMKIND_REGULAR, 1); // add pmem kind
         ASSERT_EQ(0, res);
         m_tier_memory = memtier_builder_construct_memtier_memory(m_builder);
         ASSERT_NE(nullptr, m_tier_memory);
 
         bufferA.reserve(MATRICES_SIZE);
         bufferB.reserve(MATRICES_SIZE);
+        bufferC.reserve(MATRICES_SIZE);
         for (size_t i=0; i<MATRICES_SIZE; ++i) {
             double base_frequency = 1./(i+1);
             bufferA.push_back(TestBufferA(m_tier_memory, base_frequency));
             bufferB.push_back(TestBufferB(m_tier_memory, base_frequency/2));
+            bufferC.push_back(TestBufferC(m_tier_memory, (3*base_frequency/4)));
         }
+        memtier_builder_delete(m_builder);
     }
 
     void TearDown()
     {
+        memtier_delete_memtier_memory(m_tier_memory);
     }
 };
 
@@ -868,14 +897,15 @@ protected:
     // base frequency of 1/2, 1/3, 1/4, 1/5, ...
     std::vector<TestBufferB> bufferB;
     const size_t ALLOCATED_SIZE=5e8; // 500 MB
+    std::vector<TestBufferC> bufferC;
 
     static constexpr size_t MATRICES_SIZE=1u;
-    struct memtier_builder *m_builder;
     struct memtier_memory *m_tier_memory;
 private:
     void SetUp()
     {
-        m_builder = memtier_builder_new(MEMTIER_POLICY_DATA_HOTNESS);
+        struct memtier_builder *m_builder =
+            memtier_builder_new(MEMTIER_POLICY_DATA_HOTNESS);
 
         int res = memtier_builder_add_tier(m_builder, MEMKIND_DEFAULT, 1);
         ASSERT_EQ(0, res);
@@ -884,15 +914,19 @@ private:
 
         bufferA.reserve(MATRICES_SIZE);
         bufferB.reserve(MATRICES_SIZE);
+        bufferC.reserve(MATRICES_SIZE);
         for (size_t i=0; i<MATRICES_SIZE; ++i) {
             double base_frequency = 1./(i+1);
             bufferA.push_back(TestBufferA(m_tier_memory, base_frequency));
             bufferB.push_back(TestBufferB(m_tier_memory, base_frequency/2));
+            bufferC.push_back(TestBufferC(m_tier_memory, (3*base_frequency/4)));
         }
+        memtier_builder_delete(m_builder);
     }
 
     void TearDown()
     {
+        memtier_delete_memtier_memory(m_tier_memory);
     }
 };
 
@@ -974,6 +1008,14 @@ TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
     Hotness_e b_type=mb.GetHotnessType();
     ASSERT_EQ(a_type, HOTNESS_HOT);
     ASSERT_EQ(b_type, HOTNESS_COLD);
+
+    memkind_t a_kind = ma.DetectKind();
+    memkind_t b_kind = mb.DetectKind();
+
+    // check that both are on DRAM: initial allocation, hotness not known
+    // at the beginning
+    ASSERT_EQ(a_kind, MEMKIND_DEFAULT);
+    ASSERT_EQ(b_kind, MEMKIND_DEFAULT);
 }
 
 // next test: run
@@ -981,18 +1023,32 @@ TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
 TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
 {
     // SIMPLE TEST - use only one Matrix per type
-    TestBufferA &ma = bufferA[0];
     TestBufferB &mb = bufferB[0]; // should do half the work of ma
+    TestBufferC &mc = bufferC[0]; // should do (ma_work+mb_work)/2
+    TestBufferA &ma = bufferA[0];
     auto start_point = std::chrono::steady_clock::now();
     auto end_point = start_point;
     double millis_elapsed=0;
     const double LIMIT_MILLIS=15000;
     size_t iterations=0u;
+
+    memkind_t a_kind = ma.DetectKind();
+    memkind_t b_kind = mb.DetectKind();
+    memkind_t c_kind = mc.DetectKind();
+
+    // check that both are on DRAM: initial allocation, hotness not known
+    // at the beginning
+    ASSERT_EQ(a_kind, MEMKIND_DEFAULT);
+    ASSERT_EQ(b_kind, MEMKIND_DEFAULT);
+    ASSERT_EQ(c_kind, MEMKIND_DEFAULT);
+
     for (iterations=0; millis_elapsed < LIMIT_MILLIS; ++iterations) {
         ma.ReallocData(m_tier_memory);
         mb.ReallocData(m_tier_memory);
+        mc.ReallocData(m_tier_memory);
         ma.DoSomeWork();
         mb.DoSomeWork();
+        mc.DoSomeWork();
         end_point = std::chrono::steady_clock::now();
         std::chrono::duration<double> duration = end_point-start_point;
         millis_elapsed =
@@ -1039,6 +1095,8 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
     ASSERT_EQ(is_a_hot, true);
     ASSERT_EQ(is_b_hot, false);
 
+    ASSERT_EQ(a_kind, MEMKIND_DEFAULT); // more used kind was reallocated on DRAM
+    ASSERT_EQ(b_kind, MEMKIND_REGULAR); // less used kind got reallocated on PMEM
     // TODO check where they are allocated - PMEM vs DRAM!
     // TODO make sure that elements persist - sum should be the same as that
     // of a reference, irrelevant object!!!

@@ -31,7 +31,7 @@ static int nblocks = 0;
 static int freeblock = -1;
 
 // TODO (possibly) move elsewhere - make sure multiple rankings are supported!
-ranking_t *ranking;
+static ranking_t *ranking;
 /*static*/ critnib *hash_to_type, *addr_to_block;
 
 #define ADD(var,x) __sync_fetch_and_add(&(var), (x))
@@ -119,6 +119,20 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type(const void *addr)
     if (ranking_is_hot(ranking, t))
         return HOTNESS_HOT;
     return HOTNESS_COLD;
+}
+
+MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
+{
+    Hotness_e ret = HOTNESS_NOT_FOUND;
+    struct ttype *t = critnib_get(hash_to_type, hash);
+    if (t) {
+        if (ranking_is_hot(ranking, t))
+            ret = HOTNESS_HOT;
+        else
+            ret = HOTNESS_COLD;
+    }
+
+    return ret;
 }
 
 void touch(void *addr, __u64 timestamp, int from_malloc)

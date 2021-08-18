@@ -240,8 +240,21 @@ memtier_policy_dynamic_threshold_get_kind(struct memtier_memory *memory,
 
 static int memtier_policy_data_hotness_is_hot(uint64_t hash)
 {
-    // TODO use memory->hot_tier_id here
-    return 1;
+    // TODO this requires more data
+    // Currently, "ranking" and "tachanka" are de-facto singletons
+    // can we deal with it?
+    Hotness_e hotness = tachanka_get_hotness_type_hash(hash);
+    int ret=0;
+    switch (hotness) {
+        case HOTNESS_COLD:
+            ret = 0;
+            break;
+        case HOTNESS_NOT_FOUND:
+        case HOTNESS_HOT:
+            ret = 1;
+            break;
+    }
+    return ret;
 }
 
 static memkind_t
@@ -249,6 +262,8 @@ memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
                                      uint64_t *data)
 {
     *data = bthash(size);
+    // TODO support for multiple tiers could be added
+    // instead of bool (,mis hot), an index of memory tier could be returned
     int dest_tier = memtier_policy_data_hotness_is_hot(*data) ?
         memory->hot_tier_id : 1 - memory->hot_tier_id;
 
@@ -633,6 +648,7 @@ static struct memtier_memory *
 builder_hot_create_memory(struct memtier_builder *builder)
 {
     int i;
+    // TODO use some properties? hotness weight should be configurable
     tachanka_init(OLD_TIME_WINDOW_HOTNESS_WEIGHT);
     pebs_init(getpid());
 
