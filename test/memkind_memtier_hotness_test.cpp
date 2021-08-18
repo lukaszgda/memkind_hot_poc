@@ -734,7 +734,7 @@ public:
     uint64_t CalculateSum() {
         uint64_t sum=0u;
         if (data) {
-            for (volatile size_t i=0u; i<BUFF_SIZE; ++i) {
+            for (size_t i=0u; i<BUFF_SIZE; ++i) {
                 sum += data[i];
             }
         }
@@ -754,14 +754,8 @@ public:
     }
 
 protected:
-    virtual void FreeData() {
-        memtier_free(data);
-        data=nullptr;
-    }
 
-    virtual void AllocData(struct memtier_memory *m) {
-        memtier_free(data);
-        data = (uint8_t*)memtier_malloc(m, BUFF_SIZE);
+    TouchCbArg_t *AllocCreateCbArg() {
         static size_t counter=0;
         std::string name = std::string("buff_")+std::to_string(counter)+"]";
         printf("allocated data [%s] at %p, size: [%lu]", name.c_str(), data, BUFF_SIZE);
@@ -771,16 +765,38 @@ protected:
         cb_arg->name = (char*)malloc(sizeof(char)*str_size);
         cb_arg->counter = 0u;
         snprintf(cb_arg->name, str_size, "%s", name.c_str());
+        ++counter;
+        return cb_arg;
+    }
+
+    static void FreeCbArg(TouchCbArg_t *arg) {
+        free(arg->name);
+        free(arg);
+    }
+
+    void RegisterCallback() {
+        TouchCbArg_t *cb_arg = AllocCreateCbArg();
         int ret = tachanka_set_touch_callback(data, touch_cb, cb_arg);
         assert(ret==0);
         g_cbArgs.push_back(cb_arg);
-        ++counter;
+    }
+
+    virtual void FreeData() {
+        memtier_free(data);
+        data=nullptr;
+    }
+
+    virtual void AllocData(struct memtier_memory *m) {
+        memtier_free(data);
+        data = (uint8_t*)memtier_malloc(m, BUFF_SIZE);
+        RegisterCallback();
     }
 
     virtual void ReallocData(struct memtier_memory *m) {
         uint8_t *data_temp = (uint8_t*)memtier_malloc(m, BUFF_SIZE);
         memtier_free(data);
         data = data_temp;
+        RegisterCallback();
     }
 };
 
@@ -885,6 +901,11 @@ private:
 
     void TearDown()
     {
+        for (TouchCbArg_t *arg : g_cbArgs) {
+            free(arg->name);
+            free(arg);
+        }
+        g_cbArgs.clear();
         memtier_delete_memtier_memory(m_tier_memory);
     }
 };
@@ -950,6 +971,9 @@ private:
 //
 // For now, only "quickfix": make a test that's vulnerable to race condition
 
+
+// next test: run
+
 TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
 {
     // SIMPLE TEST - use only one Matrix per type
@@ -1006,6 +1030,7 @@ TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
 
     Hotness_e a_type=ma.GetHotnessType();
     Hotness_e b_type=mb.GetHotnessType();
+
     ASSERT_EQ(a_type, HOTNESS_HOT);
     ASSERT_EQ(b_type, HOTNESS_COLD);
 
@@ -1018,86 +1043,125 @@ TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
     ASSERT_EQ(b_kind, MEMKIND_DEFAULT);
 }
 
-// next test: run
-
 TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
 {
+    // this test has a very weird structure, it consists of:
+    //      - a loop with two iterations,
+    //      - internal state machine that checks iteration index,
+    // this weird architecture is used to have exactly the same
+    // backtrace per each realloc
+
     // SIMPLE TEST - use only one Matrix per type
     TestBufferB &mb = bufferB[0]; // should do half the work of ma
     TestBufferC &mc = bufferC[0]; // should do (ma_work+mb_work)/2
     TestBufferA &ma = bufferA[0];
-    auto start_point = std::chrono::steady_clock::now();
-    auto end_point = start_point;
-    double millis_elapsed=0;
-    const double LIMIT_MILLIS=15000;
-    size_t iterations=0u;
 
-    memkind_t a_kind = ma.DetectKind();
-    memkind_t b_kind = mb.DetectKind();
-    memkind_t c_kind = mc.DetectKind();
-
-    // check that both are on DRAM: initial allocation, hotness not known
-    // at the beginning
-    ASSERT_EQ(a_kind, MEMKIND_DEFAULT);
-    ASSERT_EQ(b_kind, MEMKIND_DEFAULT);
-    ASSERT_EQ(c_kind, MEMKIND_DEFAULT);
-
-    for (iterations=0; millis_elapsed < LIMIT_MILLIS; ++iterations) {
+    for (int iteration=0; iteration<2; ++iteration) {
+        // reallocate data - constructor has different backtrace from Realloc
         ma.ReallocData(m_tier_memory);
         mb.ReallocData(m_tier_memory);
         mc.ReallocData(m_tier_memory);
-        ma.DoSomeWork();
-        mb.DoSomeWork();
-        mc.DoSomeWork();
-        end_point = std::chrono::steady_clock::now();
-        std::chrono::duration<double> duration = end_point-start_point;
-        millis_elapsed =
-            std::chrono::duration_cast<std::chrono::milliseconds>(duration)
-                .count();
+
+        switch (iteration) {
+            case 0: {
+
+                auto start_point = std::chrono::steady_clock::now();
+                auto end_point = start_point;
+                double millis_elapsed=0;
+                const double LIMIT_MILLIS=15000;
+                size_t iterations=0u;
+
+                memkind_t a_kind = ma.DetectKind();
+                memkind_t b_kind = mb.DetectKind();
+                memkind_t c_kind = mc.DetectKind();
+
+                // check that both are on DRAM: initial allocation, hotness not known
+                // at the beginning
+                ASSERT_EQ(a_kind, MEMKIND_DEFAULT);
+                ASSERT_EQ(b_kind, MEMKIND_DEFAULT);
+                ASSERT_EQ(c_kind, MEMKIND_DEFAULT);
+
+                for (iterations=0; millis_elapsed < LIMIT_MILLIS; ++iterations) {
+                    ma.DoSomeWork();
+                    mb.DoSomeWork();
+                    mc.DoSomeWork();
+                    end_point = std::chrono::steady_clock::now();
+                    std::chrono::duration<double> duration = end_point-start_point;
+                    millis_elapsed =
+                        std::chrono::duration_cast<std::chrono::milliseconds>(duration)
+                            .count();
+                }
+                double hotness_a=ma.GetHotness();
+                double hotness_b=mb.GetHotness();
+            //     double hotness_c=mc.GetHotness(); not checked (yet)
+
+                ASSERT_EQ(g_cbArgs.size(), 6u);
+                size_t touches_a = g_cbArgs[0]->counter;
+                size_t touches_b = g_cbArgs[1]->counter;
+                size_t touches_c = g_cbArgs[2]->counter;
+
+
+                uint64_t asum = ma.CalculateSum();
+                uint64_t bsum = mb.CalculateSum();
+                uint64_t csum = mc.CalculateSum();
+                // use calcualted data - prevent all loops from being optimized out
+                printf("Total sums: A [%lu], B [%lu], C[%lu]\n", asum, bsum, csum);
+                printf("Total touches - alloc1: A [%lu], B [%lu], C[%lu]\n", touches_a, touches_b, touches_c);
+
+                touches_a = g_cbArgs[3]->counter;
+                touches_b = g_cbArgs[4]->counter;
+                touches_c = g_cbArgs[5]->counter;
+
+                double touch_ratio = ((double)touches_a)/touches_b;
+
+                printf("Total touches - alloc2: A [%lu], B [%lu], C[%lu]\n", touches_a, touches_b, touches_c);
+
+                double ACCURACY = 0.6; // a little bit high... (bad, but seems code is ok)
+                // check if sum ratio is as expected - a measure of work done
+                double EXPECTED_RATIO = 2;
+                double calculated_sum_ratio = ((double)asum)/bsum;
+                ASSERT_LE(abs(touch_ratio - EXPECTED_RATIO), ACCURACY);
+                ASSERT_LE(abs(calculated_sum_ratio - EXPECTED_RATIO), ACCURACY);
+
+                const size_t MIN_SIGNIFICANT_WORK=(size_t)1e4;
+                ASSERT_GT(iterations, MIN_SIGNIFICANT_WORK);
+
+                // check if address is known and hotness was calculated
+                ASSERT_GT(hotness_a, 0);
+                ASSERT_GT(hotness_b, 0);
+
+                // rough check
+                ASSERT_GT(hotness_a, hotness_b);
+
+                // check if hotness ratio is as expected
+                double EXPECTED_HOTNESS_RATIO = 2;
+                double calculated_hotness_ratio = hotness_a/hotness_b;
+                ASSERT_LE(abs(calculated_hotness_ratio - EXPECTED_HOTNESS_RATIO), ACCURACY);
+
+                Hotness_e a_type=ma.GetHotnessType();
+                Hotness_e b_type=mb.GetHotnessType();
+
+                ASSERT_EQ(a_type, HOTNESS_HOT);
+                ASSERT_EQ(b_type, HOTNESS_COLD);
+                break;
+            }
+            case 1: {
+                Hotness_e a_type=ma.GetHotnessType();
+                Hotness_e b_type=mb.GetHotnessType();
+
+                ASSERT_EQ(a_type, HOTNESS_HOT);
+                ASSERT_EQ(b_type, HOTNESS_COLD);
+
+                memkind_t a_kind = ma.DetectKind();
+                memkind_t b_kind = mb.DetectKind();
+
+                ASSERT_EQ(a_kind, MEMKIND_DEFAULT); // more used kind was reallocated on DRAM
+                ASSERT_EQ(b_kind, MEMKIND_REGULAR); // less used kind got reallocated on PMEM
+                // TODO check where they are allocated - PMEM vs DRAM!
+                // TODO make sure that elements persist - sum should be the same as that
+                // of a reference, irrelevant object!!!
+                break;
+            }
+        }
     }
-    double hotness_a=ma.GetHotness();
-    double hotness_b=mb.GetHotness();
-    size_t touches_a = g_cbArgs[0]->counter;
-    size_t touches_b = g_cbArgs[1]->counter;
-
-    double touch_ratio = ((double)touches_a)/touches_b;
-
-    uint64_t asum = ma.CalculateSum();
-    uint64_t bsum = mb.CalculateSum();
-    // use calcualted data - prevent all loops from being optimized out
-    printf("Total sums: A [%lu], B [%lu]\n", asum, bsum);
-    printf("Total touches: A [%lu], B [%lu]\n", touches_a, touches_b);
-
-    double ACCURACY = 0.6; // a little bit high... (bad, but seems code is ok)
-    // check if sum ratio is as expected - a measure of work done
-    double EXPECTED_RATIO = 2;
-    double calculated_sum_ratio = ((double)asum)/bsum;
-    ASSERT_LE(abs(touch_ratio - EXPECTED_RATIO), ACCURACY);
-    ASSERT_LE(abs(calculated_sum_ratio - EXPECTED_RATIO), ACCURACY);
-
-    const size_t MIN_SIGNIFICANT_WORK=(size_t)1e4;
-    ASSERT_GT(iterations, MIN_SIGNIFICANT_WORK);
-
-    // check if address is known and hotness was calculated
-    ASSERT_GT(hotness_a, 0);
-    ASSERT_GT(hotness_b, 0);
-
-    // rough check
-    ASSERT_GT(hotness_a, hotness_b);
-
-    // check if hotness ratio is as expected
-    double EXPECTED_HOTNESS_RATIO = 2;
-    double calculated_hotness_ratio = hotness_a/hotness_b;
-    ASSERT_LE(abs(calculated_hotness_ratio - EXPECTED_HOTNESS_RATIO), ACCURACY);
-
-    double is_a_hot=ma.GetHotnessType();
-    double is_b_hot=mb.GetHotnessType();
-    ASSERT_EQ(is_a_hot, true);
-    ASSERT_EQ(is_b_hot, false);
-
-    ASSERT_EQ(a_kind, MEMKIND_DEFAULT); // more used kind was reallocated on DRAM
-    ASSERT_EQ(b_kind, MEMKIND_REGULAR); // less used kind got reallocated on PMEM
-    // TODO check where they are allocated - PMEM vs DRAM!
-    // TODO make sure that elements persist - sum should be the same as that
-    // of a reference, irrelevant object!!!
 }
