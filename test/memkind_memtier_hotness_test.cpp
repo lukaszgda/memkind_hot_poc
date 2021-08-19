@@ -1056,7 +1056,7 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
     TestBufferC &mc = bufferC[0]; // should do (ma_work+mb_work)/2
     TestBufferA &ma = bufferA[0];
 
-    for (int iteration=0; iteration<2; ++iteration) {
+    for (volatile int iteration=0; iteration<2; ++iteration) {
         // reallocate data - constructor has different backtrace from Realloc
         ma.ReallocData(m_tier_memory);
         mb.ReallocData(m_tier_memory);
@@ -1149,17 +1149,14 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
                 Hotness_e a_type=ma.GetHotnessType();
                 Hotness_e b_type=mb.GetHotnessType();
 
-                ASSERT_EQ(a_type, HOTNESS_HOT);
-                ASSERT_EQ(b_type, HOTNESS_COLD);
 
                 memkind_t a_kind = ma.DetectKind();
                 memkind_t b_kind = mb.DetectKind();
 
                 ASSERT_EQ(a_kind, MEMKIND_DEFAULT); // more used kind was reallocated on DRAM
                 ASSERT_EQ(b_kind, MEMKIND_REGULAR); // less used kind got reallocated on PMEM
-                // TODO check where they are allocated - PMEM vs DRAM!
-                // TODO make sure that elements persist - sum should be the same as that
-                // of a reference, irrelevant object!!!
+                ASSERT_EQ(a_type, HOTNESS_HOT);
+                ASSERT_EQ(b_type, HOTNESS_COLD);
                 break;
             }
         }

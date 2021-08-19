@@ -31,6 +31,10 @@ extern void ranking_add(ranking_t *ranking, struct ttype *entry);
 /// @p entry ownership stays with the caller
 /// @p entry should not be freed until it is removed from ranking
 /// @pre @p entry should already be added to ranking
+/// @p timestamp timestamp from pebs
+///
+/// @warning if correct timestamp is unknown (e.g. touched from
+/// malloc, not pebs), value "0" can be passed - timestamp will be ignored
 extern void ranking_touch(ranking_t *ranking, struct ttype *entry, uint64_t timestamp, uint64_t add_hotness);
 /// @p entry ownership stays with the caller
 /// @p entry should not be freed until it is removed from ranking

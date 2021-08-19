@@ -72,27 +72,29 @@ void ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry, uint6
 
     entry->n1 += add_hotness;
     entry->t0 = timestamp;
-    if(entry->timestamp_state == TIMESTAMP_NOT_SET) {
-        entry->t2 = timestamp;
-        entry->timestamp_state = TIMESTAMP_INIT;
-    }
-    if (entry->timestamp_state == TIMESTAMP_INIT_DONE) {
-        if ((entry->t0 - entry->t1) > HOTNESS_MEASURE_WINDOW) {
-            // move to next measurement window
-            float f2 = ((float)entry->n2) / (entry->t1 - entry->t2);
-            float f1 = ((float)entry->n1) / (entry->t0 - entry->t1);
-            entry->f = f2 * ranking->oldWeight + f1 * ranking->newWeight;
-            entry->t2 = entry->t1;
-            entry->t1 = entry->t0;
-            entry->n2 = entry->n1;
-            entry->n1 = 0;
+    if (timestamp != 0) {
+        if(entry->timestamp_state == TIMESTAMP_NOT_SET) {
+            entry->t2 = timestamp;
+            entry->timestamp_state = TIMESTAMP_INIT;
         }
-    } else {
-        // TODO init not done
-        if ((entry->t0 - entry->t2) > HOTNESS_MEASURE_WINDOW) {
-            // TODO - classify hotness
-            entry->timestamp_state = TIMESTAMP_INIT_DONE;;
-            entry->t1 = entry->t0;
+        if (entry->timestamp_state == TIMESTAMP_INIT_DONE) {
+            if ((entry->t0 - entry->t1) > HOTNESS_MEASURE_WINDOW) {
+                // move to next measurement window
+                float f2 = ((float)entry->n2) / (entry->t1 - entry->t2);
+                float f1 = ((float)entry->n1) / (entry->t0 - entry->t1);
+                entry->f = f2 * ranking->oldWeight + f1 * ranking->newWeight;
+                entry->t2 = entry->t1;
+                entry->t1 = entry->t0;
+                entry->n2 = entry->n1;
+                entry->n1 = 0;
+            }
+        } else {
+            // TODO init not done
+            if ((entry->t0 - entry->t2) > HOTNESS_MEASURE_WINDOW) {
+                // TODO - classify hotness
+                entry->timestamp_state = TIMESTAMP_INIT_DONE;;
+                entry->t1 = entry->t0;
+            }
         }
     }
 }
