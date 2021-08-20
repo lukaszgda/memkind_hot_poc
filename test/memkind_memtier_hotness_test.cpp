@@ -134,6 +134,10 @@ TEST_P(MemkindMemtierHotnessTest, test_matmul)
     // setup only DRAM tier
     int res = memtier_builder_add_tier(m_builder, MEMKIND_DEFAULT, 1);
     ASSERT_EQ(0, res);
+    // currently, adding only one tier is not supported
+    // workaround: add two tiers, both dram
+    res = memtier_builder_add_tier(m_builder, MEMKIND_REGULAR, 1);
+    ASSERT_EQ(0, res);
     m_tier_memory = memtier_builder_construct_memtier_memory(m_builder);
     ASSERT_NE(nullptr, m_tier_memory);
 
