@@ -195,19 +195,21 @@ void pebs_init(pid_t pid)
     unsigned long flags = 0;
     pebs_fd = perf_event_open(&pe, pid, cpu, group_fd, flags);
 
-    int mmap_pages = 1 + MMAP_DATA_SIZE;
-    int map_size = mmap_pages * getpagesize();
-    pebs_mmap = mmap(NULL, map_size,
-                     PROT_READ | PROT_WRITE, MAP_SHARED, pebs_fd, 0);
+    if (pebs_fd != -1) {
+        int mmap_pages = 1 + MMAP_DATA_SIZE;
+        int map_size = mmap_pages * getpagesize();
+        pebs_mmap = mmap(NULL, map_size,
+                        PROT_READ | PROT_WRITE, MAP_SHARED, pebs_fd, 0);
 
-    // DEBUG
-    //printf("PEBS thread start\n");
+        // DEBUG
+        //printf("PEBS thread start\n");
 
-    thread_state = THREAD_RUNNING;
-    pthread_create(&pebs_thread, NULL, &pebs_monitor, (void*)&thread_state);
+        thread_state = THREAD_RUNNING;
+        pthread_create(&pebs_thread, NULL, &pebs_monitor, (void*)&thread_state);
 
-	ioctl(pebs_fd, PERF_EVENT_IOC_RESET, 0);
-	ioctl(pebs_fd, PERF_EVENT_IOC_ENABLE, 0);
+        ioctl(pebs_fd, PERF_EVENT_IOC_RESET, 0);
+        ioctl(pebs_fd, PERF_EVENT_IOC_ENABLE, 0);
+    }
 }
 
 void pebs_fini()
