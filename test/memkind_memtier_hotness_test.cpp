@@ -1148,15 +1148,14 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
             case 1: {
                 Hotness_e a_type=ma.GetHotnessType();
                 Hotness_e b_type=mb.GetHotnessType();
+                ASSERT_EQ(a_type, HOTNESS_HOT);
+                ASSERT_EQ(b_type, HOTNESS_COLD);
 
 
                 memkind_t a_kind = ma.DetectKind();
                 memkind_t b_kind = mb.DetectKind();
-
-                ASSERT_EQ(a_kind, MEMKIND_DEFAULT); // more used kind was reallocated on DRAM
-                ASSERT_EQ(b_kind, MEMKIND_REGULAR); // less used kind got reallocated on PMEM
-                ASSERT_EQ(a_type, HOTNESS_HOT);
-                ASSERT_EQ(b_type, HOTNESS_COLD);
+                ASSERT_EQ(a_kind, MEMKIND_DEFAULT); // DRAM
+                ASSERT_EQ(b_kind, MEMKIND_REGULAR); // PMEM
                 break;
             }
         }
