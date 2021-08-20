@@ -47,8 +47,13 @@ public:
             }
         }
         end = std::chrono::system_clock::now();
+        std::chrono::duration<double> duration = end-start;
+        auto millis_elapsed =
+            std::chrono::duration_cast<std::chrono::milliseconds>(duration)
+                .count();
+
         auto time_per_op =
-            static_cast<double>((end - start).count()) / arguments.iter_no;
+            ((double)millis_elapsed) / arguments.iter_no;
         return time_per_op / (arguments.run_no * arguments.thread_no);
     }
     virtual ~counter_bench_alloc() = default;
@@ -229,6 +234,6 @@ int main(int argc, char *argv[])
     argp_parse(&argp, argc, argv, 0, 0, &arguments);
     double time_per_op =
         arguments.bench->run(arguments);
-    std::cout << "Mean second per operation:" << time_per_op << std::endl;
+    std::cout << "Mean milliseconds per operation:" << time_per_op << std::endl;
     return 0;
 }
