@@ -1,6 +1,7 @@
 #include "stdbool.h"
 #include "stdlib.h"
 #include "execinfo.h"
+#include "threads.h"
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -47,7 +48,6 @@ static bool backtrace_unwinded(const void* addr, size_t idx) {
     return /* addr == __libc_csu_init || */ /* idx > 2 || */ (addr >= pthread_start && addr < pthread_end);
 }
 
-
 uint64_t bthash(uint64_t size)
 {
     // MurmurHash2 by Austin Appleby, public domain.
@@ -59,7 +59,19 @@ uint64_t bthash(uint64_t size)
     // for (void **sp = __builtin_frame_address(0); sp != stack0; sp++)
     size_t SP_SIZE=100;
     void *sp[SP_SIZE];
+    static thread_local bool backtrace_in_progress=false;
+    if (backtrace_in_progress) {
+        // bthash has called itself recursively
+        // this can only be caused by backtrace -> malloc -> bthash
+        // backtrace -> malloc call occurs only when dynamic library is loaded
+        // in such case, we return hash "0" for dynamic library
+        // TODO this is a workaround and should probably be handled
+        // in a smarter way
+        return 0; // valid hash - for a dynamic library
+    }
+    backtrace_in_progress=true;
     int bt_size = backtrace(sp, SP_SIZE);
+    backtrace_in_progress=false;
     for (int i = 0; i<bt_size; i++)
     {
         volatile void *addr = sp[i];
