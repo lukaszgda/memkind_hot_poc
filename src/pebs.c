@@ -10,8 +10,14 @@
 #define MMAP_DATA_SIZE   8
 #define rmb() asm volatile("lfence":::"memory")
 
+typedef enum {
+    THREAD_INIT,
+    THREAD_RUNNING,
+    THREAD_FINISHED,
+} ThreadState_t;
+
 pthread_t pebs_thread;
-int thread_state = 0; // 0: normal, -1: stop thread
+ThreadState_t thread_state = THREAD_INIT;
 int pebs_fd;
 static char *pebs_mmap;
 
@@ -22,7 +28,7 @@ extern critnib* hash_to_type;
 
 void *pebs_monitor(void *state)
 {
-    int* pthread_state = state;
+    ThreadState_t* pthread_state = state;
 
     // set low priority
     int policy;
@@ -51,7 +57,7 @@ void *pebs_monitor(void *state)
 
     while (1) {
         // TODO - use mutex?
-        if (*pthread_state == -1) {
+        if (*pthread_state == THREAD_FINISHED) {
             return NULL;
         }
 
@@ -197,7 +203,7 @@ void pebs_init(pid_t pid)
     // DEBUG
     //printf("PEBS thread start\n");
 
-    thread_state = 0;
+    thread_state = THREAD_RUNNING;
     pthread_create(&pebs_thread, NULL, &pebs_monitor, (void*)&thread_state);
 
 	ioctl(pebs_fd, PERF_EVENT_IOC_RESET, 0);
@@ -206,20 +212,23 @@ void pebs_init(pid_t pid)
 
 void pebs_fini()
 {
-    ioctl(pebs_fd, PERF_EVENT_IOC_DISABLE, 0);
+    // finish only if the thread is running
+    if (thread_state == THREAD_RUNNING) {
+        ioctl(pebs_fd, PERF_EVENT_IOC_DISABLE, 0);
 
-    // TODO - use mutex?
-    thread_state = -1;
-    void* ret;
-    pthread_join(pebs_thread, &ret);
+        // TODO - use mutex?
+        thread_state = THREAD_FINISHED;
+        void* ret;
+        pthread_join(pebs_thread, &ret);
 
-    int mmap_pages = 1 + MMAP_DATA_SIZE;
-    munmap(pebs_mmap, mmap_pages * getpagesize());
-    pebs_mmap = 0;
-    close(pebs_fd);
+        int mmap_pages = 1 + MMAP_DATA_SIZE;
+        munmap(pebs_mmap, mmap_pages * getpagesize());
+        pebs_mmap = 0;
+        close(pebs_fd);
 
-    // DEBUG
-    //printf("PEBS thread end\n");
+        // DEBUG
+        //printf("PEBS thread end\n");
+    }
 }
 
 MEMKIND_EXPORT void pebs_fork(pid_t pid)

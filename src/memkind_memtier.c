@@ -796,7 +796,7 @@ memtier_builder_construct_memtier_memory(struct memtier_builder *builder)
 
 MEMKIND_EXPORT void memtier_delete_memtier_memory(struct memtier_memory *memory)
 {
-    pebs_fini();
+    pebs_fini(); // TODO conditional - only if pebs started
 
     print_memtier_memory(memory);
     jemk_free(memory->thres);
