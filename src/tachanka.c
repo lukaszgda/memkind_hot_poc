@@ -8,17 +8,19 @@
 #include <memkind/internal/bthash.h>
 #include <memkind/internal/critnib.h>
 #include <memkind/internal/tachanka.h>
+#include <memkind/internal/bigary.h>
 
 #define MAXTYPES   1*1048576
 #define MAXBLOCKS 16*1048576
-struct ttype ttypes[MAXTYPES];
-struct tblock tblocks[MAXBLOCKS];
+struct ttype *ttypes;
+struct tblock *tblocks;
 
 static int ntypes = 0;
 static int nblocks = 0;
 static int freeblock = -1;
 
 /*static*/ critnib *hash_to_type, *addr_to_block;
+static bigary ba_ttypes, ba_tblocks;
 
 int is_hot(uint64_t hash)
 {
@@ -157,6 +159,10 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
 
 void tachanka_init(void)
 {
+    bigary_init(&ba_tblocks, BIGARY_DRAM, 0);
+    tblocks = ba_tblocks.area;
+    bigary_init(&ba_ttypes, BIGARY_DRAM, 0);
+    ttypes = ba_ttypes.area;
     read_maps();
     addr_to_block = critnib_new((uint64_t*)tblocks, sizeof(tblocks[0]) / sizeof(uint64_t));
     hash_to_type = critnib_new((uint64_t*)ttypes, sizeof(ttypes[0]) / sizeof(uint64_t));
