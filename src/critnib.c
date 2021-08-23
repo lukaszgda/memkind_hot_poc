@@ -50,8 +50,10 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <sys/mman.h>
 #include "memkind/internal/memkind_arena.h"
 #include "memkind/internal/critnib.h"
+#include "memkind/internal/bigary.h"
 
 // pmdk-compat
 #include <stdatomic.h>
@@ -61,13 +63,6 @@
 #include <pthread.h>
 
 typedef pthread_mutex_t os_mutex_t;
-
-#define Free jemk_free
-
-static void *Zalloc(size_t s)
-{
-	return jemk_calloc(1, s);
-}
 
 #define ERR(x) do fprintf(stderr, x); while(0)
 
@@ -171,6 +166,7 @@ struct critnib {
 
 	uint64_t remove_count;
 
+	bigary ba_critnib;
 	os_mutex_t mutex; /* writes/removes */
 
 	cn_t unall_node;
@@ -245,9 +241,10 @@ slice_index(uint64_t key, sh_t shift)
 struct critnib *
 critnib_new(const uint64_t *leaves, int leaf_stride)
 {
-	struct critnib *c = Zalloc(sizeof(struct critnib));
-	if (!c)
-		return NULL;
+	bigary ba;
+	bigary_init(&ba, BIGARY_DRAM, 0);
+	struct critnib *c = ba.area;
+	c->ba_critnib = ba;
 
 	c->unall_node = 1;
 	c->leaves = leaves;
@@ -269,8 +266,7 @@ void
 critnib_delete(struct critnib *c)
 {
 	util_mutex_destroy(&c->mutex);
-
-	Free(c);
+	bigary_free(&c->ba_critnib);
 }
 
 /*
