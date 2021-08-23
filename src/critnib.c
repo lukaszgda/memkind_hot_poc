@@ -170,7 +170,7 @@ struct critnib {
 	os_mutex_t mutex; /* writes/removes */
 
 	cn_t unall_node;
-	struct critnib_node nodes[16*1048576]; // TODO: alloc, extend
+	struct critnib_node nodes[];
 };
 
 /*
@@ -298,8 +298,9 @@ alloc_node(struct critnib *__restrict c)
 
 	if (!n) {
 		cn_t n = c->unall_node++;
-		if (n >= ARRAYSZ(c->nodes))
-			return 0;
+		bigary_alloc(&c->ba_critnib, ((void*)&c->nodes[n+1]) - (void*)c);
+		//if (n >= ARRAYSZ(c->nodes))
+		//	return 0;
 		return n;
 	}
 

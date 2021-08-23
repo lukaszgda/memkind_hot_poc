@@ -45,8 +45,9 @@ void register_block(uint64_t hash, void *addr, size_t size)
     if (nt == -1) {
         nt = __sync_fetch_and_add(&ntypes, 1);
         t = &ttypes[nt];
-        if (nt >= MAXTYPES)
-            fprintf(stderr, "Too many distinct alloc types\n"), exit(1);
+        bigary_alloc(&ba_ttypes, nt*sizeof(struct ttype));
+        //if (nt >= MAXTYPES)
+        //    fprintf(stderr, "Too many distinct alloc types\n"), exit(1);
         t->hash = hash;
         t->size = size;
         t->timestamp_state = TIMESTAMP_NOT_SET;
@@ -72,8 +73,9 @@ void register_block(uint64_t hash, void *addr, size_t size)
         fb = freeblock;
         if (fb == -1) {
             fb = __sync_fetch_and_add(&nblocks, 1);
-            if (fb >= MAXBLOCKS)
-                fprintf(stderr, "Too many allocated blocks\n"), exit(1);
+            bigary_alloc(&ba_tblocks, fb*sizeof(struct tblock));
+            //if (fb >= MAXBLOCKS)
+            //    fprintf(stderr, "Too many allocated blocks\n"), exit(1);
             break;
         }
         nf = tblocks[fb].nextfree;
