@@ -7,6 +7,7 @@
 
 #include "include/memkind/internal/bigary.h"
 
+#define BIGARY_DEFAULT_MAX (16 * 1024 * 1048576ULL)
 #define BIGARY_PAGESIZE 2097152
 
 static void die(const char *fmt, ...)
@@ -26,7 +27,7 @@ static void die(const char *fmt, ...)
 void bigary_init(bigary *restrict ba, int fd, int flags, size_t max)
 {
     if (!max)
-        max = 1024ULL * 1048576;
+        max = BIGARY_DEFAULT_MAX;
     pthread_mutex_init(&ba->enlargement, 0);
     ba->declared = max;
     if ((ba->area = mmap(0, max, PROT_NONE, flags, fd, 0)) == MAP_FAILED)
