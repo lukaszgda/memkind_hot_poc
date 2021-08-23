@@ -5,6 +5,8 @@ struct bigary
     void *area;
     size_t declared;
     size_t top;
+    int fd;
+    int flags;
     pthread_mutex_t enlargement;
 };
 typedef struct bigary bigary;
