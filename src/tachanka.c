@@ -178,6 +178,7 @@ void tachanka_init(double old_window_hotness_weight)
     read_maps();
     addr_to_block = critnib_new((uint64_t*)tblocks, sizeof(tblocks[0]) / sizeof(uint64_t));
     hash_to_type = critnib_new((uint64_t*)ttypes, sizeof(ttypes[0]) / sizeof(uint64_t));
+    ranking_create(&ranking, old_window_hotness_weight);
 }
 
 void tachanka_update_threshold(void)
