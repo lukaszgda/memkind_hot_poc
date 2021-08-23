@@ -38,6 +38,7 @@ Hotness_e tachanka_get_hotness_type(const void *addr);
 Hotness_e tachanka_get_hotness_type_hash(uint64_t hash);
 
 struct ttype {
+    uint64_t hash;
     size_t size;
     int num_allocs; // TODO
     int total_size; // TODO
