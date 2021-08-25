@@ -123,7 +123,7 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type(const void *addr)
 {
     int bln = critnib_find_le(addr_to_block, (uintptr_t)addr);
 
-    if (bln >= 0 || addr >= tblocks[bln].addr + tblocks[bln].size)
+    if (bln < 0 || addr >= tblocks[bln].addr + tblocks[bln].size)
         return HOTNESS_NOT_FOUND;
     struct ttype *t = &ttypes[tblocks[bln].type];
     if (ranking_is_hot(ranking, t))
