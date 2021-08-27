@@ -135,6 +135,9 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
     return ret;
 }
 
+#include "stdatomic.h"
+#include "assert.h"
+
 void touch(void *addr, __u64 timestamp, int from_malloc)
 {
     struct tblock *bl = critnib_find_le(addr_to_block, (uintptr_t)addr);
@@ -150,6 +153,20 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
     if (from_malloc) {
         ranking_add(ranking, t); // first of all, add
     }
+    static atomic_uint_fast16_t counter=0;
+    const uint64_t interval=0;
+    if (++counter > interval) {
+        struct timespec t;
+        int ret = clock_gettime(CLOCK_MONOTONIC, &t);
+        if (ret != 0) {
+            printf("ASSERT TOUCH COUNTER FAILURE!\n");
+        }
+        assert(ret == 0);
+        printf("touch counter 10 hit, [seconds, nanoseconds]: [%ld, %ld]\n",
+            t.tv_sec, t.tv_nsec);
+        counter=0u;
+    }
+
     // TODO make decisions regarding thread-safeness
     // thread-safeness:
     //  - can we actually touch a removed structure?

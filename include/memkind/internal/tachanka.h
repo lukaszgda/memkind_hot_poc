@@ -15,9 +15,9 @@ typedef enum TimestampState {
 } TimestampState_t;
 
 typedef enum Hotness {
-    HOTNESS_HOT,
-    HOTNESS_COLD,
-    HOTNESS_NOT_FOUND,
+    HOTNESS_HOT=0,
+    HOTNESS_COLD=1,
+    HOTNESS_NOT_FOUND=2,
 } Hotness_e;
 
 typedef void (*tachanka_touch_callback)(void*);

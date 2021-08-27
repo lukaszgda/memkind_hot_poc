@@ -238,13 +238,50 @@ memtier_policy_dynamic_threshold_get_kind(struct memtier_memory *memory,
     return memory->cfg[i].kind;
 }
 
-static int memtier_policy_data_hotness_is_hot(uint64_t hash)
+#include <threads.h> // TODO move elsewhere
+#include <stdatomic.h> // TODO move elsewhere
+#include <execinfo.h> // TODO move elsewhere
+
+static bool memtier_policy_data_hotness_is_hot(uint64_t hash)
 {
     // TODO this requires more data
     // Currently, "ranking" and "tachanka" are de-facto singletons
     // can we deal with it?
     Hotness_e hotness = tachanka_get_hotness_type_hash(hash);
     int ret=0;
+    static atomic_uint_fast16_t counter=0;
+    static atomic_uint_fast64_t hotness_counter[3]= { 0 };
+    const uint64_t interval=10;
+    if (++counter > interval) {
+        struct timespec t;
+        int ret = clock_gettime(CLOCK_MONOTONIC, &t);
+        if (ret != 0) {
+            printf("ASSERT COUNTER FAILURE!\n");
+        }
+        assert(ret == 0);
+        printf("counters: %lu %lu %lu, [seconds, nanoseconds]: [%ld, %ld]\n",
+               hotness_counter[0], hotness_counter[1], hotness_counter[2], t.tv_sec, t.tv_nsec);
+        counter=0u;
+        static thread_local bool in_progress=false;
+        if (!in_progress) {
+            in_progress = true;
+            // backtrace
+            const size_t BUFF_SIZE=30;
+            void *buff[BUFF_SIZE];
+            ret = backtrace(buff, BUFF_SIZE);
+            char **strings = backtrace_symbols(buff, ret);
+            for (int i=0; i<ret; ++i) {
+                printf("backtrace: %s\n", strings[i]);
+            }
+            free(strings);
+            in_progress = false;
+        }
+    }
+    if (hotness >= 3) {
+        printf("ASSERT FAILED!!!\n");
+    }
+    assert(hotness < 3);
+    ++hotness_counter[hotness];
     switch (hotness) {
         case HOTNESS_COLD:
             ret = 0;
@@ -277,6 +314,19 @@ memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
 static void
 memtier_policy_data_hotness_post_alloc(uint64_t hash, void *addr, size_t size)
 {
+    static atomic_uint_fast16_t counter=0;
+    const uint64_t interval=10;
+    if (++counter > interval) {
+        struct timespec t;
+        int ret = clock_gettime(CLOCK_MONOTONIC, &t);
+        if (ret != 0) {
+            printf("ASSERT TOUCH COUNTER FAILURE!\n");
+        }
+        assert(ret == 0);
+        printf("touch counter 10 hit, [seconds, nanoseconds]: [%ld, %ld]\n",
+            t.tv_sec, t.tv_nsec);
+        counter=0u;
+    }
     register_block(hash, addr, size);
     touch(addr, 0, 1 /*called from malloc*/);
 }
@@ -676,6 +726,14 @@ builder_hot_create_memory(struct memtier_builder *builder)
         return NULL;
     }
 
+    struct timespec t;
+    int ret = clock_gettime(CLOCK_MONOTONIC, &t);
+    if (ret != 0) {
+        printf("ASSERT CREATE FAILURE!\n");
+    }
+    assert(ret == 0);
+    printf("creates memory, timespec [seconds, nanoseconds]: [%ld, %ld]\n", t.tv_sec, t.tv_nsec);
+
     return memory;
 }
 
@@ -791,13 +849,29 @@ MEMKIND_EXPORT int memtier_builder_add_tier(struct memtier_builder *builder,
 MEMKIND_EXPORT struct memtier_memory *
 memtier_builder_construct_memtier_memory(struct memtier_builder *builder)
 {
+    struct timespec t;
+    int ret = clock_gettime(CLOCK_MONOTONIC, &t);
+    if (ret != 0) {
+        printf("ASSERT CONSTRUCT FAILURE!\n");
+    }
+    assert(ret == 0);
+    printf("constructs memory, timespec [seconds, nanoseconds]: [%ld, %ld]\n", t.tv_sec, t.tv_nsec);
     return builder->create_mem(builder);
 }
+
+#include "time.h"
 
 MEMKIND_EXPORT void memtier_delete_memtier_memory(struct memtier_memory *memory)
 {
     pebs_fini(); // TODO conditional - only if pebs started
 
+    struct timespec t;
+    int ret = clock_gettime(CLOCK_MONOTONIC, &t);
+        if (ret != 0) {
+        printf("ASSERT DELETE FAILURE!\n");
+    }
+    assert(ret == 0);
+    printf("constructs memory, timespec [seconds, nanoseconds]: [%ld, %ld]\n", t.tv_sec, t.tv_nsec);
     print_memtier_memory(memory);
     jemk_free(memory->thres);
     jemk_free(memory->cfg);
@@ -828,6 +902,20 @@ MEMKIND_EXPORT void *memtier_malloc(struct memtier_memory *memory, size_t size)
 
 MEMKIND_EXPORT void *memtier_kind_malloc(memkind_t kind, size_t size)
 {
+    static atomic_uint_fast16_t counter=0;
+    const uint64_t interval=10;
+    if (++counter > interval) {
+        struct timespec t;
+        int ret = clock_gettime(CLOCK_MONOTONIC, &t);
+        if (ret != 0) {
+            printf("ASSERT MEMTIER MALLOC COUNTER FAILURE!\n");
+        }
+        assert(ret == 0);
+        printf("malloc counter 10 hit, [seconds, nanoseconds]: [%ld, %ld]\n",
+            t.tv_sec, t.tv_nsec);
+        counter=0u;
+    }
+
     void *ptr = memkind_malloc(kind, size);
     increment_alloc_size(kind->partition, jemk_malloc_usable_size(ptr));
 #ifdef MEMKIND_DECORATION_ENABLED
@@ -840,6 +928,19 @@ MEMKIND_EXPORT void *memtier_kind_malloc(memkind_t kind, size_t size)
 MEMKIND_EXPORT void *memtier_calloc(struct memtier_memory *memory, size_t num,
                                     size_t size)
 {
+    static atomic_uint_fast16_t counter=0;
+    const uint64_t interval=0;
+    if (++counter > interval) {
+        struct timespec t;
+        int ret = clock_gettime(CLOCK_MONOTONIC, &t);
+        if (ret != 0) {
+            printf("ASSERT MEMTIER CALLOC COUNTER FAILURE!\n");
+        }
+        assert(ret == 0);
+        printf("calloc counter 10 hit, [seconds, nanoseconds]: [%ld, %ld]\n",
+            t.tv_sec, t.tv_nsec);
+        counter=0u;
+    }
     void *ptr;
     uint64_t data;
 
