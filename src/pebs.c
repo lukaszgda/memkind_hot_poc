@@ -66,20 +66,20 @@ void *pebs_monitor(void *state)
         // must call this before read from data head
 		rmb();
 
-{            static uint64_t counter=0;
-    const uint64_t interval=20;
-    if (++counter > interval) {
-        struct timespec t;
-        int ret = clock_gettime(CLOCK_MONOTONIC, &t);
-        if (ret != 0) {
-            printf("ASSERT PEBS COUNTER FAILURE!\n");
-        }
-        assert(ret == 0);
-        printf("pebs counter %lu hit, [seconds, nanoseconds]: [%ld, %ld]\n",
-            interval, t.tv_sec, t.tv_nsec);
-        counter=0u;
-    }
-}
+// {            static uint64_t counter=0;
+//     const uint64_t interval=100;
+//     if (++counter > interval) {
+//         struct timespec t;
+//         int ret = clock_gettime(CLOCK_MONOTONIC, &t);
+//         if (ret != 0) {
+//             printf("ASSERT PEBS COUNTER FAILURE!\n");
+//         }
+//         assert(ret == 0);
+//         printf("pebs counter %lu hit, [seconds, nanoseconds]: [%ld, %ld]\n",
+//             interval, t.tv_sec, t.tv_nsec);
+//         counter=0u;
+//     }
+// }
         struct perf_event_mmap_page* pebs_metadata =
             (struct perf_event_mmap_page*)pebs_mmap;
 
@@ -96,20 +96,20 @@ void *pebs_monitor(void *state)
                 struct perf_event_header *event =
                     (struct perf_event_header *)data_mmap;
 
- {    static uint64_t counter=0;
-    const uint64_t interval=10;
-    if (++counter > interval) {
-        struct timespec t;
-        int ret = clock_gettime(CLOCK_MONOTONIC, &t);
-        if (ret != 0) {
-            printf("ASSERT PEBS EVENT COUNTER FAILURE!\n");
-        }
-        assert(ret == 0);
-        printf("pebs event counter 10 hit, [seconds, nanoseconds]: [%ld, %ld]\n",
-            t.tv_sec, t.tv_nsec);
-        counter=0u;
-    }
-}
+//  {    static uint64_t counter=0;
+//     const uint64_t interval=10;
+//     if (++counter > interval) {
+//         struct timespec t;
+//         int ret = clock_gettime(CLOCK_MONOTONIC, &t);
+//         if (ret != 0) {
+//             printf("ASSERT PEBS EVENT COUNTER FAILURE!\n");
+//         }
+//         assert(ret == 0);
+//         printf("pebs event counter 10 hit, [seconds, nanoseconds]: [%ld, %ld]\n",
+//             t.tv_sec, t.tv_nsec);
+//         counter=0u;
+//     }
+// }
                 switch (event->type) {
                     case PERF_RECORD_SAMPLE:
                     {
@@ -119,20 +119,21 @@ void *pebs_monitor(void *state)
 
                         // TODO - is this a global or per-core timestamp? If per-core, this could lead to some problems
 
-{    static uint64_t counter=0;
-    const uint64_t interval=10;
-    if (++counter > interval) {
-        struct timespec t;
-        int ret = clock_gettime(CLOCK_MONOTONIC, &t);
-        if (ret != 0) {
-            printf("ASSERT PEBS TOUCH COUNTER FAILURE!\n");
-        }
-        assert(ret == 0);
-        printf("pebs touch counter 10 hit, [seconds, nanoseconds]: [%ld, %ld]\n",
-            t.tv_sec, t.tv_nsec);
-        counter=0u;
-    }
-}                        touch((void*)addr, timestamp, 0 /* from malloc */);
+// {    static uint64_t counter=0;
+//     const uint64_t interval=10;
+//     if (++counter > interval) {
+//         struct timespec t;
+//         int ret = clock_gettime(CLOCK_MONOTONIC, &t);
+//         if (ret != 0) {
+//             printf("ASSERT PEBS TOUCH COUNTER FAILURE!\n");
+//         }
+//         assert(ret == 0);
+//         printf("pebs touch counter 10 hit, [seconds, nanoseconds]: [%ld, %ld]\n",
+//             t.tv_sec, t.tv_nsec);
+//         counter=0u;
+//     }
+// }
+                        touch((void*)addr, timestamp, 0 /* from malloc */);
 #if LOG_TO_FILE
                         // DEBUG
                         sprintf(buf, "last: %llu, head: %llu t: %llu addr: %llx\n",
