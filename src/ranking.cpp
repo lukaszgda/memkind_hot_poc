@@ -147,6 +147,9 @@ ranking_calculate_hot_threshold_dram_total_internal(ranking_t *ranking,
     if (agg_hot) {
         ranking->hotThreshold = agg_hot->hotness;
     }
+    // TODO remove this!!!
+    printf("wre: threshold_dram_total_internal\n");
+    // EOF TODO
 
     return ranking_get_hot_threshold_internal(ranking);
 }
@@ -155,6 +158,10 @@ double
 ranking_calculate_hot_threshold_dram_pmem_internal(ranking_t *ranking,
                                                    double dram_pmem_ratio)
 {
+    // TODO remove this!!!
+    printf("wre: threshold_dram_total_internal\n");
+    // EOF TODO
+
     double ratio = dram_pmem_ratio / (1 + dram_pmem_ratio);
     return ranking_calculate_hot_threshold_dram_total_internal(ranking, ratio);
 }

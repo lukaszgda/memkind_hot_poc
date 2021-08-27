@@ -36,6 +36,7 @@ double tachanka_get_addr_hotness(void *addr);
 int tachanka_set_touch_callback(void *addr, tachanka_touch_callback cb, void* arg);
 Hotness_e tachanka_get_hotness_type(const void *addr);
 Hotness_e tachanka_get_hotness_type_hash(uint64_t hash);
+double tachanka_get_hot_thresh(void);
 
 struct ttype {
     size_t size;

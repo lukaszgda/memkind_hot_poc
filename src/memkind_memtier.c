@@ -82,7 +82,8 @@
 #define THRESHOLD_STEP      1024
 // time window is 1s
 // #define OLD_TIME_WINDOW_HOTNESS_WEIGHT 0.999
-#define OLD_TIME_WINDOW_HOTNESS_WEIGHT 0.4 // should not stay like this... only for tests and POC
+// #define OLD_TIME_WINDOW_HOTNESS_WEIGHT 0.4 // should not stay like this... only for tests and POC
+#define OLD_TIME_WINDOW_HOTNESS_WEIGHT 0.9 // should not stay like this... only for tests and POC
 
 // Macro to get number of thresholds from parent object
 #define THRESHOLD_NUM(obj) ((obj->cfg_size) - 1)
@@ -259,8 +260,9 @@ static bool memtier_policy_data_hotness_is_hot(uint64_t hash)
             printf("ASSERT COUNTER FAILURE!\n");
         }
         assert(ret == 0);
-        printf("hotness counters [hot, cold, unknown]: %lu %lu %lu, [seconds, nanoseconds]: [%ld, %ld]\n",
-               hotness_counter[0], hotness_counter[1], hotness_counter[2], t.tv_sec, t.tv_nsec);
+        double hotness_thresh = tachanka_get_hot_thresh();
+        printf("hotness thresh: %f, counters [hot, cold, unknown]: %lu %lu %lu, [seconds, nanoseconds]: [%ld, %ld]\n",
+               hotness_thresh, hotness_counter[0], hotness_counter[1], hotness_counter[2], t.tv_sec, t.tv_nsec);
         counter=0u;
         static thread_local bool in_progress=false;
         if (!in_progress) {

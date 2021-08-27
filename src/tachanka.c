@@ -12,7 +12,8 @@
 
 // #define MALLOC_HOTNESS      20u
 #define MALLOC_HOTNESS      1u
-#define DRAM_TO_PMEM_RATIO  (1./8.)
+// #define DRAM_TO_PMEM_RATIO  (1./8.) TODO this should come from arguments
+#define DRAM_TO_PMEM_RATIO  (1e-10)     // temporary
 
 #define MAXTYPES   1*1048576
 #define MAXBLOCKS 16*1048576
@@ -121,6 +122,11 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type(const void *addr)
     return HOTNESS_COLD;
 }
 
+MEMKIND_EXPORT double tachanka_get_hot_thresh(void)
+{
+    return ranking_get_hot_threshold(ranking);
+}
+
 MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
 {
     Hotness_e ret = HOTNESS_NOT_FOUND;
@@ -186,7 +192,11 @@ void tachanka_init(double old_window_hotness_weight)
 
 void tachanka_update_threshold(void)
 {
-    ranking_calculate_hot_threshold_dram_pmem(ranking, DRAM_TO_PMEM_RATIO);
+    // TODO remove this!!!
+    printf("wre: threshold_dram_total_internal\n");
+    // EOF TODO
+
+    ranking_calculate_hot_threshold_dram_pmem(ranking, DRAM_TO_PMEM_RATIO); // TODO should be taken from arguments
 }
 
 

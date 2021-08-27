@@ -66,20 +66,20 @@ void *pebs_monitor(void *state)
         // must call this before read from data head
 		rmb();
 
-// {            static uint64_t counter=0;
-//     const uint64_t interval=100;
-//     if (++counter > interval) {
-//         struct timespec t;
-//         int ret = clock_gettime(CLOCK_MONOTONIC, &t);
-//         if (ret != 0) {
-//             printf("ASSERT PEBS COUNTER FAILURE!\n");
-//         }
-//         assert(ret == 0);
-//         printf("pebs counter %lu hit, [seconds, nanoseconds]: [%ld, %ld]\n",
-//             interval, t.tv_sec, t.tv_nsec);
-//         counter=0u;
-//     }
-// }
+{            static uint64_t counter=0;
+    const uint64_t interval=1000;
+    if (++counter > interval) {
+        struct timespec t;
+        int ret = clock_gettime(CLOCK_MONOTONIC, &t);
+        if (ret != 0) {
+            printf("ASSERT PEBS COUNTER FAILURE!\n");
+        }
+        assert(ret == 0);
+        printf("pebs counter %lu hit, [seconds, nanoseconds]: [%ld, %ld]\n",
+            interval, t.tv_sec, t.tv_nsec);
+        counter=0u;
+    }
+}
         struct perf_event_mmap_page* pebs_metadata =
             (struct perf_event_mmap_page*)pebs_mmap;
 
@@ -183,7 +183,8 @@ void *pebs_monitor(void *state)
         pebs_metadata->data_tail = pebs_metadata->data_head;
 
         tachanka_update_threshold();
-		sleep(1); // TODO analysis depends on event number; better solution: const 1 Hz, with low priority
+// 		sleep(1); // TODO analysis depends on event number; better solution: const 1 Hz, with low priority
+		usleep(100000); // TODO analysis depends on event number; better solution: const 1 Hz, with low priority
     }
     printf("stopping pebs monitor for thread %d", cur_tid);
 

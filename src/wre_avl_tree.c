@@ -399,7 +399,13 @@ MEMKIND_EXPORT void *wre_find(wre_tree_t *tree, const void *data)
         ret = cnode->data;
     return ret;
 }
-
+// TODO REMOVE
+#include "stdio.h"
+typedef struct AggregatedHotness {
+    size_t size;
+    double hotness;
+} AggregatedHotness_t;
+// EOF REMOVE
 MEMKIND_EXPORT void *wre_find_weighted(wre_tree_t *tree, double ratio)
 {
     void *ret = NULL;
@@ -412,6 +418,7 @@ MEMKIND_EXPORT void *wre_find_weighted(wre_tree_t *tree, double ratio)
             cnode = cnode->right;
             // 1) cnode should be NULL
             // 2) the function should return in the next iteration
+            printf("wre: found 0 weight [%f]\n", ((AggregatedHotness_t*)cnode->data)->hotness); // TODO remove
         } else {
             size_t left_weight = cnode->left ? cnode->left->subtreeWeight : 0;
             size_t left_plus_own_weight = left_weight + cnode->ownWeight;
@@ -427,13 +434,16 @@ MEMKIND_EXPORT void *wre_find_weighted(wre_tree_t *tree, double ratio)
                 // left is best - descend into left branch
                 cnode = cnode->left;
                 ratio = ratio / nratio_left;
+                printf("wre: descend left [%f]\n", ((AggregatedHotness_t*)cnode->data)->hotness); // TODO remove
             } else if (ratio > nratio_right) {
                 // right is best - descend into right branch
                 cnode = cnode->right;
                 ratio = (ratio - nratio_right) / (1 - nratio_right);
+                printf("wre: descend right [%f]\n", ((AggregatedHotness_t*)cnode->data)->hotness); // TODO remove
             } else {
                 // cnode is best node
                 best_node = cnode;
+                printf("wre: found best [%f]\n", ((AggregatedHotness_t*)cnode->data)->hotness); // TODO remove
                 break;
             }
         }
