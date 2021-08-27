@@ -251,7 +251,7 @@ static bool memtier_policy_data_hotness_is_hot(uint64_t hash)
     int ret=0;
     static atomic_uint_fast16_t counter=0;
     static atomic_uint_fast64_t hotness_counter[3]= { 0 };
-    const uint64_t interval=10;
+    const uint64_t interval=100;
     if (++counter > interval) {
         struct timespec t;
         int ret = clock_gettime(CLOCK_MONOTONIC, &t);
@@ -259,7 +259,7 @@ static bool memtier_policy_data_hotness_is_hot(uint64_t hash)
             printf("ASSERT COUNTER FAILURE!\n");
         }
         assert(ret == 0);
-        printf("counters: %lu %lu %lu, [seconds, nanoseconds]: [%ld, %ld]\n",
+        printf("hotness counters [hot, cold, unknown]: %lu %lu %lu, [seconds, nanoseconds]: [%ld, %ld]\n",
                hotness_counter[0], hotness_counter[1], hotness_counter[2], t.tv_sec, t.tv_nsec);
         counter=0u;
         static thread_local bool in_progress=false;
@@ -314,19 +314,19 @@ memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
 static void
 memtier_policy_data_hotness_post_alloc(uint64_t hash, void *addr, size_t size)
 {
-    static atomic_uint_fast16_t counter=0;
-    const uint64_t interval=10;
-    if (++counter > interval) {
-        struct timespec t;
-        int ret = clock_gettime(CLOCK_MONOTONIC, &t);
-        if (ret != 0) {
-            printf("ASSERT TOUCH COUNTER FAILURE!\n");
-        }
-        assert(ret == 0);
-        printf("touch counter 10 hit, [seconds, nanoseconds]: [%ld, %ld]\n",
-            t.tv_sec, t.tv_nsec);
-        counter=0u;
-    }
+//     static atomic_uint_fast16_t counter=0;
+//     const uint64_t interval=1000;
+//     if (++counter > interval) {
+//         struct timespec t;
+//         int ret = clock_gettime(CLOCK_MONOTONIC, &t);
+//         if (ret != 0) {
+//             printf("ASSERT TOUCH COUNTER FAILURE!\n");
+//         }
+//         assert(ret == 0);
+//         printf("touch counter %lu hit, [seconds, nanoseconds]: [%ld, %ld]\n",
+//             interval, t.tv_sec, t.tv_nsec);
+//         counter=0u;
+//     }
     register_block(hash, addr, size);
     touch(addr, 0, 1 /*called from malloc*/);
 }
@@ -902,19 +902,19 @@ MEMKIND_EXPORT void *memtier_malloc(struct memtier_memory *memory, size_t size)
 
 MEMKIND_EXPORT void *memtier_kind_malloc(memkind_t kind, size_t size)
 {
-    static atomic_uint_fast16_t counter=0;
-    const uint64_t interval=10;
-    if (++counter > interval) {
-        struct timespec t;
-        int ret = clock_gettime(CLOCK_MONOTONIC, &t);
-        if (ret != 0) {
-            printf("ASSERT MEMTIER MALLOC COUNTER FAILURE!\n");
-        }
-        assert(ret == 0);
-        printf("malloc counter 10 hit, [seconds, nanoseconds]: [%ld, %ld]\n",
-            t.tv_sec, t.tv_nsec);
-        counter=0u;
-    }
+//     static atomic_uint_fast16_t counter=0;
+//     const uint64_t interval=1000;
+//     if (++counter > interval) {
+//         struct timespec t;
+//         int ret = clock_gettime(CLOCK_MONOTONIC, &t);
+//         if (ret != 0) {
+//             printf("ASSERT MEMTIER MALLOC COUNTER FAILURE!\n");
+//         }
+//         assert(ret == 0);
+//         printf("malloc counter %lu hit, [seconds, nanoseconds]: [%ld, %ld]\n",
+//             interval, t.tv_sec, t.tv_nsec);
+//         counter=0u;
+//     }
 
     void *ptr = memkind_malloc(kind, size);
     increment_alloc_size(kind->partition, jemk_malloc_usable_size(ptr));
@@ -928,19 +928,19 @@ MEMKIND_EXPORT void *memtier_kind_malloc(memkind_t kind, size_t size)
 MEMKIND_EXPORT void *memtier_calloc(struct memtier_memory *memory, size_t num,
                                     size_t size)
 {
-    static atomic_uint_fast16_t counter=0;
-    const uint64_t interval=0;
-    if (++counter > interval) {
-        struct timespec t;
-        int ret = clock_gettime(CLOCK_MONOTONIC, &t);
-        if (ret != 0) {
-            printf("ASSERT MEMTIER CALLOC COUNTER FAILURE!\n");
-        }
-        assert(ret == 0);
-        printf("calloc counter 10 hit, [seconds, nanoseconds]: [%ld, %ld]\n",
-            t.tv_sec, t.tv_nsec);
-        counter=0u;
-    }
+//     static atomic_uint_fast16_t counter=0;
+//     const uint64_t interval=100;
+//     if (++counter > interval) {
+//         struct timespec t;
+//         int ret = clock_gettime(CLOCK_MONOTONIC, &t);
+//         if (ret != 0) {
+//             printf("ASSERT MEMTIER CALLOC COUNTER FAILURE!\n");
+//         }
+//         assert(ret == 0);
+//         printf("calloc counter %lu hit, [seconds, nanoseconds]: [%ld, %ld]\n",
+//             interval, t.tv_sec, t.tv_nsec);
+//         counter=0u;
+//     }
     void *ptr;
     uint64_t data;
 

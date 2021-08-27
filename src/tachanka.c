@@ -154,7 +154,7 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
         ranking_add(ranking, t); // first of all, add
     }
     static atomic_uint_fast16_t counter=0;
-    const uint64_t interval=0;
+    const uint64_t interval=1000;
     if (++counter > interval) {
         struct timespec t;
         int ret = clock_gettime(CLOCK_MONOTONIC, &t);
@@ -162,8 +162,8 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
             printf("ASSERT TOUCH COUNTER FAILURE!\n");
         }
         assert(ret == 0);
-        printf("touch counter 10 hit, [seconds, nanoseconds]: [%ld, %ld]\n",
-            t.tv_sec, t.tv_nsec);
+        printf("touch counter %lu hit, [seconds, nanoseconds]: [%ld, %ld]\n",
+            interval, t.tv_sec, t.tv_nsec);
         counter=0u;
     }
 
