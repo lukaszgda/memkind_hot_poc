@@ -24,6 +24,37 @@ static char *pebs_mmap;
 // DEBUG
 extern critnib* hash_to_type;
 
+// static uint64_t timespec_diff_millis(const struct timespec *tnew, const struct timespec *told) {
+//     uint64_t diff_s = tnew->tv_sec - told->tv_sec;
+//     uint64_t tnew_ns = tnew->tv_nsec;
+//     uint64_t told_ns = told->tv_nsec;
+//     if (told_ns > tnew_ns) {
+//         take 1s and convert it to ns
+//         const uint64_t s_to_ns=(uint64_t)1000000000;
+//         tnew_ns += s_to_ns;
+//         diff_s --;
+//     }
+//     return diff_s*1000+(tnew_ns-told_ns)/1000000;
+// }
+
+static void timespec_add(struct timespec *modified, const struct timespec *toadd) {
+    const uint64_t S_TO_NS=1000000000u;
+    modified->tv_sec += toadd->tv_sec;
+    modified->tv_nsec += toadd->tv_nsec;
+    modified->tv_sec += (modified->tv_nsec/S_TO_NS);
+    modified->tv_nsec %= S_TO_NS;
+}
+
+static void timespec_millis_to_timespec(double millis, struct timespec *out) {
+    out->tv_sec = (uint64_t)(millis/1000u);
+    double ms_to_convert = millis-out->tv_sec*1000;
+    out->tv_nsec = (uint64_t)(ms_to_convert*1000000);
+}
+
+static bool timespec_is_he(struct timespec *tv1, struct timespec *tv2) {
+    return tv1->tv_sec>tv2->tv_sec || (tv1->tv_sec == tv2->tv_sec && tv1->tv_nsec > tv2->tv_nsec);
+}
+
 #define LOG_TO_FILE 1
 
 #include "assert.h"
@@ -32,6 +63,10 @@ void *pebs_monitor(void *state)
 {
     ThreadState_t* pthread_state = state;
 
+    double freq_Hz=1;
+    double period_ms=1000/freq_Hz;
+    struct timespec tv_period;
+    timespec_millis_to_timespec(period_ms, &tv_period);
     // set low priority
     int policy;
     struct sched_param param;
@@ -56,6 +91,15 @@ void *pebs_monitor(void *state)
     }
     lseek(log_file, 0, SEEK_END);
 #endif
+
+    struct timespec ntime;
+    int ret = clock_gettime(CLOCK_MONOTONIC, &ntime);
+    if (ret != 0) {
+        printf("ASSERT_CLOCK_GETTIME_FAILURE!\n");
+        assert(ret!=0);
+    }
+    timespec_add(&ntime, &tv_period);
+
 
     while (1) {
         // TODO - use mutex?
@@ -183,8 +227,33 @@ void *pebs_monitor(void *state)
         pebs_metadata->data_tail = pebs_metadata->data_head;
 
         tachanka_update_threshold();
+//         ret = clock_gettime(CLOCK_MONOTONIC, &ctime);
+//         if (ret != 0) {
+//             printf("ASSERT_CLOCK_GETTIME_FAILURE!\n");
+//             assert(ret!=0);
+//         }
+//         uint64_t diff_ms = timespec_diff_millis(&ctime, &ptime);
+//         if ()
+//
+//         usleep(1000*(diff_ms-period_ms))
+//         if (diff_ms > period_ms) {
+//             warning:
+//         }
+//         ptime = ctime;
+
 // 		sleep(1); // TODO analysis depends on event number; better solution: const 1 Hz, with low priority
-		usleep(100000); // TODO analysis depends on event number; better solution: const 1 Hz, with low priority
+//         usleep(1000);
+        struct timespec temp;
+        ret = clock_gettime(CLOCK_MONOTONIC, &temp);
+        if (ret != 0) {
+            printf("ASSERT_CLOCK_GETTIME_FAILURE!\n");
+            assert(ret!=0);
+        }
+        if (timespec_is_he(&temp, &ntime)) {
+            printf("WARN: deadline not met!");
+        }
+        (void)clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ntime, NULL);
+        timespec_add(&ntime, &tv_period);
     }
     printf("stopping pebs monitor for thread %d", cur_tid);
 
