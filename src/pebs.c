@@ -130,7 +130,7 @@ void *pebs_monitor(void *state)
         // DEBUG
         // printf("head: %llu size: %lld\n", pebs_metadata->data_head, pebs_metadata->data_head - last_head);
         if (last_head < pebs_metadata->data_head) {
-            printf("new data from PEBS: ");
+            printf("new data from PEBS\n");
             int samples = 0;
 
             while (last_head < pebs_metadata->data_head) {
@@ -177,7 +177,9 @@ void *pebs_monitor(void *state)
 //         counter=0u;
 //     }
 // }
+                        printf("touches, timestamp: [%llu], from malloc [0]\n", timestamp);
                         touch((void*)addr, timestamp, 0 /* from malloc */);
+                        printf("touched, timestamp: [%llu], from malloc [0]\n", timestamp);
 #if LOG_TO_FILE
                         // DEBUG
                         sprintf(buf, "last: %llu, head: %llu t: %llu addr: %llx\n",
@@ -197,7 +199,7 @@ void *pebs_monitor(void *state)
                 samples++;
             }
 
-            printf("%d samples\n", samples);
+            printf("new data from pebs: %d samples\n", samples);
 
 #if LOG_TO_FILE
             // DEBUG

@@ -12,8 +12,9 @@
 
 // #define MALLOC_HOTNESS      20u
 #define MALLOC_HOTNESS      1u
-// #define DRAM_TO_PMEM_RATIO  (1./8.) TODO this should come from arguments
-#define DRAM_TO_PMEM_RATIO  (1e-10)     // temporary
+#define DRAM_TO_PMEM_RATIO  (1./8.) // TODO this should come from arguments
+// #define DRAM_TO_PMEM_RATIO  (1e-10)     // temporary
+// #define DRAM_TO_PMEM_RATIO  (1)     // temporary
 
 #define MAXTYPES   1*1048576
 #define MAXBLOCKS 16*1048576
@@ -46,7 +47,7 @@ void register_block(uint64_t hash, void *addr, size_t size)
         if (t >= &ttypes[MAXTYPES])
             fprintf(stderr, "Too many distinct alloc types\n"), exit(1);
         t->size = size;
-        t->timestamp_state = TIMESTAMP_NOT_SET;
+        t->timestamp_state = TIMESTAMP_NOT_SET;// registering block - only when firt one!
         if (critnib_insert(hash_to_type, hash, t, 0) == EEXIST) {
             t = critnib_get(hash_to_type, hash); // raced with another thread
             if (!t)
@@ -146,18 +147,26 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
 
 void touch(void *addr, __u64 timestamp, int from_malloc)
 {
+    printf("touches tachanka start, timestamp: [%llu], from malloc [%d]\n", timestamp, from_malloc);
     struct tblock *bl = critnib_find_le(addr_to_block, (uintptr_t)addr);
-    if (!bl)
+    if (!bl || addr >= bl->addr + bl->size) {
+        printf("tachanka aborts [pointer]: [%p]\n", bl);
+        if (bl)
+            printf("tachanka aborts [bl->addr, bl->size, addr]: [%p, %lu, %p]\n", bl->addr, bl->size, addr);
         return;
-    if (addr >= bl->addr + bl->size)
-        return;
-
+    }
+    else
+    {
+        printf("tachanka touch for known area!\n");
+    }
     struct ttype *t = &ttypes[bl->type];
     // TODO - is this thread safeness needed? or best effort will be enough?
     //__sync_fetch_and_add(&t->accesses, 1);
 
+    int hotness=1;
     if (from_malloc) {
         ranking_add(ranking, t); // first of all, add
+        hotness=MALLOC_HOTNESS;
     }
     static atomic_uint_fast16_t counter=0;
     const uint64_t interval=1000;
@@ -179,7 +188,8 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
     //  - is it a problem?
     // current solution: assert(FALSE)
     // future solution: ignore?
-    ranking_touch(ranking, t, timestamp, MALLOC_HOTNESS);
+    printf("touches tachanka, timestamp: [%llu]\n", timestamp);
+    ranking_touch(ranking, t, timestamp, hotness);
 }
 
 void tachanka_init(double old_window_hotness_weight)
@@ -193,7 +203,7 @@ void tachanka_init(double old_window_hotness_weight)
 void tachanka_update_threshold(void)
 {
     // TODO remove this!!!
-    printf("wre: threshold_dram_total_internal\n");
+    printf("wre: tachanka_update_threshold\n");
     // EOF TODO
 
     ranking_calculate_hot_threshold_dram_pmem(ranking, DRAM_TO_PMEM_RATIO); // TODO should be taken from arguments

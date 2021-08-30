@@ -67,6 +67,8 @@ static void ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry
 // old touch entry definition - as described in design doc
 void ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry, uint64_t timestamp, uint64_t add_hotness)
 {
+    printf("touches internal internal, timestamp: [%lu]\n", timestamp);
+
     if (entry->touchCb)
         entry->touchCb(entry->touchCbArg);
 
@@ -87,15 +89,21 @@ void ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry, uint6
                 entry->t1 = entry->t0;
                 entry->n2 = entry->n1;
                 entry->n1 = 0;
+                printf("wre: hotness updated: [new, old]: [%.16f, %.16f]\n", f1, f2);
             }
+            printf("wre: hotness awaiting window\n");
         } else {
             // TODO init not done
+            printf("wre: hotness awaiting window\n");
             if ((entry->t0 - entry->t2) > HOTNESS_MEASURE_WINDOW) {
                 // TODO - classify hotness
                 entry->timestamp_state = TIMESTAMP_INIT_DONE;;
                 entry->t1 = entry->t0;
+                printf("wre: hotness init done\n");
             }
         }
+    } else {
+        printf("wre: hotness touch without timestamp!\n");
     }
 }
 
@@ -159,7 +167,7 @@ ranking_calculate_hot_threshold_dram_pmem_internal(ranking_t *ranking,
                                                    double dram_pmem_ratio)
 {
     // TODO remove this!!!
-    printf("wre: threshold_dram_total_internal\n");
+    printf("wre: threshold_dram_pmem_internal\n");
     // EOF TODO
 
     double ratio = dram_pmem_ratio / (1 + dram_pmem_ratio);
@@ -175,10 +183,12 @@ void ranking_add_internal(ranking_t *ranking, struct ttype *entry)
     if (value) {
         // value with the same hotness is already there, should be aggregated
         value->size += entry->size;
+        printf("wre: hotness found, aggregates\n");
     } else {
         value = (AggregatedHotness_t *)jemk_malloc(sizeof(AggregatedHotness_t));
         value->hotness = entry->f;
         value->size = entry->size;
+        printf("wre: hotness not found, adds\n");
     }
     wre_put(ranking->entries, value, value->size);
 }
@@ -216,6 +226,7 @@ static void ranking_update_internal(ranking_t *ranking, struct ttype *entry_to_u
 
 void ranking_touch_internal(ranking_t *ranking, struct ttype *entry, uint64_t timestamp, uint64_t add_hotness)
 {
+    printf("touches internal, timestamp: [%lu]\n", timestamp);
     ranking_remove_internal(ranking, entry);
     ranking_touch_entry_internal(ranking, entry, timestamp, add_hotness);
     ranking_add_internal(ranking, entry);
@@ -281,6 +292,7 @@ MEMKIND_EXPORT void ranking_update(ranking_t *ranking, struct ttype *entry_to_up
 
 MEMKIND_EXPORT void ranking_touch(ranking_t *ranking, struct ttype *entry, uint64_t timestamp, uint64_t add_hotness)
 {
+    printf("touches ranking, timestamp: [%lu]\n", timestamp);
     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
     ranking_touch_internal(ranking, entry, timestamp, add_hotness);
 }
