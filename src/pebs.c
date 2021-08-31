@@ -56,7 +56,7 @@ void *pebs_monitor(void *state)
     static int pid;
     static int log_file;
     int cur_pid = getpid();
-    int cur_tid = gettid();
+    int cur_tid = syscall(SYS_gettid);
     printf("starting pebs monitor for thread %d", cur_tid);
     if (pid != cur_pid) {
         char name[255] = {0};
