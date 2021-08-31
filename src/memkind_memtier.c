@@ -252,7 +252,7 @@ static bool memtier_policy_data_hotness_is_hot(uint64_t hash)
     int ret=0;
     static atomic_uint_fast16_t counter=0;
     static atomic_uint_fast64_t hotness_counter[3]= { 0 };
-    const uint64_t interval=100;
+    const uint64_t interval=15000;
     if (++counter > interval) {
         struct timespec t;
         int ret = clock_gettime(CLOCK_MONOTONIC, &t);

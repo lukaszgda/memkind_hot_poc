@@ -147,18 +147,18 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
 
 void touch(void *addr, __u64 timestamp, int from_malloc)
 {
-    printf("touches tachanka start, timestamp: [%llu], from malloc [%d]\n", timestamp, from_malloc);
+//     printf("touches tachanka start, timestamp: [%llu], from malloc [%d]\n", timestamp, from_malloc);
     struct tblock *bl = critnib_find_le(addr_to_block, (uintptr_t)addr);
     if (!bl || addr >= bl->addr + bl->size) {
-        printf("tachanka aborts [pointer]: [%p]\n", bl);
-        if (bl)
-            printf("tachanka aborts [bl->addr, bl->size, addr]: [%p, %lu, %p]\n", bl->addr, bl->size, addr);
+//         printf("tachanka aborts [pointer]: [%p]\n", bl);
+//         if (bl)
+//             printf("tachanka aborts [bl->addr, bl->size, addr]: [%p, %lu, %p]\n", bl->addr, bl->size, addr);
         return;
     }
-    else
-    {
-        printf("tachanka touch for known area!\n");
-    }
+//     else
+//     {
+//         printf("tachanka touch for known area!\n");
+//     }
     struct ttype *t = &ttypes[bl->type];
     // TODO - is this thread safeness needed? or best effort will be enough?
     //__sync_fetch_and_add(&t->accesses, 1);
@@ -188,7 +188,7 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
     //  - is it a problem?
     // current solution: assert(FALSE)
     // future solution: ignore?
-    printf("touches tachanka, timestamp: [%llu]\n", timestamp);
+//     printf("touches tachanka, timestamp: [%llu]\n", timestamp);
     ranking_touch(ranking, t, timestamp, hotness);
 }
 
