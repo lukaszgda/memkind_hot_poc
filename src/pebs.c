@@ -21,9 +21,13 @@ ThreadState_t thread_state = THREAD_INIT;
 int pebs_fd;
 static char *pebs_mmap;
 
-// DEBUG
 extern critnib* hash_to_type;
 extern struct ttype ttypes[];
+
+#define LOG_TO_FILE 1
+
+#if LOG_TO_FILE
+// DEBUG
 static char *bp;
 static int display_hotness(int nt)
 {
@@ -34,8 +38,7 @@ static int display_hotness(int nt)
         bp += sprintf(bp, "N/A,");
     return 0;
 }
-
-#define LOG_TO_FILE 1
+#endif
 
 void *pebs_monitor(void *state)
 {
@@ -49,6 +52,7 @@ void *pebs_monitor(void *state)
     pthread_setschedparam(pthread_self(), policy, &param);
 
     __u64 last_head = 0;
+    int cur_tid = syscall(SYS_gettid);
 
     // DEBUG
 #if LOG_TO_FILE
@@ -56,7 +60,6 @@ void *pebs_monitor(void *state)
     static int pid;
     static int log_file;
     int cur_pid = getpid();
-    int cur_tid = syscall(SYS_gettid);
     printf("starting pebs monitor for thread %d", cur_tid);
     if (pid != cur_pid) {
         char name[255] = {0};
@@ -121,11 +124,12 @@ void *pebs_monitor(void *state)
             }
 
             printf("%d samples\n", samples);
-
+#if LOG_TO_FILE
             bp = buf;
             critnib_iter(hash_to_type, display_hotness);
             bp += sprintf(bp, "\n");
             if (write(log_file, buf, bp - buf));
+#endif
         }
 
 		ioctl(pebs_fd, PERF_EVENT_IOC_REFRESH, 0);
@@ -135,6 +139,7 @@ void *pebs_monitor(void *state)
         tachanka_update_threshold();
 		sleep(1);
     }
+
     printf("stopping pebs monitor for thread %d", cur_tid);
 
     return NULL;
