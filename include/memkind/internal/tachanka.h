@@ -30,6 +30,7 @@ void touch(void *addr, __u64 timestamp, int from_malloc);
 void tachanka_init(double old_window_hotness_weight);
 void tachanka_destroy(void);
 void tachanka_update_threshold(void);
+void tachanka_set_dram_total_ratio(double ratio);
 double tachanka_get_obj_hotness(int size);
 double tachanka_get_addr_hotness(void *addr);
 // double tachanka_set_touch_callback(void *addr, const char*name);

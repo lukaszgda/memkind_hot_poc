@@ -708,17 +708,26 @@ builder_hot_create_memory(struct memtier_builder *builder)
         memtier_memory_init(builder->cfg_size, false, true);
     memory->hot_tier_id = -1;
 
+    if (memory->cfg_size != 2)
+        printf("Incorrect number of tiers"), exit(-1);
+
+    double ratio_sum = builder->cfg[0].kind_ratio + builder->cfg[1].kind_ratio;
+
+    // TODO requires cleanup
     for (i = 1; i < memory->cfg_size; ++i) {
         memory->cfg[i].kind = builder->cfg[i].kind;
         memory->cfg[i].kind_ratio =
-            builder->cfg[0].kind_ratio / builder->cfg[i].kind_ratio;
+            builder->cfg[i].kind_ratio / ratio_sum;
+//         memory->cfg[i].kind_ratio =
+//             builder->cfg[0].kind_ratio / builder->cfg[i].kind_ratio;
         if (memory->cfg[i].kind == MEMKIND_DEFAULT) {
-            memory->hot_tier_id = i;
+            memory->hot_tier_id = i; // the usage of this variable might cause some confusion...
         }
     }
 
+    // TODO requires cleanup
     memory->cfg[0].kind = builder->cfg[0].kind;
-    memory->cfg[0].kind_ratio = 1.0;
+//     memory->cfg[0].kind_ratio = 1.0;
     if (memory->cfg[0].kind == MEMKIND_DEFAULT) {
         memory->hot_tier_id = 0;
     }
@@ -727,6 +736,7 @@ builder_hot_create_memory(struct memtier_builder *builder)
         log_err("No tier suitable for HOT memory defined.");
         return NULL;
     }
+    double dram_total_ratio=memory->cfg[memory->hot_tier_id].kind_ratio/ratio_sum;
 
     struct timespec t;
     int ret = clock_gettime(CLOCK_MONOTONIC, &t);
@@ -734,8 +744,9 @@ builder_hot_create_memory(struct memtier_builder *builder)
         printf("ASSERT CREATE FAILURE!\n");
     }
     assert(ret == 0);
-    printf("creates memory, timespec [seconds, nanoseconds]: [%ld, %ld]\n", t.tv_sec, t.tv_nsec);
+    printf("creates memory [ratio %f], timespec [seconds, nanoseconds]: [%ld, %ld]\n", dram_total_ratio, t.tv_sec, t.tv_nsec);
 
+    tachanka_set_dram_total_ratio(dram_total_ratio);
     return memory;
 }
 

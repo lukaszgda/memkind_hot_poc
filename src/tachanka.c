@@ -12,9 +12,6 @@
 
 // #define MALLOC_HOTNESS      20u
 #define MALLOC_HOTNESS      1u
-#define DRAM_TO_PMEM_RATIO  (1./8.) // TODO this should come from arguments
-// #define DRAM_TO_PMEM_RATIO  (1e-10)     // temporary
-// #define DRAM_TO_PMEM_RATIO  (1)     // temporary
 
 #define MAXTYPES   1*1048576
 #define MAXBLOCKS 16*1048576
@@ -34,6 +31,7 @@ static int freeblock = -1;
 
 // TODO (possibly) move elsewhere - make sure multiple rankings are supported!
 static ranking_t *ranking;
+static _Atomic double g_dramToTotalMemRatio=1.0;
 /*static*/ critnib *hash_to_type, *addr_to_block;
 
 #define ADD(var,x) __sync_fetch_and_add(&(var), (x))
@@ -200,13 +198,20 @@ void tachanka_init(double old_window_hotness_weight)
     ranking_create(&ranking, old_window_hotness_weight);
 }
 
+MEMKIND_EXPORT void tachanka_set_dram_total_ratio(double ratio)
+{
+    if (ratio<0 || ratio>1)
+        printf("Incorrect ratio [%f], exiting", ratio), exit(-1);
+    g_dramToTotalMemRatio=ratio;
+}
+
 void tachanka_update_threshold(void)
 {
     // TODO remove this!!!
     printf("wre: tachanka_update_threshold\n");
     // EOF TODO
 
-    ranking_calculate_hot_threshold_dram_pmem(ranking, DRAM_TO_PMEM_RATIO); // TODO should be taken from arguments
+    ranking_calculate_hot_threshold_dram_total(ranking, g_dramToTotalMemRatio);
 }
 
 

@@ -886,7 +886,7 @@ private:
 
         int res = memtier_builder_add_tier(m_builder, MEMKIND_DEFAULT, 1); // add dram kind
         ASSERT_EQ(0, res);
-        res = memtier_builder_add_tier(m_builder, MEMKIND_REGULAR, 1); // add pmem kind
+        res = memtier_builder_add_tier(m_builder, MEMKIND_REGULAR, 8); // add pmem kind
         ASSERT_EQ(0, res);
         m_tier_memory = memtier_builder_construct_memtier_memory(m_builder);
         ASSERT_NE(nullptr, m_tier_memory);
