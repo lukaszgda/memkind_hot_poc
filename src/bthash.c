@@ -17,6 +17,8 @@ static void *pthread_start, *pthread_end; // hax!
 
 // static void* csu_init
 
+#define CUSTOM_BACKTRACE
+
 void read_maps(void)
 {
     FILE *f = fopen("/proc/self/maps", "r");
@@ -55,8 +57,10 @@ uint64_t bthash(uint64_t size)
     const int R = 47;
     uint64_t h = size ^ M;
 
-    // old solution:
-    // for (void **sp = __builtin_frame_address(0); sp != stack0; sp++)
+#ifdef CUSTOM_BACKTRACE
+    int i=0;
+    for (void **sp = __builtin_frame_address(0); sp != stack0; sp++)
+#else
     size_t SP_SIZE=100;
     void *sp[SP_SIZE];
     static thread_local bool backtrace_in_progress=false;
@@ -73,6 +77,7 @@ uint64_t bthash(uint64_t size)
     int bt_size = backtrace(sp, SP_SIZE);
     backtrace_in_progress=false;
     for (int i = 0; i<bt_size; i++)
+#endif
     {
         volatile void *addr = sp[i];
         int s;
