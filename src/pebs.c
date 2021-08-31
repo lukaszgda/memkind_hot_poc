@@ -24,7 +24,7 @@ static char *pebs_mmap;
 extern critnib* hash_to_type;
 extern struct ttype ttypes[];
 
-#define LOG_TO_FILE 1
+#define LOG_TO_FILE 0
 
 #if LOG_TO_FILE
 // DEBUG
