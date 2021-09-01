@@ -63,7 +63,8 @@ void *pebs_monitor(void *state)
 {
     ThreadState_t* pthread_state = state;
 
-    double freq_Hz=1;
+//     double freq_Hz=1;
+    double freq_Hz=10;
     double period_ms=1000/freq_Hz;
     struct timespec tv_period;
     timespec_millis_to_timespec(period_ms, &tv_period);

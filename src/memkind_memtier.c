@@ -250,9 +250,10 @@ static bool memtier_policy_data_hotness_is_hot(uint64_t hash)
     // can we deal with it?
     Hotness_e hotness = tachanka_get_hotness_type_hash(hash);
     int ret=0;
+    // DEBUG
     static atomic_uint_fast16_t counter=0;
     static atomic_uint_fast64_t hotness_counter[3]= { 0 };
-    const uint64_t interval=15000;
+    const uint64_t interval=100000;
     if (++counter > interval) {
         struct timespec t;
         int ret = clock_gettime(CLOCK_MONOTONIC, &t);
@@ -264,6 +265,7 @@ static bool memtier_policy_data_hotness_is_hot(uint64_t hash)
         printf("hotness thresh: %f, counters [hot, cold, unknown]: %lu %lu %lu, [seconds, nanoseconds]: [%ld, %ld]\n",
                hotness_thresh, hotness_counter[0], hotness_counter[1], hotness_counter[2], t.tv_sec, t.tv_nsec);
         counter=0u;
+#ifdef VERBOSE_DEBUG_INFO
         static thread_local bool in_progress=false;
         if (!in_progress) {
             in_progress = true;
@@ -278,7 +280,9 @@ static bool memtier_policy_data_hotness_is_hot(uint64_t hash)
             free(strings);
             in_progress = false;
         }
+#endif
     }
+    // EOF DEBUG
     if (hotness >= 3) {
         printf("ASSERT FAILED!!!\n");
     }
@@ -714,7 +718,7 @@ builder_hot_create_memory(struct memtier_builder *builder)
     double ratio_sum = builder->cfg[0].kind_ratio + builder->cfg[1].kind_ratio;
 
     // TODO requires cleanup
-    for (i = 1; i < memory->cfg_size; ++i) {
+    for (i = 0; i < memory->cfg_size; ++i) {
         memory->cfg[i].kind = builder->cfg[i].kind;
         memory->cfg[i].kind_ratio =
             builder->cfg[i].kind_ratio / ratio_sum;
@@ -736,7 +740,7 @@ builder_hot_create_memory(struct memtier_builder *builder)
         log_err("No tier suitable for HOT memory defined.");
         return NULL;
     }
-    double dram_total_ratio=memory->cfg[memory->hot_tier_id].kind_ratio/ratio_sum;
+    double dram_total_ratio=memory->cfg[memory->hot_tier_id].kind_ratio;
 
     struct timespec t;
     int ret = clock_gettime(CLOCK_MONOTONIC, &t);
