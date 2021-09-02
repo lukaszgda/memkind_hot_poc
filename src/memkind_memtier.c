@@ -277,6 +277,8 @@ memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
 static void
 memtier_policy_data_hotness_post_alloc(uint64_t hash, void *addr, size_t size)
 {
+    // TODO: there are 2 lookups in hash_to_block - one from "get_kind" and
+    // second here - this could be easily optimized
     register_block(hash, addr, size);
     touch(addr, 0, 1 /*called from malloc*/);
 }
