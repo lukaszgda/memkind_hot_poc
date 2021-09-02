@@ -148,6 +148,8 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
 //     printf("touches tachanka start, timestamp: [%llu], from malloc [%d]\n", timestamp, from_malloc);
     struct tblock *bl = critnib_find_le(addr_to_block, (uintptr_t)addr);
     if (!bl || addr >= bl->addr + bl->size) {
+        if (!from_malloc)
+            printf("touches unknown area!\n");
 //         printf("tachanka aborts [pointer]: [%p]\n", bl);
 //         if (bl)
 //             printf("tachanka aborts [bl->addr, bl->size, addr]: [%p, %lu, %p]\n", bl->addr, bl->size, addr);

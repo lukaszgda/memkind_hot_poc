@@ -267,6 +267,7 @@ void pebs_init(pid_t pid)
 {
     // TODO add code that writes to /proc/sys/kernel/perf_event_paranoid ?
 
+    printf("pebs_init\n");
     struct perf_event_attr pe;
     memset(&pe, 0, sizeof(struct perf_event_attr));
 
@@ -326,6 +327,10 @@ void pebs_init(pid_t pid)
 
         ioctl(pebs_fd, PERF_EVENT_IOC_RESET, 0);
         ioctl(pebs_fd, PERF_EVENT_IOC_ENABLE, 0);
+    }
+    else
+    {
+        printf("PEBS NOT SUPPORTED! continuing without pebs\n");
     }
 }
 
