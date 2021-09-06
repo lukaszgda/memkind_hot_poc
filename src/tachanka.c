@@ -210,7 +210,7 @@ MEMKIND_EXPORT void tachanka_set_dram_total_ratio(double ratio)
 void tachanka_update_threshold(void)
 {
     // TODO remove this!!!
-    printf("wre: tachanka_update_threshold\n");
+//     printf("wre: tachanka_update_threshold\n");
     // EOF TODO
 
     ranking_calculate_hot_threshold_dram_total(ranking, g_dramToTotalMemRatio);
