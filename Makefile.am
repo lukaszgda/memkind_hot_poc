@@ -490,7 +490,8 @@ noinst_PROGRAMS =
 noinst_LTLIBRARIES =
 TESTS =
 
-req_flags = -fvisibility=hidden -Wall -Werror -D_GNU_SOURCE -DJE_PREFIX=@memkind_prefix@ -DMEMTIER_ALLOC_PREFIX=@memtier_prefix@
+# req_flags = -fvisibility=hidden -Wall -Werror -D_GNU_SOURCE -DJE_PREFIX=@memkind_prefix@ -DMEMTIER_ALLOC_PREFIX=@memtier_prefix@
+req_flags = -fvisibility=hidden -Wall -Werror -D_GNU_SOURCE -DJE_PREFIX=@memkind_prefix@ -DMEMTIER_ALLOC_PREFIX=@memtier_prefix@ -Wno-frame-address -Wno-unused-function
 
 AM_CFLAGS = $(req_flags)
 AM_CXXFLAGS = $(req_flags)
