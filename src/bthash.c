@@ -148,7 +148,7 @@ uint64_t bthash(uint64_t size)
 //     for (void **sp = __builtin_frame_address(1); sp != stack0; sp++)
     for (void **sp = __builtin_frame_address(0); sp != stack0; sp++)
     {
-        assert(is_on_stack(sp));
+//         assert(is_on_stack(sp));
         void *addr=*sp;
 #if 1
         int s;
