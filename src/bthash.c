@@ -10,10 +10,12 @@
 
 #define CUSTOM_BACKTRACE
 #define STACK_RANGE
+#define SIMD_INSTRUCTIONS
 
 #define ARRAYSZ(x) (sizeof(x)/sizeof((x)[0]))
 
-static void *start[1024], *end[1024];
+static void __attribute__((aligned(16))) *start[1024];
+static void __attribute__((aligned(16))) *end[1024];
 static int nm;
 static void *stack0;
 static void *stack_start, *stack_end;
@@ -120,6 +122,7 @@ static int binsearch_end(const void *ptr) {
     return bend;
 }
 
+#ifdef LIB_BINSEARCH
 /// @pre  addr < start[0] || addr >= end[nm-1]
 static int find_region_idx(void *addr)
 {
@@ -132,6 +135,22 @@ static int find_region_idx(void *addr)
     }
     return -1;
 }
+#elif defined(SIMD_INSTRUCTIONS)
+/// @pre  addr < start[0] || addr >= end[nm-1]
+static int find_region_idx(void *addr)
+{
+    if (addr < start[0] || addr >= end[nm-1])
+        return -1;
+    // TODO loop over nm and perform the operation below
+    // addr >= start && addr < end // this operation, but in vector terms
+    // __mmask8 _mm512_mask_cmpge_epu64_mask (__mmask8 k1, __m512i a, __m512i b)
+    // __mmask8 _mm512_cmpgt_epu64_mask (__m512i a, __m512i b)
+    // __mmask8 _mm512_mask_cmplt_epu64_mask (__mmask8 k1, __m512i a, __m512i b)
+    // __mmask8 _mm512_mask_cmplt_epu64_mask (__mmask8 k1, __m512i a, __m512i b)
+
+    return -1;
+}
+#endif
 
 static bool is_on_stack(const void* ptr) {
     return ptr >= stack_start && ptr < stack_end;
@@ -216,7 +235,7 @@ uint64_t bthash(uint64_t size)
 //         assert(is_on_stack(sp));
 //         sp_counter++;
         void *addr=*sp; // dereference value at stack; assume that the dereferenced value is a void pointer
-#ifdef LIB_BINSEARCH
+#if defined(LIB_BINSEARCH) || defined(SIMD_INSTRUCTIONS)
         if (find_region_idx(addr) != -1) {
 #else
         int s;
