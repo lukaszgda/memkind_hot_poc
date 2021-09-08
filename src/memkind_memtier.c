@@ -300,10 +300,36 @@ static bool memtier_policy_data_hotness_is_hot(uint64_t hash)
     return ret;
 }
 
+#include "pthread.h" // TODO move
+
+static thread_local void *stack_bottom=NULL;
+static thread_local bool stack_bottom_initialized=false;
+
+// TODO check if calling pthread functions from the context of pthread_once is ok...
+void initialize_stack_bottom(void) {
+    size_t stack_size=0; // value irrelevant
+    pthread_attr_t attr;
+    if (!stack_bottom_initialized) {
+        stack_bottom_initialized=true;
+        int ret = pthread_getattr_np(pthread_self(), &attr);
+        assert(ret == 0);
+        pthread_attr_getstack(&attr, &stack_bottom, &stack_size);
+        pthread_attr_destroy(&attr);
+    }
+}
+
 static memkind_t
 memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
                                      uint64_t *data)
 {
+    // -- recursion prevention
+    void *foo=NULL; // value is irrelevant
+    // corner case, which is not handled: actual stack is different from the one returned by pthread
+    void *stack_top= &foo;
+    initialize_stack_bottom();
+//     int ret = pthread_once(&stack_bottom_init, initialize_stack_bottom);
+//     assert(ret == 0);
+    bthash_set_stack_range(stack_top, stack_bottom);
     *data = bthash(size);
     // TODO support for multiple tiers could be added
     // instead of bool (,mis hot), an index of memory tier could be returned

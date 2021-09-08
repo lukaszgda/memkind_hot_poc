@@ -8,6 +8,9 @@
 #include <string.h>
 #include <pthread.h>
 
+#define CUSTOM_BACKTRACE
+#define STACK_RANGE
+
 #define ARRAYSZ(x) (sizeof(x)/sizeof((x)[0]))
 
 static void *start[1024], *end[1024];
@@ -16,9 +19,9 @@ static void *stack0;
 static void *stack_start, *stack_end;
 static void *pthread_start, *pthread_end; // hax!
 
-// static void* csu_init
-
-#define CUSTOM_BACKTRACE
+static thread_local void* stack_bottom=NULL; // TODO should probably be initialized to sth else
+/// @pre stack_top >= stack_bottom
+static thread_local void* stack_top=NULL; // TODO should probably be initialized to sth else
 
 // TODO test this function
 static void preprocess_maps(void) {
@@ -135,9 +138,48 @@ static bool is_on_stack(const void* ptr) {
 }
 
 #include "assert.h"
+static const size_t max_searchable_stack_size=150u;// TODO move
+static size_t max_diff=0;
+
+static void align_up(void **ptr) {
+    *ptr += (8-((uint64_t)*ptr)%8); // 8-byte boundary
+}
+
+static void align_down(void **ptr) {
+    *ptr -= (((uint64_t)*ptr)%8); // 8-byte boundary
+}
+
+void bthash_set_stack_range(void *p1, void *p2) {
+    if (p1 && p2) {
+        if (p1>=p2) {
+            stack_top = p1;
+            stack_bottom = p2;
+        } else {
+            stack_top = p2;
+            stack_bottom = p1;
+        }
+        size_t diff = ((uint64_t)stack_top)-((uint64_t)stack_bottom);
+        if (diff > max_searchable_stack_size) {
+            if (diff>max_diff) {
+                max_diff = diff;
+            }
+
+            // TODO actually, stack may grow/decrease; we should take the most "recent" elements, not the ones with the highest values
+            stack_bottom = stack_top-max_searchable_stack_size;
+            // TODO only temporary ???
+//             printf("slashing bthash stack range [bottom -> top, size]: [%p -> %p, %lu]\n", stack_bottom, stack_top, diff);
+        }
+        align_up(&stack_bottom);
+        align_down(&stack_top);
+    } else {
+        p1 = p2 = NULL;
+    }
+}
 
 uint64_t bthash(uint64_t size)
 {
+    volatile static uint64_t call_counter=0;
+    call_counter++;
     // MurmurHash2 by Austin Appleby, public domain.
     const uint64_t M = 0xc6a4a7935bd1e995ULL;
     const int R = 47;
@@ -146,11 +188,37 @@ uint64_t bthash(uint64_t size)
     // can we directly obtain stack pointer?
 //     void *stock_ptr = __builtin_frame_address(0);
 //     for (void **sp = __builtin_frame_address(1); sp != stack0; sp++)
+#ifdef STACK_RANGE
+    for (void **sp = stack_bottom; sp != stack_top; sp++)
+#else
     for (void **sp = __builtin_frame_address(0); sp != stack0; sp++)
+#endif
     {
+//         volatile static uint64_t sp_counter=0;
+//
+//         -----
+//         static thread_local bool assert_in_progress=false;
+//         if (assert_in_progress) {
+//             bthash has called itself recursively
+//             this can only be caused by backtrace -> malloc -> bthash
+//             backtrace -> malloc call occurs only when dynamic library is loaded
+//             in such case, we return hash "0" for dynamic library
+//             TODO this is a workaround and should probably be handled
+//             in a smarter way
+//             return 0; // valid hash - for a dynamic library
+//         }
+//         assert_in_progress=true;
 //         assert(is_on_stack(sp));
-        void *addr=*sp;
-#if 1
+//         assert_in_progress=false;
+
+
+        // ---
+//         assert(is_on_stack(sp));
+//         sp_counter++;
+        void *addr=*sp; // dereference value at stack; assume that the dereferenced value is a void pointer
+#ifdef LIB_BINSEARCH
+        if (find_region_idx(addr) != -1) {
+#else
         int s;
         // take addr and compare it with
         for (s=0; s<nm; s++) // iterate through all mapped regions
@@ -158,9 +226,6 @@ uint64_t bthash(uint64_t size)
                 break;
         if (s-- && addr < end[s]) // make sure the address was found and that it belongs to the mapped area
         {
-#else
-
-        if (find_region_idx(addr) != -1) {
 #endif
             // if yes, use the address for hash calculation
             if (backtrace_unwinded((void*)addr, 0))
