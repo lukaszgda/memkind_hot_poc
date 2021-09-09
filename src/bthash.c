@@ -8,14 +8,21 @@
 #include <string.h>
 #include <pthread.h>
 
+// SIMD instructions
+#include "mmintrin.h"
+#include "xmmintrin.h"
+#include "emmintrin.h"
+#include "immintrin.h"
+
+
 #define CUSTOM_BACKTRACE
 #define STACK_RANGE
 #define SIMD_INSTRUCTIONS
 
 #define ARRAYSZ(x) (sizeof(x)/sizeof((x)[0]))
 
-static void __attribute__((aligned(16))) *start[1024];
-static void __attribute__((aligned(16))) *end[1024];
+static void __attribute__((aligned(64))) *start[1024];
+static void __attribute__((aligned(64))) *end[1024];
 static int nm;
 static void *stack0;
 static void *stack_start, *stack_end;
@@ -137,10 +144,72 @@ static int find_region_idx(void *addr)
 }
 #elif defined(SIMD_INSTRUCTIONS)
 /// @pre  addr < start[0] || addr >= end[nm-1]
-static int find_region_idx(void *addr)
+/// @return 1 on successful find, -1 on failure
+static bool check_region(void *addr)
 {
     if (addr < start[0] || addr >= end[nm-1])
-        return -1;
+        return false;
+    bool found=false;
+    int simd_iterations = (nm/8)*8;
+    int simd_x3_iterations = (nm/24)*24; // pipeline calculations for peak flops
+    // TODO handle the nasty bool casting hack better (corner cases - overflow casted to false!)
+//     int regular_iterations = nm%8;
+    // TODO try to optimize
+    // load addr to register
+
+    void  __attribute__((aligned(64)))*extended_addr[]={
+        //
+        addr,
+        addr,
+        addr,
+        addr,
+        addr,
+        addr,
+        addr,
+        addr,
+    };
+//     __m512i addr_reg =_mm_load_si512((__m512i*)extended_addr);
+    __m512i *addr_reg_ptr =(__m512i*)extended_addr;
+    for (int i0=0, i1=8, i2=16; i0<simd_x3_iterations; i0+=24, i1+=24, i2+=24) {
+        // load 1
+//         __m512i a = _mm_load_si512((__m512i*)&start[i]);
+//         __m512i b = _mm_load_si512((__m512i*)&end[i]);
+        __m512i *a0 = (__m512i*)&start[i0];
+        __m512i *b0 = (__m512i*)&end[i0];
+        __m512i *a1 = (__m512i*)&start[i1];
+        __m512i *b1 = (__m512i*)&end[i1];
+        __m512i *a2 = (__m512i*)&start[i2];
+        __m512i *b2 = (__m512i*)&end[i2];
+        // load 2
+        __mmask8 mask_gt0 = _mm512_cmpge_epu64_mask (*addr_reg_ptr, *a0);
+        __mmask8 mask_all0 = _mm512_mask_cmplt_epu64_mask (mask_gt0, *addr_reg_ptr, *b0);
+        __mmask8 mask_gt1 = _mm512_cmpge_epu64_mask (*addr_reg_ptr, *a1);
+        __mmask8 mask_all1 = _mm512_mask_cmplt_epu64_mask (mask_gt1, *addr_reg_ptr, *b1);
+        __mmask8 mask_gt2 = _mm512_cmpge_epu64_mask (*addr_reg_ptr, *a2);
+        __mmask8 mask_all2 = _mm512_mask_cmplt_epu64_mask (mask_gt2, *addr_reg_ptr, *b2);
+        // unload
+//         uint8_t mask_unloaded = mask_all; // TODO find corresponding "store" operation
+//         _mm_store
+        found = ( found || mask_all0 || mask_all1 || mask_all2);
+    }
+    for (int i=simd_x3_iterations; i<simd_iterations; i+=8) {
+        // load 1
+//         __m512i a = _mm_load_si512((__m512i*)&start[i]);
+//         __m512i b = _mm_load_si512((__m512i*)&end[i]);
+        __m512i *a = (__m512i*)&start[i];
+        __m512i *b = (__m512i*)&end[i];
+        // load 2
+        __mmask8 mask_gt = _mm512_cmpge_epu64_mask (*addr_reg_ptr, *a);
+        __mmask8 mask_all = _mm512_mask_cmplt_epu64_mask (mask_gt, *addr_reg_ptr, *b);
+        // unload
+//         uint8_t mask_unloaded = mask_all; // TODO find corresponding "store" operation
+//         _mm_store
+        found = ( found || mask_all );
+    }
+    // handle the remainder
+    for (int i=simd_iterations; i<nm; ++i) {
+        found = ( found || (addr >= start[i] && addr < end[i]) );
+    }
     // TODO loop over nm and perform the operation below
     // addr >= start && addr < end // this operation, but in vector terms
     // __mmask8 _mm512_mask_cmpge_epu64_mask (__mmask8 k1, __m512i a, __m512i b)
@@ -148,7 +217,7 @@ static int find_region_idx(void *addr)
     // __mmask8 _mm512_mask_cmplt_epu64_mask (__mmask8 k1, __m512i a, __m512i b)
     // __mmask8 _mm512_mask_cmplt_epu64_mask (__mmask8 k1, __m512i a, __m512i b)
 
-    return -1;
+    return found;
 }
 #endif
 
@@ -235,8 +304,10 @@ uint64_t bthash(uint64_t size)
 //         assert(is_on_stack(sp));
 //         sp_counter++;
         void *addr=*sp; // dereference value at stack; assume that the dereferenced value is a void pointer
-#if defined(LIB_BINSEARCH) || defined(SIMD_INSTRUCTIONS)
+#if defined(LIB_BINSEARCH)
         if (find_region_idx(addr) != -1) {
+#elif defined(SIMD_INSTRUCTIONS)
+        if (check_region(addr)) {
 #else
         int s;
         // take addr and compare it with
