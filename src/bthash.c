@@ -17,7 +17,7 @@
 
 #define CUSTOM_BACKTRACE
 #define STACK_RANGE
-#define SIMD_INSTRUCTIONS
+// #define SIMD_INSTRUCTIONS
 
 #define ARRAYSZ(x) (sizeof(x)/sizeof((x)[0]))
 
