@@ -6,6 +6,7 @@ extern "C" {
 
 #include "stdint.h"
 #include "stdlib.h"
+// #include "stdatomic.h" issues with include - this is "extern" code from c++
 #include "asm-generic/int-ll64.h"
 
 typedef enum TimestampState {
@@ -53,6 +54,9 @@ struct ttype {
 
     tachanka_touch_callback touchCb;
     void *touchCbArg;
+    // TODO f should be atomic, but there are issues with includes
+    // worst thing that can happen without atomicity:
+    // incorrect hot/cold classification (read without a mutex in ranking_is_hot)
     double f;  // frequency - current
     TimestampState_t timestamp_state;
 };

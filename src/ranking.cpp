@@ -10,6 +10,7 @@ extern "C" {
 #include <vector>
 #include <jemalloc/jemalloc.h>
 #include <cstring>
+#include <atomic>
 
 #include "memkind/internal/memkind_private.h"
 
@@ -23,7 +24,7 @@ extern "C" {
 using namespace std;
 
 struct ranking {
-    double hotThreshold;
+    std::atomic<double> hotThreshold;
     wre_tree_t *entries;
     std::mutex mutex;
     double oldWeight;
@@ -274,7 +275,8 @@ MEMKIND_EXPORT void ranking_add(ranking_t *ranking, struct ttype *entry)
 
 MEMKIND_EXPORT bool ranking_is_hot(ranking_t *ranking, struct ttype *entry)
 {
-    std::lock_guard<std::mutex> lock_guard(ranking->mutex);
+    // mutex not necessary
+    // std::lock_guard<std::mutex> lock_guard(ranking->mutex);
     return ranking_is_hot_internal(ranking, entry);
 }
 
