@@ -11,7 +11,7 @@
 #include <memkind/internal/ranking.h>
 
 // #define MALLOC_HOTNESS      20u
-#define MALLOC_HOTNESS      1u
+#define MALLOC_HOTNESS      1u // TODO this does not work, at least for now
 
 #define MAXTYPES   1*1048576
 #define MAXBLOCKS 16*1048576
@@ -166,7 +166,9 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
     int hotness=1;
     if (from_malloc) {
         ranking_add(ranking, t); // first of all, add
-        hotness=MALLOC_HOTNESS;
+//         hotness=MALLOC_HOTNESS; TODO this does not work, for now
+    } else {
+        ranking_touch(ranking, t, timestamp, hotness);
     }
     static atomic_uint_fast16_t counter=0;
     const uint64_t interval=1000;
@@ -189,7 +191,6 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
     // current solution: assert(FALSE)
     // future solution: ignore?
 //     printf("touches tachanka, timestamp: [%llu]\n", timestamp);
-    ranking_touch(ranking, t, timestamp, hotness);
 }
 
 void tachanka_init(double old_window_hotness_weight)

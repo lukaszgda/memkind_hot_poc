@@ -17,6 +17,7 @@
 
 #define CUSTOM_BACKTRACE
 #define STACK_RANGE
+#define REDUCED_STACK_SEARCH
 // #define SIMD_INSTRUCTIONS
 
 #define ARRAYSZ(x) (sizeof(x)/sizeof((x)[0]))
@@ -28,6 +29,7 @@ static void *stack0;
 static void *stack_start, *stack_end;
 static void *pthread_start, *pthread_end; // hax!
 
+static thread_local uint64_t stack_size;
 static thread_local void* stack_bottom=NULL; // TODO should probably be initialized to sth else
 /// @pre stack_top >= stack_bottom
 static thread_local void* stack_top=NULL; // TODO should probably be initialized to sth else
@@ -226,7 +228,11 @@ static bool is_on_stack(const void* ptr) {
 }
 
 #include "assert.h"
-static const size_t max_searchable_stack_size=150u;// TODO move
+#ifdef REDUCED_STACK_SEARCH
+static const size_t max_searchable_stack_size=16u;// TODO move
+#else
+static const size_t max_searchable_stack_size=160u;// TODO move
+#endif
 static size_t max_diff=0;
 
 static void align_up(void **ptr) {
@@ -235,6 +241,15 @@ static void align_up(void **ptr) {
 
 static void align_down(void **ptr) {
     *ptr -= (((uint64_t)*ptr)%8); // 8-byte boundary
+}
+
+static inline uint64_t update_hash(uint64_t h, uint64_t k, uint64_t M, uint64_t R) {
+    k *= M;
+    k ^= k >> R;
+    k *= M;
+    h ^= k;
+    h *= M;
+    return h;
 }
 
 void bthash_set_stack_range(void *p1, void *p2) {
@@ -247,6 +262,7 @@ void bthash_set_stack_range(void *p1, void *p2) {
             stack_bottom = p1;
         }
         size_t diff = ((uint64_t)stack_top)-((uint64_t)stack_bottom);
+        stack_size = diff;
         if (diff > max_searchable_stack_size) {
             if (diff>max_diff) {
                 max_diff = diff;
@@ -254,8 +270,6 @@ void bthash_set_stack_range(void *p1, void *p2) {
 
             // TODO actually, stack may grow/decrease; we should take the most "recent" elements, not the ones with the highest values
             stack_bottom = stack_top-max_searchable_stack_size;
-            // TODO only temporary ???
-//             printf("slashing bthash stack range [bottom -> top, size]: [%p -> %p, %lu]\n", stack_bottom, stack_top, diff);
         }
         align_up(&stack_bottom);
         align_down(&stack_top);
@@ -272,6 +286,8 @@ uint64_t bthash(uint64_t size)
     const uint64_t M = 0xc6a4a7935bd1e995ULL;
     const int R = 47;
     uint64_t h = size ^ M;
+
+    h = update_hash(h, stack_size, M, R);
 
     // can we directly obtain stack pointer?
 //     void *stock_ptr = __builtin_frame_address(0);
@@ -322,11 +338,7 @@ uint64_t bthash(uint64_t size)
                 break;  // end hash calculation
 
             uint64_t k = (uintptr_t)addr;
-            k *= M;
-            k ^= k >> R;
-            k *= M;
-            h ^= k;
-            h *= M;
+            h = update_hash(h, k, M, R);
         }
     }
 #ifdef FINALIZE_HASH
