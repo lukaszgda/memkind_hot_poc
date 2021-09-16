@@ -14,6 +14,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <threads.h> // TODO move elsewhere
+#include <stdatomic.h> // TODO move elsewhere
+#include <execinfo.h> // TODO move elsewhere
+
 #ifdef HAVE_STDATOMIC_H
 #include <stdatomic.h>
 #define MEMKIND_ATOMIC _Atomic
@@ -22,6 +26,19 @@
 #endif
 
 #define LOG_STATISTICS
+
+#ifdef LOG_STATISTICS
+    static atomic_size_t g_successful_adds=0;
+    static atomic_size_t g_failed_adds=0;
+    static atomic_size_t g_successful_adds_malloc=0;
+    static atomic_size_t g_failed_adds_malloc=0;
+    static atomic_size_t g_successful_adds_realloc0=0;
+    static atomic_size_t g_failed_adds_realloc0=0;
+    static atomic_size_t g_successful_adds_realloc1=0;
+    static atomic_size_t g_failed_adds_realloc1=0;
+    static atomic_size_t g_successful_adds_free=0;
+    static atomic_size_t g_failed_adds_free=0;
+#endif
 
 // clang-format off
 #if defined(MEMKIND_ATOMIC_C11_SUPPORT)
@@ -242,10 +259,6 @@ memtier_policy_dynamic_threshold_get_kind(struct memtier_memory *memory,
     return memory->cfg[i].kind;
 }
 
-#include <threads.h> // TODO move elsewhere
-#include <stdatomic.h> // TODO move elsewhere
-#include <execinfo.h> // TODO move elsewhere
-
 static bool memtier_policy_data_hotness_is_hot(uint64_t hash)
 {
     // TODO this requires more data
@@ -266,8 +279,14 @@ static bool memtier_policy_data_hotness_is_hot(uint64_t hash)
         }
         assert(ret == 0);
         double hotness_thresh = tachanka_get_hot_thresh();
-        printf("hotness thresh: %f, counters [hot, cold, unknown]: %lu %lu %lu, [seconds, nanoseconds]: [%ld, %ld]\n",
-               hotness_thresh, hotness_counter[0], hotness_counter[1], hotness_counter[2], t.tv_sec, t.tv_nsec);
+        printf("hotness thresh: %f, counters [hot, cold, unknown]: %lu %lu %lu, [seconds, nanoseconds]: [%ld, %ld]\nsuccess/fail: %lu, %lu\n",
+               hotness_thresh, hotness_counter[0], hotness_counter[1], hotness_counter[2], t.tv_sec, t.tv_nsec, g_successful_adds, g_failed_adds);
+        printf("success/fail: malloc [%lu/%lu], realloc0 [%lu/%lu], realloc1 [%lu/%lu], free [%lu/%lu]\n",
+               g_successful_adds_malloc, g_failed_adds_malloc,
+               g_successful_adds_realloc0, g_failed_adds_realloc0,
+               g_successful_adds_realloc1, g_failed_adds_realloc1,
+               g_successful_adds_free, g_failed_adds_free
+               );
         counter=0u;
 #ifdef VERBOSE_DEBUG_INFO
         static thread_local bool in_progress=false;
@@ -378,7 +397,18 @@ memtier_policy_data_hotness_post_alloc(uint64_t hash, void *addr, size_t size)
         },
     };
     // copy is performed, passing pointer to stack is ok
-    (void)tachanka_ranking_event_push(&entry);
+    bool success = tachanka_ranking_event_push(&entry);
+#ifdef LOG_STATISTICS
+    if (success) {
+        g_successful_adds++;
+        g_successful_adds_malloc++;
+    } else {
+        g_failed_adds++;
+        g_failed_adds_malloc++;
+    }
+#else
+    (void)success;
+#endif
     // TODO assure that failure can be ignored/handle failure!
 }
 
@@ -1058,7 +1088,18 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
                     .address = ptr,
                 }
             };
-            tachanka_ranking_event_push(&entry);
+            bool success = tachanka_ranking_event_push(&entry);
+#ifdef LOG_STATISTICS
+            if (success) {
+                g_successful_adds++;
+                g_successful_adds_realloc0++;
+            } else {
+                g_failed_adds++;
+                g_failed_adds_realloc0++;
+            }
+#else
+            (void)success;
+#endif
         }
         decrement_alloc_size(kind->partition, jemk_malloc_usable_size(ptr));
         memkind_free(kind, ptr);
@@ -1077,7 +1118,18 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
                 .address = ptr,
             }
         };
-        tachanka_ranking_event_push(&entry);
+        bool success = tachanka_ranking_event_push(&entry);
+#ifdef LOG_STATISTICS
+        if (success) {
+            g_successful_adds++;
+            g_successful_adds_realloc1++;
+        } else {
+            g_failed_adds++;
+            g_failed_adds_realloc1++;
+        }
+#else
+        (void)success;
+#endif
 //         realloc_block(ptr, n_ptr, size);
     }
     increment_alloc_size(kind->partition, jemk_malloc_usable_size(n_ptr));
@@ -1146,7 +1198,18 @@ MEMKIND_EXPORT void memtier_kind_free(memkind_t kind, void *ptr)
                 .address = ptr,
             }
         };
-        tachanka_ranking_event_push(&entry);
+        bool success = tachanka_ranking_event_push(&entry);
+#ifdef LOG_STATISTICS
+        if (success) {
+            g_successful_adds++;
+            g_successful_adds_free++;
+        } else {
+            g_failed_adds++;
+            g_failed_adds_free++;
+        }
+#else
+        (void)success;
+#endif
     }
     decrement_alloc_size(kind->partition, jemk_malloc_usable_size(ptr));
     memkind_free(kind, ptr);

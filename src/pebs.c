@@ -23,6 +23,7 @@ static char *pebs_mmap;
 
 // DEBUG
 extern critnib* hash_to_type;
+static size_t g_queue_pop_counter=0;
 
 // static uint64_t timespec_diff_millis(const struct timespec *tnew, const struct timespec *told) {
 //     uint64_t diff_s = tnew->tv_sec - told->tv_sec;
@@ -111,20 +112,21 @@ void *pebs_monitor(void *state)
         // must call this before read from data head
 		rmb();
 
-{            static uint64_t counter=0;
-    const uint64_t interval=1000;
-    if (++counter > interval) {
-        struct timespec t;
-        int ret = clock_gettime(CLOCK_MONOTONIC, &t);
-        if (ret != 0) {
-            printf("ASSERT PEBS COUNTER FAILURE!\n");
+        {
+            static uint64_t counter=0;
+            const uint64_t interval=1000;
+            if (++counter > interval) {
+                struct timespec t;
+                int ret = clock_gettime(CLOCK_MONOTONIC, &t);
+                if (ret != 0) {
+                    printf("ASSERT PEBS COUNTER FAILURE!\n");
+                }
+                assert(ret == 0);
+                printf("pebs counter %lu hit, succcessful ranking_queue reads %lu, time [seconds, nanoseconds]: [%ld, %ld]\n",
+                    interval, g_queue_pop_counter, t.tv_sec, t.tv_nsec);
+                counter=0u;
+            }
         }
-        assert(ret == 0);
-        printf("pebs counter %lu hit, [seconds, nanoseconds]: [%ld, %ld]\n",
-            interval, t.tv_sec, t.tv_nsec);
-        counter=0u;
-    }
-}
         struct perf_event_mmap_page* pebs_metadata =
             (struct perf_event_mmap_page*)pebs_mmap;
 
@@ -255,7 +257,11 @@ void *pebs_monitor(void *state)
                 case EVENT_TOUCH:
                     assert(false && "not implemented here!");
                     break;
+                default:
+                    assert(false && "case not implemented!");
+
             }
+            g_queue_pop_counter++;
         }
 
         tachanka_update_threshold();
