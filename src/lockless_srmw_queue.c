@@ -155,9 +155,8 @@ static bool lq_reserve_read(lq_buffer_t *buff) {
     }
 }
 
-// TODO
 static lq_entry_t *lq_request_entry_read(lq_buffer_t *buff) {
-    // TODO only single reader scenario!
+    // only single reader scenario is handled!
     lq_entry_t *ret = NULL;
     if (lq_reserve_read(buff)) {
         // this is a single reader,
@@ -172,7 +171,6 @@ static lq_entry_t *lq_request_entry_read(lq_buffer_t *buff) {
         ret = &buff->entries[head_idx_old];
         // load all non-atomic writes that were released on other threads
         atomic_thread_fence(memory_order_acquire);
-//         atomic_thread_fence(memory_order_seq_cst);
         if (ret->metadata_state != META_STATE_READY) {
             // atomic operation not necessary - single reader scenario
             // writes were done out of order, perform rollback!
@@ -190,8 +188,6 @@ static lq_entry_t *lq_request_entry_read(lq_buffer_t *buff) {
     return ret;
 }
 
-
-// TODO remove comment, this one is ok
 static lq_entry_t *lq_request_entry_write(lq_buffer_t *buff) {
     lq_entry_t *ret = NULL;
     if (lq_reserve_write(buff)) {
@@ -205,7 +201,6 @@ static lq_entry_t *lq_request_entry_write(lq_buffer_t *buff) {
         ret = &buff->entries[tail_idx_old];
         // load all non-atomic writes that were released on other threads
         atomic_thread_fence(memory_order_acquire);
-//         atomic_thread_fence(memory_order_seq_cst);
         if (ret->metadata_state != META_STATE_FREE) {
             // reads were done out of order, perform rollback!
             // for now, impossible - single reader scenario!
@@ -220,29 +215,22 @@ static lq_entry_t *lq_request_entry_write(lq_buffer_t *buff) {
 // TODO review states - under reading and under wrinting are unnecessary/irrelevant?
 
 static void lq_post_entry_write(lq_buffer_t *buff, lq_entry_t *entry) {
-    // finalize all non-atomic writes on this thread
-    atomic_thread_fence(memory_order_release);
-//     atomic_thread_fence(memory_order_seq_cst);
-    entry->metadata_state=META_STATE_READY;
-    atomic_thread_fence(memory_order_release);
-//     atomic_thread_fence(memory_order_seq_cst);
     // no reorder! Correct order:
     //  1) all non-atomic reads
     //  2) metadata_state
     //  3) unavailable read
+    // 2 fences are necessary to enforce this order
+    atomic_thread_fence(memory_order_release);
+    entry->metadata_state=META_STATE_READY;
+    atomic_thread_fence(memory_order_release);
     buff->unavailableRead--; // mark that there is an element available for read
 }
 
 static void lq_post_entry_read(lq_buffer_t *buff, lq_entry_t *entry) {
     // finalize all non-atomic writes on this thread
-//     atomic_thread_fence(memory_order_release);
-//     atomic_thread_fence(memory_order_seq_cst);
     entry->metadata_state=META_STATE_FREE;
     // only one reader, only one fence necessary
     atomic_thread_fence(memory_order_release);
-//     atomic_thread_fence(memory_order_seq_cst);
-    // TODO no reorder !
-//     buff->usedEnd--;
     buff->used--;
 }
 
