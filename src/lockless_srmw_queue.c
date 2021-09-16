@@ -3,6 +3,8 @@
 #include "string.h"
 #include "lockless_srmw_queue.h"
 
+#define EXPLICIT_ORDER
+
 // TODO PLEASE NOTE THAT CURRENT LOCKLESS VERSION IS WIP AND IS NOT FULLY IMPLEMENTED!!!!!
 // #define atomic_thread_fence(x)     (void)(x)
 
@@ -119,12 +121,17 @@
 
 static void lq_cancel_reserve_write(lq_buffer_t *buff) {
     buff->used--;
+    atomic_thread_fence(memory_order_release);
 }
 
 // TODO potential refactor - only one lq_reserve, with an additional argument!
 static bool lq_reserve_write(lq_buffer_t *buff) {
-    // TODO check explicit memory order!
+    // memory order acquire: all changes prior to increment should be visible here
+#ifdef EXPLICIT_ORDER
+    size_t prev_size = atomic_fetch_add_explicit(&buff->used, 1, memory_order_acq_rel);
+#else
     size_t prev_size = atomic_fetch_add(&buff->used, 1);
+#endif
     if (prev_size < buff->size) {
         // enough place on buffer, operations can continue
         return true;
@@ -138,12 +145,18 @@ static bool lq_reserve_write(lq_buffer_t *buff) {
 
 static void lq_cancel_reserve_read(lq_buffer_t *buff) {
     buff->unavailableRead--;
+    atomic_thread_fence(memory_order_release);
 }
 
 // TODO potential refactor - only one lq_reserve, with an additional argument!
 static bool lq_reserve_read(lq_buffer_t *buff) {
     // TODO check explicit memory order!
+    // memory order acquire: all changes prior to increment should be visible here
+#ifdef EXPLICIT_ORDER
+    size_t prev_size = atomic_fetch_add_explicit(&buff->unavailableRead, 1, memory_order_acq_rel);
+#else
     size_t prev_size = atomic_fetch_add(&buff->unavailableRead, 1);
+#endif
     if (prev_size < buff->size) {
         // enough place on buffer, operations can continue
         // elements are added at tail and taken
@@ -167,10 +180,16 @@ static lq_entry_t *lq_request_entry_read(lq_buffer_t *buff) {
             head_idx_new = head_idx_old;
             head_idx_new++;
             head_idx_new%=buff->size;
+#ifdef EXPLICIT_ORDER
+        } while (!atomic_compare_exchange_weak_explicit(
+            &buff->head, &head_idx_old, head_idx_new,
+            memory_order_release, memory_order_acquire));
+#else
         } while (!atomic_compare_exchange_weak(&buff->head, &head_idx_old, head_idx_new));
+#endif
         ret = &buff->entries[head_idx_old];
         // load all non-atomic writes that were released on other threads
-        atomic_thread_fence(memory_order_acquire);
+        // fence not necessary - acquire on head compare exchange
         if (ret->metadata_state != META_STATE_READY) {
             // atomic operation not necessary - single reader scenario
             // writes were done out of order, perform rollback!
@@ -197,7 +216,13 @@ static lq_entry_t *lq_request_entry_write(lq_buffer_t *buff) {
             tail_idx_new = tail_idx_old;
             tail_idx_new++;
             tail_idx_new%=buff->size;
+#ifdef EXPLICIT_ORDER
+        } while (!atomic_compare_exchange_weak_explicit(
+            &buff->tail, &tail_idx_old, tail_idx_new,
+            memory_order_release, memory_order_acquire));
+#else
         } while (!atomic_compare_exchange_weak(&buff->tail, &tail_idx_old, tail_idx_new));
+#endif
         ret = &buff->entries[tail_idx_old];
         // load all non-atomic writes that were released on other threads
         atomic_thread_fence(memory_order_acquire);
@@ -216,7 +241,7 @@ static lq_entry_t *lq_request_entry_write(lq_buffer_t *buff) {
 
 static void lq_post_entry_write(lq_buffer_t *buff, lq_entry_t *entry) {
     // no reorder! Correct order:
-    //  1) all non-atomic reads
+    //  1) all non-atomic writes
     //  2) metadata_state
     //  3) unavailable read
     // 2 fences are necessary to enforce this order
