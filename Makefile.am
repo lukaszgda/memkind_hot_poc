@@ -35,6 +35,8 @@ libmemkind_la_SOURCES = src/hbwmalloc.c \
                         src/tachanka.c \
                         src/ranking.cpp \
                         src/wre_avl_tree.c \
+                        src/lockless_srmw_queue.c \
+                        src/ranking_queue.c \
                         # end
 
 

@@ -1,7 +1,7 @@
 #include "stdlib.h"
 #include "assert.h"
 #include "string.h"
-#include "lockless_srmw_queue.h"
+#include "memkind/internal/lockless_srmw_queue.h"
 #include "jemalloc/jemalloc.h"
 
 

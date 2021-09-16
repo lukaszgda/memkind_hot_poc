@@ -9,6 +9,7 @@
 #include <memkind/internal/critnib.h>
 #include <memkind/internal/tachanka.h>
 #include <memkind/internal/ranking.h>
+#include <memkind/internal/lockless_srmw_queue.h>
 
 // #define MALLOC_HOTNESS      20u
 #define MALLOC_HOTNESS      1u // TODO this does not work, at least for now
@@ -257,16 +258,16 @@ MEMKIND_EXPORT int tachanka_set_touch_callback(void *addr, tachanka_touch_callba
     struct tblock *bl = critnib_find_le(addr_to_block, (uintptr_t)addr);
     if (bl) {
         struct ttype *t = &ttypes[bl->type];
-
         ranking_set_touch_callback(ranking, cb, arg, t);
         ret=0;
     }
     return ret;
 }
 
-bool tachanka_ranking_event_push(EventEntry_t *event) {
+MEMKIND_EXPORT bool tachanka_ranking_event_push(EventEntry_t *event) {
     return ranking_event_push(&ranking_event_buff, event);
 }
-bool tachanka_ranking_event_pop(EventEntry_t *event) {
+
+MEMKIND_EXPORT bool tachanka_ranking_event_pop(EventEntry_t *event) {
     return ranking_event_push(&ranking_event_buff, event);
 }

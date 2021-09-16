@@ -21,7 +21,7 @@
 #define MEMKIND_ATOMIC
 #endif
 
-// #define LOG_STATISTICS
+#define LOG_STATISTICS
 
 // clang-format off
 #if defined(MEMKIND_ATOMIC_C11_SUPPORT)
@@ -1050,8 +1050,16 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
             memtier_kind_free_pre(&ptr);
 #endif
 
-        if (pol == MEMTIER_POLICY_DATA_HOTNESS)
-            unregister_block(ptr);
+        if (pol == MEMTIER_POLICY_DATA_HOTNESS) {
+//             unregister_block(ptr);
+            EventEntry_t entry = {
+                .type = EVENT_DESTROY_REMOVE,
+                .data.destroyRemoveData = {
+                    .address = ptr,
+                }
+            };
+            tachanka_ranking_event_push(&entry);
+        }
         decrement_alloc_size(kind->partition, jemk_malloc_usable_size(ptr));
         memkind_free(kind, ptr);
         return NULL;
@@ -1062,7 +1070,15 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
 
     void *n_ptr = memkind_realloc(kind, ptr, size);
     if (pol == MEMTIER_POLICY_DATA_HOTNESS) {
-        realloc_block(ptr, n_ptr, size);
+        // TODO offload to separate thread
+        EventEntry_t entry = {
+            .type = EVENT_REALLOC,
+            .data.reallocData = {
+                .address = ptr,
+            }
+        };
+        tachanka_ranking_event_push(&entry);
+//         realloc_block(ptr, n_ptr, size);
     }
     increment_alloc_size(kind->partition, jemk_malloc_usable_size(n_ptr));
 #ifdef MEMKIND_DECORATION_ENABLED
@@ -1120,8 +1136,18 @@ MEMKIND_EXPORT void memtier_kind_free(memkind_t kind, void *ptr)
             return;
     }
 
-    if (pol == MEMTIER_POLICY_DATA_HOTNESS)
-        unregister_block(ptr);
+    if (pol == MEMTIER_POLICY_DATA_HOTNESS) {
+        // TODO offload to PEBS (ranking_queue) !!! Currently contains race conditions
+//         unregister_block(ptr);
+
+        EventEntry_t entry = {
+            .type = EVENT_DESTROY_REMOVE,
+            .data.destroyRemoveData = {
+                .address = ptr,
+            }
+        };
+        tachanka_ranking_event_push(&entry);
+    }
     decrement_alloc_size(kind->partition, jemk_malloc_usable_size(ptr));
     memkind_free(kind, ptr);
 }

@@ -64,7 +64,7 @@ void *pebs_monitor(void *state)
     ThreadState_t* pthread_state = state;
 
 //     double freq_Hz=1;
-    double freq_Hz=10;
+    double freq_Hz=100;
     double period_ms=1000/freq_Hz;
     struct timespec tv_period;
     timespec_millis_to_timespec(period_ms, &tv_period);
@@ -239,6 +239,18 @@ void *pebs_monitor(void *state)
                 case EVENT_CREATE_ADD:
                     register_block(event.data.createAddData.hash, event.data.createAddData.address, event.data.createAddData.size);
                     touch(event.data.createAddData.address, 0, 1 /*called from malloc*/);
+                    break;
+                case EVENT_DESTROY_REMOVE:
+                    unregister_block(event.data.destroyRemoveData.address);
+                    break;
+                case EVENT_REALLOC:
+                    unregister_block(event.data.reallocData.address);
+                    break;
+                case EVENT_SET_TOUCH_CALLBACK:
+                    tachanka_set_touch_callback(
+                        event.data.touchCallbackData.address,
+                        event.data.touchCallbackData.callback,
+                        event.data.touchCallbackData.callbackArg);
                     break;
                 case EVENT_TOUCH:
                     assert(false && "not implemented here!");

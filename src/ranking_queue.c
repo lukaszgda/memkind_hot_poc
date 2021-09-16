@@ -1,10 +1,26 @@
-#include "ranking_queue.h"
+#include "memkind/internal/ranking_queue.h"
+#include "memkind/internal/lockless_srmw_queue.h"
+#include "jemalloc/jemalloc.h"
 
-void ranking_event_init(lq_buffer_t *buff, size_t entries) {
+#ifndef MEMKIND_EXPORT
+#define MEMKIND_EXPORT __attribute__((visibility("default")))
+#endif
+
+MEMKIND_EXPORT void ranking_event_create(lq_buffer_t **buff, size_t entries) {
+    *buff = jemk_malloc(sizeof(lq_buffer_t));
+    ranking_event_init(*buff, entries);
+}
+
+MEMKIND_EXPORT void ranking_event_destroy(lq_buffer_t *buff) {
+    ranking_event_fini(buff);
+    jemk_free(buff);
+}
+
+MEMKIND_EXPORT void ranking_event_init(lq_buffer_t *buff, size_t entries) {
     lq_init(buff, sizeof(EventEntry_t), entries);
 }
 
-void ranking_event_destroy(lq_buffer_t *buff) {
+MEMKIND_EXPORT void ranking_event_fini(lq_buffer_t *buff) {
     lq_destroy(buff);
 }
 
@@ -33,11 +49,11 @@ bool ranking_event_pop(lq_buffer_t *buff, EventEntry_t *event) {
 
 #else
 
-bool ranking_event_push(lq_buffer_t *buff, EventEntry_t *event) {
+MEMKIND_EXPORT bool ranking_event_push(lq_buffer_t *buff, EventEntry_t *event) {
     return lq_push(buff, event);
 }
 
-bool ranking_event_pop(lq_buffer_t *buff, EventEntry_t *event) {
+MEMKIND_EXPORT bool ranking_event_pop(lq_buffer_t *buff, EventEntry_t *event) {
     return lq_pop(buff, event);
 }
 #endif
