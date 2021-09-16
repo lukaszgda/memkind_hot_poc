@@ -21,6 +21,8 @@
 #define MEMKIND_ATOMIC
 #endif
 
+// #define LOG_STATISTICS
+
 // clang-format off
 #if defined(MEMKIND_ATOMIC_C11_SUPPORT)
 #define memkind_atomic_increment(counter, val)                                 \
@@ -83,7 +85,8 @@
 // time window is 1s
 // #define OLD_TIME_WINDOW_HOTNESS_WEIGHT 0.999
 // #define OLD_TIME_WINDOW_HOTNESS_WEIGHT 0.4 // should not stay like this... only for tests and POC
-#define OLD_TIME_WINDOW_HOTNESS_WEIGHT 0.9 // should not stay like this... only for tests and POC
+#define OLD_TIME_WINDOW_HOTNESS_WEIGHT  0.9 // should not stay like this... only for tests and POC
+#define RANKING_BUFFER_SIZE_ELEMENTS    1000000 // TODO make tests, add error handling and come up with some sensible value
 
 // Macro to get number of thresholds from parent object
 #define THRESHOLD_NUM(obj) ((obj->cfg_size) - 1)
@@ -251,6 +254,7 @@ static bool memtier_policy_data_hotness_is_hot(uint64_t hash)
     Hotness_e hotness = tachanka_get_hotness_type_hash(hash);
     int ret=0;
     // DEBUG
+#ifdef LOG_STATISTICS
     static atomic_uint_fast16_t counter=0;
     static atomic_uint_fast64_t hotness_counter[3]= { 0 };
     const uint64_t interval=100000;
@@ -286,8 +290,11 @@ static bool memtier_policy_data_hotness_is_hot(uint64_t hash)
     if (hotness >= 3) {
         printf("ASSERT FAILED!!!\n");
     }
+#endif
     assert(hotness < 3);
+#ifdef LOG_STATISTICS
     ++hotness_counter[hotness];
+#endif
     switch (hotness) {
         case HOTNESS_COLD:
             ret = 0;
@@ -359,8 +366,20 @@ memtier_policy_data_hotness_post_alloc(uint64_t hash, void *addr, size_t size)
 //             interval, t.tv_sec, t.tv_nsec);
 //         counter=0u;
 //     }
-    register_block(hash, addr, size);
-    touch(addr, 0, 1 /*called from malloc*/);
+// TODO add to queue
+//     register_block(hash, addr, size);
+//     touch(addr, 0, 1 /*called from malloc*/);
+    EventEntry_t entry = {
+        .type = EVENT_CREATE_ADD,
+        .data.createAddData = {
+            .hash = hash,
+            .address = addr,
+            .size = size,
+        },
+    };
+    // copy is performed, passing pointer to stack is ok
+    (void)tachanka_ranking_event_push(&entry);
+    // TODO assure that failure can be ignored/handle failure!
 }
 
 static void print_memtier_memory(struct memtier_memory *memory)
@@ -731,7 +750,7 @@ builder_hot_create_memory(struct memtier_builder *builder)
 {
     int i;
     // TODO use some properties? hotness weight should be configurable
-    tachanka_init(OLD_TIME_WINDOW_HOTNESS_WEIGHT);
+    tachanka_init(OLD_TIME_WINDOW_HOTNESS_WEIGHT, RANKING_BUFFER_SIZE_ELEMENTS);
     pebs_init(getpid());
 
     struct memtier_memory *memory =

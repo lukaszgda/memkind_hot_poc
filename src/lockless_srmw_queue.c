@@ -2,6 +2,8 @@
 #include "assert.h"
 #include "string.h"
 #include "lockless_srmw_queue.h"
+#include "jemalloc/jemalloc.h"
+
 
 #define EXPLICIT_ORDER
 
@@ -267,9 +269,8 @@ void lq_init(lq_buffer_t *buff, size_t entry_size, size_t entries) {
     buff->head = 0u;
     buff->used = 0u;
     buff->unavailableRead = entries;
-    // TODO don't use malloc, use jemk malloc, or sth
-    buff->entries = malloc(entries*sizeof(lq_entry_t));
-    buff->data = malloc(entry_size * entries);
+    buff->entries = jemk_malloc(entries*sizeof(lq_entry_t));
+    buff->data = jemk_malloc(entry_size * entries);
     for (size_t i=0; i< entries; ++i) {
         // initialize each entry
         buff->entries[i].metadata_state = META_STATE_FREE;
@@ -279,8 +280,8 @@ void lq_init(lq_buffer_t *buff, size_t entry_size, size_t entries) {
 }
 
 void lq_destroy(lq_buffer_t *buff) {
-    free(buff->entries);
-    free(buff->data);
+    jemk_free(buff->entries);
+    jemk_free(buff->data);
 }
 
 bool lq_pop(lq_buffer_t *buff, void *out) {

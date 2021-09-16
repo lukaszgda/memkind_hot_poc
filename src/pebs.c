@@ -229,6 +229,23 @@ void *pebs_monitor(void *state)
         last_head = pebs_metadata->data_head;
         pebs_metadata->data_tail = pebs_metadata->data_head;
 
+        EventEntry_t event;
+        bool pop_success;
+        while (true) {
+            pop_success = tachanka_ranking_event_pop(&event);
+            if (!pop_success)
+                break;
+            switch (event.type) {
+                case EVENT_CREATE_ADD:
+                    register_block(event.data.createAddData.hash, event.data.createAddData.address, event.data.createAddData.size);
+                    touch(event.data.createAddData.address, 0, 1 /*called from malloc*/);
+                    break;
+                case EVENT_TOUCH:
+                    assert(false && "not implemented here!");
+                    break;
+            }
+        }
+
         tachanka_update_threshold();
 //         ret = clock_gettime(CLOCK_MONOTONIC, &ctime);
 //         if (ret != 0) {

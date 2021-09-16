@@ -1,7 +1,7 @@
 #include "assert.h"
 #include "stdlib.h"
 #include "string.h"
-
+#include "jemalloc/jemalloc.h"
 #include "ranking_queue.h"
 
 // command to compile tests:
@@ -18,49 +18,49 @@ static void test_simple(void) {
     assert(!empty_poppable);
 
     entry.type = EVENT_CREATE_ADD;
-    entry.data.hash = 1u;
+    entry.data.createAddData.hash = 1u;
     bool added = ranking_event_push(&buff, &entry);
     assert(added);
 
     entry.type = EVENT_TOUCH;
-    entry.data.address = 2u;
+    entry.data.touchData.address = (void*)2u;
     added = ranking_event_push(&buff, &entry);
     assert(added);
 
     entry.type = EVENT_TOUCH;
-    entry.data.address = 3u;
+    entry.data.touchData.address = (void*)3u;
     added = ranking_event_push(&buff, &entry);
     assert(added);
 
     entry.type = EVENT_CREATE_ADD;
-    entry.data.hash = 4u;
+    entry.data.createAddData.hash = 4u;
     added = ranking_event_push(&buff, &entry);
     assert(added);
 
     entry.type = EVENT_TOUCH;
-    entry.data.hash = 5u;
+    entry.data.createAddData.hash = 5u;
     added = ranking_event_push(&buff, &entry);
     assert(!added && "queue full!");
 
     bool popped = ranking_event_pop(&buff, &entry);
     assert(popped);
     assert(entry.type == EVENT_CREATE_ADD);
-    assert(entry.data.hash == 1u);
+    assert(entry.data.createAddData.hash == 1u);
 
     popped = ranking_event_pop(&buff, &entry);
     assert(popped);
     assert(entry.type == EVENT_TOUCH);
-    assert(entry.data.address == 2u);
+    assert(entry.data.touchData.address == (void*) 2u);
 
     popped = ranking_event_pop(&buff, &entry);
     assert(popped);
     assert(entry.type == EVENT_TOUCH);
-    assert(entry.data.address == 3u);
+    assert(entry.data.touchData.address == (void*) 3u);
 
     popped = ranking_event_pop(&buff, &entry);
     assert(popped);
     assert(entry.type == EVENT_CREATE_ADD);
-    assert(entry.data.hash == 4u);
+    assert(entry.data.createAddData.hash == 4u);
 
     popped = ranking_event_pop(&buff, &entry);
     assert(!popped);
@@ -68,49 +68,49 @@ static void test_simple(void) {
     // queue empty, refill
 
     entry.type = EVENT_TOUCH;
-    entry.data.address = 6u;
+    entry.data.touchData.address = (void*)6u;
     added = ranking_event_push(&buff, &entry);
     assert(added);
 
     entry.type = EVENT_TOUCH;
-    entry.data.address = 7u;
+    entry.data.touchData.address = (void*)7u;
     added = ranking_event_push(&buff, &entry);
     assert(added);
 
     entry.type = EVENT_CREATE_ADD;
-    entry.data.address = 8u;
+    entry.data.touchData.address = (void*)8u;
     added = ranking_event_push(&buff, &entry);
     assert(added);
 
     entry.type = EVENT_CREATE_ADD;
-    entry.data.hash = 9u;
+    entry.data.createAddData.hash = 9u;
     added = ranking_event_push(&buff, &entry);
     assert(added);
 
     entry.type = EVENT_TOUCH;
-    entry.data.hash = 10u;
+    entry.data.createAddData.hash = 10u;
     added = ranking_event_push(&buff, &entry);
     assert(!added && "queue full!");
 
     popped = ranking_event_pop(&buff, &entry);
     assert(popped);
     assert(entry.type == EVENT_TOUCH);
-    assert(entry.data.address == 6u);
+    assert(entry.data.touchData.address == (void*) 6u);
 
     popped = ranking_event_pop(&buff, &entry);
     assert(popped);
     assert(entry.type == EVENT_TOUCH);
-    assert(entry.data.address == 7u);
+    assert(entry.data.touchData.address == (void*) 7u);
 
     popped = ranking_event_pop(&buff, &entry);
     assert(popped);
     assert(entry.type == EVENT_CREATE_ADD);
-    assert(entry.data.hash == 8u);
+    assert(entry.data.createAddData.hash == 8u);
 
     popped = ranking_event_pop(&buff, &entry);
     assert(popped);
     assert(entry.type == EVENT_CREATE_ADD);
-    assert(entry.data.hash == 9u);
+    assert(entry.data.createAddData.hash == 9u);
 
     popped = ranking_event_pop(&buff, &entry);
     assert(!popped);
@@ -127,19 +127,19 @@ static void test_simple_refill(void) {
     assert(!empty_poppable);
 
     entry.type = EVENT_CREATE_ADD;
-    entry.data.hash = 1u;
+    entry.data.createAddData.hash = 1u;
     bool added = ranking_event_push(&buff, &entry);
     assert(added);
     // 1 on queue, 3 empty
 
     entry.type = EVENT_TOUCH;
-    entry.data.address = 2u;
+    entry.data.touchData.address = (void*)2u;
     added = ranking_event_push(&buff, &entry);
     assert(added);
     // 2 on queue, 2 empty
 
     entry.type = EVENT_TOUCH;
-    entry.data.address = 3u;
+    entry.data.touchData.address = (void*)3u;
     added = ranking_event_push(&buff, &entry);
     assert(added);
     // 3 on queue, 1 empty
@@ -147,36 +147,36 @@ static void test_simple_refill(void) {
     bool popped = ranking_event_pop(&buff, &entry);
     assert(popped);
     assert(entry.type == EVENT_CREATE_ADD);
-    assert(entry.data.hash == 1u);
+    assert(entry.data.createAddData.hash == 1u);
     // 2 on queue, 2 empty
 
     popped = ranking_event_pop(&buff, &entry);
     assert(popped);
     assert(entry.type == EVENT_TOUCH);
-    assert(entry.data.address == 2u);
+    assert(entry.data.touchData.address == (void*) 2u);
     // 1 on queue, 3 empty
 
     entry.type = EVENT_CREATE_ADD;
-    entry.data.hash = 4u;
+    entry.data.createAddData.hash = 4u;
     added = ranking_event_push(&buff, &entry);
     assert(added);
     // 2 on queue, 2 empty
 
     entry.type = EVENT_TOUCH;
-    entry.data.address = 6u;
+    entry.data.touchData.address = (void*)6u;
     added = ranking_event_push(&buff, &entry);
     assert(added);
     // 3 on queue, 1 empty
 
     entry.type = EVENT_TOUCH;
-    entry.data.address = 7u;
+    entry.data.touchData.address = (void*)7u;
     added = ranking_event_push(&buff, &entry);
     assert(added);
     // 4 on queue, 0 empty
 
     // queue full
     entry.type = EVENT_CREATE_ADD;
-    entry.data.address = 8u;
+    entry.data.touchData.address = (void*)8u;
     added = ranking_event_push(&buff, &entry);
     assert(!added);
     // 4 on queue, 0 empty
@@ -184,41 +184,41 @@ static void test_simple_refill(void) {
     popped = ranking_event_pop(&buff, &entry);
     assert(popped);
     assert(entry.type == EVENT_TOUCH);
-    assert(entry.data.hash == 3u);
+    assert(entry.data.createAddData.hash == 3u);
     // 3 on queue, 1 empty
 
     popped = ranking_event_pop(&buff, &entry);
     assert(popped);
     assert(entry.type == EVENT_CREATE_ADD);
-    assert(entry.data.hash == 4u);
+    assert(entry.data.createAddData.hash == 4u);
     // 2 on queue, 2 empty
 
     popped = ranking_event_pop(&buff, &entry);
     assert(popped);
     assert(entry.type == EVENT_TOUCH);
-    assert(entry.data.address == 6u);
+    assert(entry.data.touchData.address == (void*) 6u);
     // 1 on queue, 3 empty
 
     entry.type = EVENT_CREATE_ADD;
-    entry.data.hash = 9u;
+    entry.data.createAddData.hash = 9u;
     added = ranking_event_push(&buff, &entry);
     assert(added);
     // 2 on queue, 2 empty
 
     entry.type = EVENT_CREATE_ADD;
-    entry.data.hash = 10u;
+    entry.data.createAddData.hash = 10u;
     added = ranking_event_push(&buff, &entry);
     assert(added);
     // 3 on queue, 1 empty
 
     entry.type = EVENT_CREATE_ADD;
-    entry.data.hash = 11u;
+    entry.data.createAddData.hash = 11u;
     added = ranking_event_push(&buff, &entry);
     assert(added);
     // 4 on queue, 0 empty
 
     entry.type = EVENT_TOUCH;
-    entry.data.hash = 12u;
+    entry.data.createAddData.hash = 12u;
     added = ranking_event_push(&buff, &entry);
     assert(!added && "queue full!");
     // 4 on queue, 0 empty
@@ -226,25 +226,25 @@ static void test_simple_refill(void) {
     popped = ranking_event_pop(&buff, &entry);
     assert(popped);
     assert(entry.type == EVENT_TOUCH);
-    assert(entry.data.address == 7u);
+    assert(entry.data.touchData.address == (void*) 7u);
     // 3 on queue, 1 empty
 
     popped = ranking_event_pop(&buff, &entry);
     assert(popped);
     assert(entry.type == EVENT_CREATE_ADD);
-    assert(entry.data.hash == 9u);
+    assert(entry.data.createAddData.hash == 9u);
     // 2 on queue, 2 empty
 
     popped = ranking_event_pop(&buff, &entry);
     assert(popped);
     assert(entry.type == EVENT_CREATE_ADD);
-    assert(entry.data.hash == 10u);
+    assert(entry.data.createAddData.hash == 10u);
     // 1 on queue, 3 empty
 
     popped = ranking_event_pop(&buff, &entry);
     assert(popped);
     assert(entry.type == EVENT_CREATE_ADD);
-    assert(entry.data.hash == 11u);
+    assert(entry.data.createAddData.hash == 11u);
     // 0 on queue, 4 empty
 
     popped = ranking_event_pop(&buff, &entry);
@@ -282,8 +282,8 @@ static void *read_batch(void* data) {
         EventEntry_t temp;
         while (!ranking_event_pop(data_->buff, &temp));
         assert(temp.type == EVENT_TOUCH);
-        assert(temp.data.address < data_->destSize);
-        data_->dest[temp.data.address] = temp;
+        assert(((size_t)temp.data.touchData.address) < data_->destSize);
+        data_->dest[(size_t)temp.data.touchData.address] = temp;
     }
     return NULL;
 }
@@ -298,12 +298,12 @@ static void stress_test_simple(size_t writers, size_t params_per_thread, size_t 
     //  - check that all elements were correctly read
 
     size_t source_size = writers*params_per_thread;
-    EventEntry_t *entries_source = malloc(source_size*sizeof(EventEntry_t));
-    EventEntry_t *entries_dest = calloc(source_size, sizeof(EventEntry_t));
+    EventEntry_t *entries_source = jemk_malloc(source_size*sizeof(EventEntry_t));
+    EventEntry_t *entries_dest = jemk_calloc(source_size, sizeof(EventEntry_t));
     // TODO init entries source and dest
     for (size_t i=0; i<source_size; ++i) {
         entries_source[i].type=EVENT_TOUCH;
-        entries_source[i].data.address=i;
+        entries_source[i].data.touchData.address=(void*)i;
     }
     lq_buffer_t buff;
     ranking_event_init(&buff, buffer_size);
@@ -312,7 +312,7 @@ static void stress_test_simple(size_t writers, size_t params_per_thread, size_t 
         .destSize = source_size,
         .buff = &buff,
     };
-    TestDataWriter *writers_data = malloc(writers*sizeof(TestDataWriter));
+    TestDataWriter *writers_data = jemk_malloc(writers*sizeof(TestDataWriter));
     for (size_t i=0; i<writers; ++i) {
         writers_data[i].entries = &entries_source[i*params_per_thread];
         writers_data[i].entriesSize = params_per_thread;
@@ -344,15 +344,15 @@ static void stress_test_simple(size_t writers, size_t params_per_thread, size_t 
         for (size_t i=0; i<source_size; ++i) {
             // check ith dest
             assert(entries_dest[i].type == EVENT_TOUCH);
-            assert(entries_dest[i].data.address == i);
+            assert(entries_dest[i].data.touchData.address == (void*) i);
         }
         // clear dest
         memset(entries_dest, source_size, sizeof(EventEntry_t));
     }
-    free(writers_data);
+    jemk_free(writers_data);
     ranking_event_destroy(&buff);
-    free(entries_dest);
-    free(entries_source);
+    jemk_free(entries_dest);
+    jemk_free(entries_source);
 }
 
 static void stress_tests_simple(void) {

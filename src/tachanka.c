@@ -3,8 +3,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <errno.h>
 
-#include <memkind/internal/pebs.h>
 #include <memkind/internal/bthash.h>
 #include <memkind/internal/critnib.h>
 #include <memkind/internal/tachanka.h>
@@ -31,6 +31,7 @@ static int freeblock = -1;
 
 // TODO (possibly) move elsewhere - make sure multiple rankings are supported!
 static ranking_t *ranking;
+static lq_buffer_t ranking_event_buff;
 static _Atomic double g_dramToTotalMemRatio=1.0;
 /*static*/ critnib *hash_to_type, *addr_to_block;
 
@@ -193,12 +194,13 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
 //     printf("touches tachanka, timestamp: [%llu]\n", timestamp);
 }
 
-void tachanka_init(double old_window_hotness_weight)
+void tachanka_init(double old_window_hotness_weight, size_t event_queue_size)
 {
     read_maps();
     hash_to_type = critnib_new();
     addr_to_block = critnib_new();
     ranking_create(&ranking, old_window_hotness_weight);
+    ranking_event_init(&ranking_event_buff, event_queue_size);
 }
 
 MEMKIND_EXPORT void tachanka_set_dram_total_ratio(double ratio)
@@ -221,6 +223,7 @@ void tachanka_update_threshold(void)
 void tachanka_destroy(void)
 {
     ranking_destroy(ranking);
+    ranking_event_destroy(&ranking_event_buff);
 }
 
 MEMKIND_EXPORT double tachanka_get_obj_hotness(int size)
@@ -259,4 +262,11 @@ MEMKIND_EXPORT int tachanka_set_touch_callback(void *addr, tachanka_touch_callba
         ret=0;
     }
     return ret;
+}
+
+bool tachanka_ranking_event_push(EventEntry_t *event) {
+    return ranking_event_push(&ranking_event_buff, event);
+}
+bool tachanka_ranking_event_pop(EventEntry_t *event) {
+    return ranking_event_push(&ranking_event_buff, event);
 }

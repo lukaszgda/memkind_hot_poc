@@ -12,9 +12,19 @@ typedef enum EventType {
 } EventType_t;
 
 
-typedef union EventData {
+typedef struct EventDataTouch {
+    void *address;
+} EventDataTouch;
+
+typedef struct EventDataCreateAdd {
     uint64_t hash;
-    uint64_t address;
+    void *address;
+    size_t size;
+} EventDataCreateAdd;
+
+typedef union EventData {
+    EventDataTouch touchData;
+    EventDataCreateAdd createAddData;
 } EventData_t;
 
 typedef struct EventEntry {

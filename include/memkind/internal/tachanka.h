@@ -8,6 +8,7 @@ extern "C" {
 #include "stdlib.h"
 // #include "stdatomic.h" issues with include - this is "extern" code from c++
 #include "asm-generic/int-ll64.h"
+#include "ranking_queue.h"
 
 typedef enum TimestampState {
     TIMESTAMP_NOT_SET,
@@ -28,7 +29,7 @@ void unregister_block(void *addr);
 void realloc_block(void *addr, void *new_addr, size_t size);
 void *new_block(size_t size);
 void touch(void *addr, __u64 timestamp, int from_malloc);
-void tachanka_init(double old_window_hotness_weight);
+void tachanka_init(double old_window_hotness_weight, size_t event_queue_size);
 void tachanka_destroy(void);
 void tachanka_update_threshold(void);
 void tachanka_set_dram_total_ratio(double ratio);
@@ -39,6 +40,8 @@ int tachanka_set_touch_callback(void *addr, tachanka_touch_callback cb, void* ar
 Hotness_e tachanka_get_hotness_type(const void *addr);
 Hotness_e tachanka_get_hotness_type_hash(uint64_t hash);
 double tachanka_get_hot_thresh(void);
+bool tachanka_ranking_event_push(EventEntry_t *event);
+bool tachanka_ranking_event_pop(EventEntry_t *event);
 
 struct ttype {
     size_t size;
