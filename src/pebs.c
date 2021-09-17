@@ -24,6 +24,11 @@ static char *pebs_mmap;
 // DEBUG
 extern critnib* hash_to_type;
 static size_t g_queue_pop_counter=0;
+static size_t g_queue_counter_malloc=0;
+static size_t g_queue_counter_realloc=0;
+static size_t g_queue_counter_callback=0;
+static size_t g_queue_counter_free=0;
+static size_t g_queue_counter_touch=0;
 
 // static uint64_t timespec_diff_millis(const struct timespec *tnew, const struct timespec *told) {
 //     uint64_t diff_s = tnew->tv_sec - told->tv_sec;
@@ -124,6 +129,9 @@ void *pebs_monitor(void *state)
                 assert(ret == 0);
                 printf("pebs counter %lu hit, succcessful ranking_queue reads %lu, time [seconds, nanoseconds]: [%ld, %ld]\n",
                     interval, g_queue_pop_counter, t.tv_sec, t.tv_nsec);
+// g_queue_counter_malloc, g_queue_counter_realloc, g_queue_counter_callback, g_queue_counter_free, g_queue_counter_touch
+
+                printf("g_queue_counter_malloc: %lu, g_queue_counter_realloc: %lu, g_queue_counter_callback: %lu, g_queue_counter_free: %lu, g_queue_counter_touch: %lu\n", g_queue_counter_malloc, g_queue_counter_realloc, g_queue_counter_callback, g_queue_counter_free, g_queue_counter_touch);
                 counter=0u;
             }
         }
@@ -241,21 +249,26 @@ void *pebs_monitor(void *state)
                 case EVENT_CREATE_ADD:
                     register_block(event.data.createAddData.hash, event.data.createAddData.address, event.data.createAddData.size);
                     touch(event.data.createAddData.address, 0, 1 /*called from malloc*/);
+                    g_queue_counter_malloc++;
                     break;
                 case EVENT_DESTROY_REMOVE:
                     unregister_block(event.data.destroyRemoveData.address);
+                    g_queue_counter_free++;
                     break;
                 case EVENT_REALLOC:
                     unregister_block(event.data.reallocData.address);
+                    g_queue_counter_realloc++;
                     break;
                 case EVENT_SET_TOUCH_CALLBACK:
                     tachanka_set_touch_callback(
                         event.data.touchCallbackData.address,
                         event.data.touchCallbackData.callback,
                         event.data.touchCallbackData.callbackArg);
+                    g_queue_counter_callback++;
                     break;
                 case EVENT_TOUCH:
                     assert(false && "not implemented here!");
+                    g_queue_counter_touch++;
                     break;
                 default:
                     assert(false && "case not implemented!");

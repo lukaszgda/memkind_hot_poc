@@ -195,6 +195,7 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
 //     printf("touches tachanka, timestamp: [%llu]\n", timestamp);
 }
 
+static bool initialized=false;
 void tachanka_init(double old_window_hotness_weight, size_t event_queue_size)
 {
     read_maps();
@@ -202,6 +203,7 @@ void tachanka_init(double old_window_hotness_weight, size_t event_queue_size)
     addr_to_block = critnib_new();
     ranking_create(&ranking, old_window_hotness_weight);
     ranking_event_init(&ranking_event_buff, event_queue_size);
+    initialized=true;
 }
 
 MEMKIND_EXPORT void tachanka_set_dram_total_ratio(double ratio)
@@ -265,9 +267,11 @@ MEMKIND_EXPORT int tachanka_set_touch_callback(void *addr, tachanka_touch_callba
 }
 
 MEMKIND_EXPORT bool tachanka_ranking_event_push(EventEntry_t *event) {
+    assert(initialized && "push onto non-initialized queue");
     return ranking_event_push(&ranking_event_buff, event);
 }
 
 MEMKIND_EXPORT bool tachanka_ranking_event_pop(EventEntry_t *event) {
+    assert(initialized && "push onto non-initialized queue");
     return ranking_event_push(&ranking_event_buff, event);
 }

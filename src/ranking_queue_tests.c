@@ -65,6 +65,12 @@ static void test_simple(void) {
     popped = ranking_event_pop(buff, &entry);
     assert(!popped);
 
+    popped = ranking_event_pop(buff, &entry);
+    assert(!popped);
+
+    popped = ranking_event_pop(buff, &entry);
+    assert(!popped);
+
     // queue empty, refill
 
     entry.type = EVENT_TOUCH;
@@ -92,6 +98,16 @@ static void test_simple(void) {
     added = ranking_event_push(buff, &entry);
     assert(!added && "queue full!");
 
+    entry.type = EVENT_TOUCH;
+    entry.data.createAddData.hash = 10u;
+    added = ranking_event_push(buff, &entry);
+    assert(!added && "queue full!");
+
+    entry.type = EVENT_TOUCH;
+    entry.data.createAddData.hash = 10u;
+    added = ranking_event_push(buff, &entry);
+    assert(!added && "queue full!");
+
     popped = ranking_event_pop(buff, &entry);
     assert(popped);
     assert(entry.type == EVENT_TOUCH);
@@ -111,6 +127,12 @@ static void test_simple(void) {
     assert(popped);
     assert(entry.type == EVENT_CREATE_ADD);
     assert(entry.data.createAddData.hash == 9u);
+
+    popped = ranking_event_pop(buff, &entry);
+    assert(!popped);
+
+    popped = ranking_event_pop(buff, &entry);
+    assert(!popped);
 
     popped = ranking_event_pop(buff, &entry);
     assert(!popped);
@@ -181,6 +203,20 @@ static void test_simple_refill(void) {
     assert(!added);
     // 4 on queue, 0 empty
 
+    // queue full
+    entry.type = EVENT_CREATE_ADD;
+    entry.data.touchData.address = (void*)8u;
+    added = ranking_event_push(buff, &entry);
+    assert(!added);
+    // 4 on queue, 0 empty
+
+    // queue full
+    entry.type = EVENT_CREATE_ADD;
+    entry.data.touchData.address = (void*)8u;
+    added = ranking_event_push(buff, &entry);
+    assert(!added);
+    // 4 on queue, 0 empty
+
     popped = ranking_event_pop(buff, &entry);
     assert(popped);
     assert(entry.type == EVENT_TOUCH);
@@ -223,6 +259,18 @@ static void test_simple_refill(void) {
     assert(!added && "queue full!");
     // 4 on queue, 0 empty
 
+    entry.type = EVENT_TOUCH;
+    entry.data.createAddData.hash = 12u;
+    added = ranking_event_push(buff, &entry);
+    assert(!added && "queue full!");
+    // 4 on queue, 0 empty
+
+    entry.type = EVENT_TOUCH;
+    entry.data.createAddData.hash = 12u;
+    added = ranking_event_push(buff, &entry);
+    assert(!added && "queue full!");
+    // 4 on queue, 0 empty
+
     popped = ranking_event_pop(buff, &entry);
     assert(popped);
     assert(entry.type == EVENT_TOUCH);
@@ -246,6 +294,12 @@ static void test_simple_refill(void) {
     assert(entry.type == EVENT_CREATE_ADD);
     assert(entry.data.createAddData.hash == 11u);
     // 0 on queue, 4 empty
+
+    popped = ranking_event_pop(buff, &entry);
+    assert(!popped);
+
+    popped = ranking_event_pop(buff, &entry);
+    assert(!popped);
 
     popped = ranking_event_pop(buff, &entry);
     assert(!popped);

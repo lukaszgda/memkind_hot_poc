@@ -6,7 +6,7 @@
 #include "stdint.h"
 // uncomment to use mutex - don't rely on correctness of
 // lockless structure implementation
-// #define USE_MUTEX
+#define USE_MUTEX
 
 typedef struct lq_buffer lq_buffer_t;
 
