@@ -189,7 +189,19 @@ void *pebs_monitor(void *state)
 //     }
 // }
 //                         printf("touches, timestamp: [%llu], from malloc [0]\n", timestamp);
-                        touch((void*)addr, timestamp, 0 /* from malloc */);
+                        // defer touch after corresponding malloc - put it onto queue
+                        EventEntry_t entry = {
+                            .type = EVENT_TOUCH,
+                            .data.touchData = {
+                                .address = (void*)addr,
+                                .timestamp = timestamp,
+                            },
+                        };
+                        // copy is performed, passing pointer to stack is ok
+                        // losing single malloc should not cause issues,
+                        // so we are just ignoring buffer overflows
+                        (void)tachanka_ranking_event_push(&entry);
+//                         touch((void*)addr, timestamp, 0 /* from malloc */);
 //                         printf("touched, timestamp: [%llu], from malloc [0]\n", timestamp);
 #if LOG_TO_FILE
                         // DEBUG
@@ -256,7 +268,7 @@ void *pebs_monitor(void *state)
                     g_queue_counter_free++;
                     break;
                 case EVENT_REALLOC:
-                    unregister_block(event.data.reallocData.address);
+                    realloc_block(event.data.reallocData.addressOld, event.data.reallocData.addressNew, event.data.reallocData.size);
                     g_queue_counter_realloc++;
                     break;
                 case EVENT_SET_TOUCH_CALLBACK:
@@ -267,7 +279,7 @@ void *pebs_monitor(void *state)
                     g_queue_counter_callback++;
                     break;
                 case EVENT_TOUCH:
-                    assert(false && "not implemented here!");
+                    touch(event.data.touchData.address, event.data.touchData.timestamp, 0 /*called from malloc*/);
                     g_queue_counter_touch++;
                     break;
                 default:
@@ -301,12 +313,12 @@ void *pebs_monitor(void *state)
             assert(ret!=0);
         }
         if (timespec_is_he(&temp, &ntime)) {
-            printf("WARN: deadline not met!");
+            printf("WARN: deadline not met!\n");
         }
         (void)clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ntime, NULL);
         timespec_add(&ntime, &tv_period);
     }
-    printf("stopping pebs monitor for thread %d", cur_tid);
+    printf("stopping pebs monitor for thread %d\n", cur_tid);
 
     return NULL;
 }

@@ -1115,7 +1115,9 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
         EventEntry_t entry = {
             .type = EVENT_REALLOC,
             .data.reallocData = {
-                .address = ptr,
+                .addressOld = ptr,
+                .addressNew = n_ptr,
+                .size = size,
             }
         };
         bool success = tachanka_ranking_event_push(&entry);

@@ -4,6 +4,7 @@
 #include "stdlib.h"
 #include "stdbool.h"
 #include "stdint.h"
+#include "asm-generic/int-ll64.h"
 // uncomment to use mutex - don't rely on correctness of
 // lockless structure implementation
 // #define USE_MUTEX
@@ -21,6 +22,7 @@ typedef enum EventType {
 
 typedef struct EventDataTouch {
     void *address;
+    __u64 timestamp;
 } EventDataTouch;
 
 typedef struct EventDataDestroyRemove {
@@ -28,7 +30,9 @@ typedef struct EventDataDestroyRemove {
 } EventDataDestroyRemove;
 
 typedef struct EventDataRealloc {
-    void *address;
+    void *addressOld;
+    void *addressNew;
+    size_t size;
 } EventDataRealloc;
 
 typedef struct EventDataCreateAdd {
