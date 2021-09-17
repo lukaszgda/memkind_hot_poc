@@ -4,13 +4,13 @@ extern "C" {
 }
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
+#include <cstring>
+#include <jemalloc/jemalloc.h>
 #include <limits>
 #include <mutex>
 #include <vector>
-#include <jemalloc/jemalloc.h>
-#include <cstring>
-#include <atomic>
 
 #include "memkind/internal/memkind_private.h"
 
@@ -36,7 +36,6 @@ typedef struct AggregatedHotness {
     double hotness;
 } AggregatedHotness_t;
 
-
 //--------private function implementation---------
 
 static bool is_hotter_agg_hot(const void *a, const void *b)
@@ -59,16 +58,22 @@ static double
 ranking_calculate_hot_threshold_dram_pmem_internal(ranking_t *ranking,
                                                    double dram_pmem_ratio);
 static bool ranking_is_hot_internal(ranking_t *ranking, struct ttype *entry);
-static void ranking_update_internal(ranking_t *ranking, struct ttype *entry_to_update, const struct ttype *updated_values);
-static void ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry, uint64_t timestamp, uint64_t add_hotness);
+static void ranking_update_internal(ranking_t *ranking,
+                                    struct ttype *entry_to_update,
+                                    const struct ttype *updated_values);
+static void ranking_touch_entry_internal(ranking_t *ranking,
+                                         struct ttype *entry,
+                                         uint64_t timestamp,
+                                         uint64_t add_hotness);
 
 //--------private function implementation---------
 
 #if 1
 // old touch entry definition - as described in design doc
-void ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry, uint64_t timestamp, uint64_t add_hotness)
+void ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry,
+                                  uint64_t timestamp, uint64_t add_hotness)
 {
-//     printf("touches internal internal, timestamp: [%lu]\n", timestamp);
+    //     printf("touches internal internal, timestamp: [%lu]\n", timestamp);
 
     if (entry->touchCb)
         entry->touchCb(entry->touchCbArg);
@@ -76,7 +81,7 @@ void ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry, uint6
     entry->n1 += add_hotness;
     entry->t0 = timestamp;
     if (timestamp != 0) {
-        if(entry->timestamp_state == TIMESTAMP_NOT_SET) {
+        if (entry->timestamp_state == TIMESTAMP_NOT_SET) {
             entry->t2 = timestamp;
             entry->timestamp_state = TIMESTAMP_INIT;
         }
@@ -90,21 +95,23 @@ void ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry, uint6
                 entry->t1 = entry->t0;
                 entry->n2 = entry->n1;
                 entry->n1 = 0;
-//                 printf("wre: hotness updated: [new, old]: [%.16f, %.16f]\n", f1, f2);
+                //                 printf("wre: hotness updated: [new, old]:
+                //                 [%.16f, %.16f]\n", f1, f2);
             }
-//             printf("wre: hotness awaiting window\n");
+            //             printf("wre: hotness awaiting window\n");
         } else {
             // TODO init not done
-//             printf("wre: hotness awaiting window\n");
+            //             printf("wre: hotness awaiting window\n");
             if ((entry->t0 - entry->t2) > HOTNESS_MEASURE_WINDOW) {
                 // TODO - classify hotness
-                entry->timestamp_state = TIMESTAMP_INIT_DONE;;
+                entry->timestamp_state = TIMESTAMP_INIT_DONE;
+                ;
                 entry->t1 = entry->t0;
-//                 printf("wre: hotness init done\n");
+                //                 printf("wre: hotness init done\n");
             }
         }
     } else {
-//         printf("wre: hotness touch without timestamp!\n");
+        //         printf("wre: hotness touch without timestamp!\n");
     }
 }
 
@@ -115,7 +122,7 @@ void touch_entry(struct ttype *entry, uint64_t timestamp, uint64_t add_hotness)
     if (entry->touchCb)
         entry->touchCb(entry->touchCbArg);
 
-    hotness (entry) += add_hotness;
+    hotness(entry) += add_hotness;
 }
 
 #endif
@@ -126,10 +133,10 @@ void ranking_create_internal(ranking_t **ranking, double old_weight)
     wre_create(&(*ranking)->entries, is_hotter_agg_hot);
     // placement new for mutex
     // mutex is already inside a structure, so alignment should be ok
-    (void)new ((void*)(&(*ranking)->mutex)) std::mutex();
-    (*ranking)->hotThreshold=0.;
-    (*ranking)->oldWeight=old_weight;
-    (*ranking)->newWeight=1-old_weight;
+    (void)new ((void *)(&(*ranking)->mutex)) std::mutex();
+    (*ranking)->hotThreshold = 0.;
+    (*ranking)->oldWeight = old_weight;
+    (*ranking)->newWeight = 1 - old_weight;
 }
 
 void ranking_destroy_internal(ranking_t *ranking)
@@ -157,7 +164,7 @@ ranking_calculate_hot_threshold_dram_total_internal(ranking_t *ranking,
         ranking->hotThreshold = agg_hot->hotness;
     }
     // TODO remove this!!!
-//     printf("wre: threshold_dram_total_internal\n");
+    //     printf("wre: threshold_dram_total_internal\n");
     // EOF TODO
 
     return ranking_get_hot_threshold_internal(ranking);
@@ -168,7 +175,7 @@ ranking_calculate_hot_threshold_dram_pmem_internal(ranking_t *ranking,
                                                    double dram_pmem_ratio)
 {
     // TODO remove this!!!
-//     printf("wre: threshold_dram_pmem_internal\n");
+    //     printf("wre: threshold_dram_pmem_internal\n");
     // EOF TODO
 
     double ratio = dram_pmem_ratio / (1 + dram_pmem_ratio);
@@ -184,12 +191,12 @@ void ranking_add_internal(ranking_t *ranking, struct ttype *entry)
     if (value) {
         // value with the same hotness is already there, should be aggregated
         value->size += entry->size;
-//         printf("wre: hotness found, aggregates\n");
+        //         printf("wre: hotness found, aggregates\n");
     } else {
         value = (AggregatedHotness_t *)jemk_malloc(sizeof(AggregatedHotness_t));
         value->hotness = entry->f;
         value->size = entry->size;
-//         printf("wre: hotness not found, adds\n");
+        //         printf("wre: hotness not found, adds\n");
     }
     wre_put(ranking->entries, value, value->size);
 }
@@ -218,16 +225,19 @@ void ranking_remove_internal(ranking_t *ranking, const struct ttype *entry)
     }
 }
 
-static void ranking_update_internal(ranking_t *ranking, struct ttype *entry_to_update, const struct ttype *updated_values)
+static void ranking_update_internal(ranking_t *ranking,
+                                    struct ttype *entry_to_update,
+                                    const struct ttype *updated_values)
 {
     ranking_remove_internal(ranking, entry_to_update);
     memcpy(entry_to_update, updated_values, sizeof(*entry_to_update));
     ranking_add_internal(ranking, entry_to_update);
 }
 
-void ranking_touch_internal(ranking_t *ranking, struct ttype *entry, uint64_t timestamp, uint64_t add_hotness)
+void ranking_touch_internal(ranking_t *ranking, struct ttype *entry,
+                            uint64_t timestamp, uint64_t add_hotness)
 {
-//     printf("touches internal, timestamp: [%lu]\n", timestamp);
+    //     printf("touches internal, timestamp: [%lu]\n", timestamp);
     ranking_remove_internal(ranking, entry);
     ranking_touch_entry_internal(ranking, entry, timestamp, add_hotness);
     ranking_add_internal(ranking, entry);
@@ -251,16 +261,18 @@ MEMKIND_EXPORT double ranking_get_hot_threshold(ranking_t *ranking)
     return ranking_get_hot_threshold_internal(ranking);
 }
 
-MEMKIND_EXPORT double ranking_calculate_hot_threshold_dram_total(ranking_t *ranking,
-                                                  double dram_pmem_ratio)
+MEMKIND_EXPORT double
+ranking_calculate_hot_threshold_dram_total(ranking_t *ranking,
+                                           double dram_pmem_ratio)
 {
     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
     return ranking_calculate_hot_threshold_dram_total_internal(ranking,
                                                                dram_pmem_ratio);
 }
 
-MEMKIND_EXPORT double ranking_calculate_hot_threshold_dram_pmem(ranking_t *ranking,
-                                                 double dram_pmem_ratio)
+MEMKIND_EXPORT double
+ranking_calculate_hot_threshold_dram_pmem(ranking_t *ranking,
+                                          double dram_pmem_ratio)
 {
     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
     return ranking_calculate_hot_threshold_dram_pmem_internal(ranking,
@@ -280,26 +292,32 @@ MEMKIND_EXPORT bool ranking_is_hot(ranking_t *ranking, struct ttype *entry)
     return ranking_is_hot_internal(ranking, entry);
 }
 
-MEMKIND_EXPORT void ranking_remove(ranking_t *ranking, const struct ttype *entry)
+MEMKIND_EXPORT void ranking_remove(ranking_t *ranking,
+                                   const struct ttype *entry)
 {
     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
     ranking_remove_internal(ranking, entry);
 }
 
-MEMKIND_EXPORT void ranking_update(ranking_t *ranking, struct ttype *entry_to_update, const struct ttype *updated_value)
+MEMKIND_EXPORT void ranking_update(ranking_t *ranking,
+                                   struct ttype *entry_to_update,
+                                   const struct ttype *updated_value)
 {
     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
     ranking_update_internal(ranking, entry_to_update, updated_value);
 }
 
-MEMKIND_EXPORT void ranking_touch(ranking_t *ranking, struct ttype *entry, uint64_t timestamp, uint64_t add_hotness)
+MEMKIND_EXPORT void ranking_touch(ranking_t *ranking, struct ttype *entry,
+                                  uint64_t timestamp, uint64_t add_hotness)
 {
-//     printf("touches ranking, timestamp: [%lu]\n", timestamp);
+    //     printf("touches ranking, timestamp: [%lu]\n", timestamp);
     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
     ranking_touch_internal(ranking, entry, timestamp, add_hotness);
 }
 
-MEMKIND_EXPORT void ranking_set_touch_callback(ranking_t *ranking, tachanka_touch_callback cb, void* arg, struct ttype *type)
+MEMKIND_EXPORT void ranking_set_touch_callback(ranking_t *ranking,
+                                               tachanka_touch_callback cb,
+                                               void *arg, struct ttype *type)
 {
     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
     type->touchCb = cb;

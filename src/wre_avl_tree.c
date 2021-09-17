@@ -1,8 +1,8 @@
 #include "memkind/internal/wre_avl_tree.h"
-#include "memkind/internal/memkind_private.h"
 #include "assert.h"
-#include "stdint.h"
 #include "jemalloc/jemalloc.h"
+#include "memkind/internal/memkind_private.h"
+#include "stdint.h"
 
 #define max(X, Y) (((X) > (Y)) ? (X) : (Y))
 
@@ -418,7 +418,9 @@ MEMKIND_EXPORT void *wre_find_weighted(wre_tree_t *tree, double ratio)
             cnode = cnode->right;
             // 1) cnode should be NULL
             // 2) the function should return in the next iteration
-//             printf("wre: found 0 weight [%.16f]\n", ((AggregatedHotness_t*)cnode->data)->hotness); // TODO remove
+            //             printf("wre: found 0 weight [%.16f]\n",
+            //             ((AggregatedHotness_t*)cnode->data)->hotness); //
+            //             TODO remove
         } else {
             size_t left_weight = cnode->left ? cnode->left->subtreeWeight : 0;
             size_t left_plus_own_weight = left_weight + cnode->ownWeight;
@@ -430,22 +432,30 @@ MEMKIND_EXPORT void *wre_find_weighted(wre_tree_t *tree, double ratio)
             // ratio > nratio_left: descend into left
             // nratio_left <= ratio <= nratio_right: take current node
             best_node = cnode;
-//             printf("wre: ratio [left|right|current]: [%.16f|%.16f|%.16f], height: [%lu]\n",
-//                    nratio_left, nratio_right, ratio, cnode->height); // TODO remove
+            //             printf("wre: ratio [left|right|current]:
+            //             [%.16f|%.16f|%.16f], height: [%lu]\n",
+            //                    nratio_left, nratio_right, ratio,
+            //                    cnode->height); // TODO remove
             if (ratio < nratio_left) {
                 // left is best - descend into left branch
                 cnode = cnode->left;
                 ratio = ratio / nratio_left;
-//                 printf("wre: descend left [%.16f]\n", ((AggregatedHotness_t*)cnode->data)->hotness); // TODO remove
+                //                 printf("wre: descend left [%.16f]\n",
+                //                 ((AggregatedHotness_t*)cnode->data)->hotness);
+                //                 // TODO remove
             } else if (ratio > nratio_right) {
                 // right is best - descend into right branch
                 cnode = cnode->right;
                 ratio = (ratio - nratio_right) / (1 - nratio_right);
-//                 printf("wre: descend right [%.16f]\n", ((AggregatedHotness_t*)cnode->data)->hotness); // TODO remove
+                //                 printf("wre: descend right [%.16f]\n",
+                //                 ((AggregatedHotness_t*)cnode->data)->hotness);
+                //                 // TODO remove
             } else {
                 // cnode is best node
                 best_node = cnode;
-//                 printf("wre: found best [%.16f]\n", ((AggregatedHotness_t*)cnode->data)->hotness); // TODO remove
+                //                 printf("wre: found best [%.16f]\n",
+                //                 ((AggregatedHotness_t*)cnode->data)->hotness);
+                //                 // TODO remove
                 break;
             }
         }

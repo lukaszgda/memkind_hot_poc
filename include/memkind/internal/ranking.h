@@ -1,11 +1,10 @@
 #pragma once
-#include "stdlib.h"
 #include "stdbool.h"
+#include "stdlib.h"
 
 #include "memkind/internal/tachanka.h"
 
 typedef struct ranking ranking_t;
-
 
 // --- minimal API ---
 // Basic workflow:
@@ -35,19 +34,22 @@ extern void ranking_add(ranking_t *ranking, struct ttype *entry);
 ///
 /// @warning if correct timestamp is unknown (e.g. touched from
 /// malloc, not pebs), value "0" can be passed - timestamp will be ignored
-extern void ranking_touch(ranking_t *ranking, struct ttype *entry, uint64_t timestamp, uint64_t add_hotness);
+extern void ranking_touch(ranking_t *ranking, struct ttype *entry,
+                          uint64_t timestamp, uint64_t add_hotness);
 /// @p entry ownership stays with the caller
 /// @p entry should not be freed until it is removed from ranking
 extern void ranking_remove(ranking_t *ranking, const struct ttype *entry);
 
 // --- extended API ---
-/// @brief atomically update values of @p entry_to_update with values from @p updated_values
+/// @brief atomically update values of @p entry_to_update with values from @p
+/// updated_values
 ///
 /// workflow:
 ///     1) find and remove @p entry_to_update from ranking
 ///     2) memcpy updated_value to entry_to_update
 ///     3) add entry to update to ranking
-extern void ranking_update(ranking_t *ranking, struct ttype *entry_to_update, const struct ttype *updated_value);
+extern void ranking_update(ranking_t *ranking, struct ttype *entry_to_update,
+                           const struct ttype *updated_value);
 /// get last calculated hot threshold
 extern double ranking_get_hot_threshold(ranking_t *ranking);
 /// @p dram_pmem_ratio : dram/(dram+pmem)
@@ -70,4 +72,6 @@ extern bool ranking_is_hot(ranking_t *ranking, struct ttype *entry);
 ///     2) perform cpu intensive tasks,
 ///     3) perform time-consuming tasks: sleeps, networking, intensive io, etc
 /// PLEASE BE CAUTIOUS WHEN USING THIS FEATURE!
-extern void ranking_set_touch_callback(ranking_t *ranking, tachanka_touch_callback cb, void* arg, struct ttype *type);
+extern void ranking_set_touch_callback(ranking_t *ranking,
+                                       tachanka_touch_callback cb, void *arg,
+                                       struct ttype *type);

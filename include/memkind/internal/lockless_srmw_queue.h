@@ -2,8 +2,8 @@
 
 #include "stdatomic.h"
 #include "stdbool.h"
-#include "stdint.h"
 #include "stddef.h"
+#include "stdint.h"
 
 typedef struct lq_entry {
     // metadata
@@ -25,7 +25,8 @@ typedef struct lq_buffer {
     //      post write      unavailableRead--, // alternative: availableRead++,
     //      |
     //      V
-    //      request read    unavailableRead++, if possible // alternative: availableRead--, if possible (would have to be signed!)
+    //      request read    unavailableRead++, if possible // alternative:
+    //      availableRead--, if possible (would have to be signed!)
     //      |
     //      V
     //      read
@@ -37,15 +38,21 @@ typedef struct lq_buffer {
     //      request write (all around...)
     //
     //      initial values: used = 0, unavailableRead = size
-    //      why such strange name (unavailableRead) - we can try increment and check if > size, but we cannot try decrement and check < 0 (size is unsigned); it would be possible if we changed variable to signed
+    //      why such strange name (unavailableRead) - we can try increment and
+    //      check if > size, but we cannot try decrement and check < 0 (size is
+    //      unsigned); it would be possible if we changed variable to signed
     lq_entry_t *entries;
     void *data;
     size_t size;
     size_t entrySize;
     atomic_size_t head;
     atomic_size_t tail;
-    atomic_size_t used; /// elements that are between: request write and post read
-    atomic_size_t unavailableRead; /// elements that are **NOT** between: post_write and request_read; other words: **ARE** between request read and post write; this number cannot exceed size!
+    atomic_size_t
+        used; /// elements that are between: request write and post read
+    atomic_size_t unavailableRead; /// elements that are **NOT** between:
+                                   /// post_write and request_read; other words:
+                                   /// **ARE** between request read and post
+                                   /// write; this number cannot exceed size!
 } lq_buffer_t;
 
 extern void lq_init(lq_buffer_t *buff, size_t entry_size, size_t entries);

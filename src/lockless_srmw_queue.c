@@ -1,14 +1,13 @@
-#include "stdlib.h"
-#include "assert.h"
-#include "string.h"
 #include "memkind/internal/lockless_srmw_queue.h"
+#include "assert.h"
 #include "jemalloc/jemalloc.h"
-
+#include "stdlib.h"
+#include "string.h"
 
 #define EXPLICIT_ORDER
 
-// TODO PLEASE NOTE THAT CURRENT LOCKLESS VERSION IS WIP AND IS NOT FULLY IMPLEMENTED!!!!!
-// #define atomic_thread_fence(x)     (void)(x)
+// TODO PLEASE NOTE THAT CURRENT LOCKLESS VERSION IS WIP AND IS NOT FULLY
+// IMPLEMENTED!!!!! #define atomic_thread_fence(x)     (void)(x)
 
 // srmw: single reader, multiple writers
 // TODO TODO check fences and memory order - probably some atomic operations
@@ -116,21 +115,25 @@
 ///     void *popped_data = lq_pop(&buff);  // implicit copy
 ///     handle_data(popped_data);           // to be implemented by user
 
-#define META_STATE_FREE             0u
-#define META_STATE_UNDER_WRITING    1u
-#define META_STATE_READY            2u
-#define META_STATE_UNDER_READING    3u
+#define META_STATE_FREE          0u
+#define META_STATE_UNDER_WRITING 1u
+#define META_STATE_READY         2u
+#define META_STATE_UNDER_READING 3u
 
-static void lq_cancel_reserve_write(lq_buffer_t *buff) {
+static void lq_cancel_reserve_write(lq_buffer_t *buff)
+{
     buff->used--;
     atomic_thread_fence(memory_order_release);
 }
 
 // TODO potential refactor - only one lq_reserve, with an additional argument!
-static bool lq_reserve_write(lq_buffer_t *buff) {
-    // memory order acquire: all changes prior to increment should be visible here
+static bool lq_reserve_write(lq_buffer_t *buff)
+{
+    // memory order acquire: all changes prior to increment should be visible
+    // here
 #ifdef EXPLICIT_ORDER
-    size_t prev_size = atomic_fetch_add_explicit(&buff->used, 1, memory_order_acq_rel);
+    size_t prev_size =
+        atomic_fetch_add_explicit(&buff->used, 1, memory_order_acq_rel);
 #else
     size_t prev_size = atomic_fetch_add(&buff->used, 1);
 #endif
@@ -145,17 +148,21 @@ static bool lq_reserve_write(lq_buffer_t *buff) {
     }
 }
 
-static void lq_cancel_reserve_read(lq_buffer_t *buff) {
+static void lq_cancel_reserve_read(lq_buffer_t *buff)
+{
     buff->unavailableRead--;
     atomic_thread_fence(memory_order_release);
 }
 
 // TODO potential refactor - only one lq_reserve, with an additional argument!
-static bool lq_reserve_read(lq_buffer_t *buff) {
+static bool lq_reserve_read(lq_buffer_t *buff)
+{
     // TODO check explicit memory order!
-    // memory order acquire: all changes prior to increment should be visible here
+    // memory order acquire: all changes prior to increment should be visible
+    // here
 #ifdef EXPLICIT_ORDER
-    size_t prev_size = atomic_fetch_add_explicit(&buff->unavailableRead, 1, memory_order_acq_rel);
+    size_t prev_size = atomic_fetch_add_explicit(&buff->unavailableRead, 1,
+                                                 memory_order_acq_rel);
 #else
     size_t prev_size = atomic_fetch_add(&buff->unavailableRead, 1);
 #endif
@@ -170,7 +177,8 @@ static bool lq_reserve_read(lq_buffer_t *buff) {
     }
 }
 
-static lq_entry_t *lq_request_entry_read(lq_buffer_t *buff) {
+static lq_entry_t *lq_request_entry_read(lq_buffer_t *buff)
+{
     // only single reader scenario is handled!
     lq_entry_t *ret = NULL;
     if (lq_reserve_read(buff)) {
@@ -181,13 +189,14 @@ static lq_entry_t *lq_request_entry_read(lq_buffer_t *buff) {
             head_idx_old = buff->head;
             head_idx_new = head_idx_old;
             head_idx_new++;
-            head_idx_new%=buff->size;
+            head_idx_new %= buff->size;
 #ifdef EXPLICIT_ORDER
         } while (!atomic_compare_exchange_weak_explicit(
-            &buff->head, &head_idx_old, head_idx_new,
-            memory_order_release, memory_order_acquire));
+            &buff->head, &head_idx_old, head_idx_new, memory_order_release,
+            memory_order_acquire));
 #else
-        } while (!atomic_compare_exchange_weak(&buff->head, &head_idx_old, head_idx_new));
+        } while (!atomic_compare_exchange_weak(&buff->head, &head_idx_old,
+                                               head_idx_new));
 #endif
         ret = &buff->entries[head_idx_old];
         // load all non-atomic writes that were released on other threads
@@ -209,7 +218,8 @@ static lq_entry_t *lq_request_entry_read(lq_buffer_t *buff) {
     return ret;
 }
 
-static lq_entry_t *lq_request_entry_write(lq_buffer_t *buff) {
+static lq_entry_t *lq_request_entry_write(lq_buffer_t *buff)
+{
     lq_entry_t *ret = NULL;
     if (lq_reserve_write(buff)) {
         size_t tail_idx_old, tail_idx_new;
@@ -217,13 +227,14 @@ static lq_entry_t *lq_request_entry_write(lq_buffer_t *buff) {
             tail_idx_old = buff->tail;
             tail_idx_new = tail_idx_old;
             tail_idx_new++;
-            tail_idx_new%=buff->size;
+            tail_idx_new %= buff->size;
 #ifdef EXPLICIT_ORDER
         } while (!atomic_compare_exchange_weak_explicit(
-            &buff->tail, &tail_idx_old, tail_idx_new,
-            memory_order_release, memory_order_acquire));
+            &buff->tail, &tail_idx_old, tail_idx_new, memory_order_release,
+            memory_order_acquire));
 #else
-        } while (!atomic_compare_exchange_weak(&buff->tail, &tail_idx_old, tail_idx_new));
+        } while (!atomic_compare_exchange_weak(&buff->tail, &tail_idx_old,
+                                               tail_idx_new));
 #endif
         ret = &buff->entries[tail_idx_old];
         // load all non-atomic writes that were released on other threads
@@ -239,67 +250,74 @@ static lq_entry_t *lq_request_entry_write(lq_buffer_t *buff) {
     return ret;
 }
 
-// TODO review states - under reading and under wrinting are unnecessary/irrelevant?
+// TODO review states - under reading and under wrinting are
+// unnecessary/irrelevant?
 
-static void lq_post_entry_write(lq_buffer_t *buff, lq_entry_t *entry) {
+static void lq_post_entry_write(lq_buffer_t *buff, lq_entry_t *entry)
+{
     // no reorder! Correct order:
     //  1) all non-atomic writes
     //  2) metadata_state
     //  3) unavailable read
     // 2 fences are necessary to enforce this order
     atomic_thread_fence(memory_order_release);
-    entry->metadata_state=META_STATE_READY;
+    entry->metadata_state = META_STATE_READY;
     atomic_thread_fence(memory_order_release);
     buff->unavailableRead--; // mark that there is an element available for read
 }
 
-static void lq_post_entry_read(lq_buffer_t *buff, lq_entry_t *entry) {
+static void lq_post_entry_read(lq_buffer_t *buff, lq_entry_t *entry)
+{
     // finalize all non-atomic writes on this thread
-    entry->metadata_state=META_STATE_FREE;
+    entry->metadata_state = META_STATE_FREE;
     // only one reader, only one fence necessary
     atomic_thread_fence(memory_order_release);
     buff->used--;
 }
 
 // two separate buffers, or one big?
-void lq_init(lq_buffer_t *buff, size_t entry_size, size_t entries) {
+void lq_init(lq_buffer_t *buff, size_t entry_size, size_t entries)
+{
     buff->size = entries;
     buff->entrySize = entry_size;
     buff->tail = 0u;
     buff->head = 0u;
     buff->used = 0u;
     buff->unavailableRead = entries;
-    buff->entries = jemk_malloc(entries*sizeof(lq_entry_t));
+    buff->entries = jemk_malloc(entries * sizeof(lq_entry_t));
     buff->data = jemk_malloc(entry_size * entries);
-    for (size_t i=0; i< entries; ++i) {
+    for (size_t i = 0; i < entries; ++i) {
         // initialize each entry
         buff->entries[i].metadata_state = META_STATE_FREE;
         // TODO check alignment
-        buff->entries[i].data = &((uint8_t*)buff->data)[i*entry_size];
+        buff->entries[i].data = &((uint8_t *)buff->data)[i * entry_size];
     }
 }
 
-void lq_destroy(lq_buffer_t *buff) {
+void lq_destroy(lq_buffer_t *buff)
+{
     jemk_free(buff->entries);
     jemk_free(buff->data);
 }
 
-bool lq_pop(lq_buffer_t *buff, void *out) {
+bool lq_pop(lq_buffer_t *buff, void *out)
+{
     bool ret = false;
     lq_entry_t *temp = lq_request_entry_read(buff);
     if (temp) {
-        ret=true;
+        ret = true;
         memcpy(out, temp->data, buff->entrySize);
         lq_post_entry_read(buff, temp);
     }
     return ret;
 }
 
-bool lq_push(lq_buffer_t *buff, void *in) {
+bool lq_push(lq_buffer_t *buff, void *in)
+{
     bool ret = false;
     lq_entry_t *temp = lq_request_entry_write(buff);
     if (temp) {
-        ret=true;
+        ret = true;
         memcpy(temp->data, in, buff->entrySize);
         lq_post_entry_write(buff, temp);
     }
