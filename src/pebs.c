@@ -21,7 +21,6 @@ ThreadState_t thread_state = THREAD_INIT;
 int pebs_fd;
 static char *pebs_mmap;
 
-// DEBUG
 extern critnib* hash_to_type;
 static size_t g_queue_pop_counter=0;
 static size_t g_queue_counter_malloc=0;
@@ -29,6 +28,9 @@ static size_t g_queue_counter_realloc=0;
 static size_t g_queue_counter_callback=0;
 static size_t g_queue_counter_free=0;
 static size_t g_queue_counter_touch=0;
+extern struct ttype ttypes[];
+
+#define LOG_TO_FILE 0
 
 // static uint64_t timespec_diff_millis(const struct timespec *tnew, const struct timespec *told) {
 //     uint64_t diff_s = tnew->tv_sec - told->tv_sec;
@@ -61,7 +63,19 @@ static bool timespec_is_he(struct timespec *tv1, struct timespec *tv2) {
     return tv1->tv_sec>tv2->tv_sec || (tv1->tv_sec == tv2->tv_sec && tv1->tv_nsec > tv2->tv_nsec);
 }
 
-#define LOG_TO_FILE 1
+#if LOG_TO_FILE
+// DEBUG
+static char *bp;
+static int display_hotness(int nt)
+{
+    const struct ttype *t = &ttypes[nt];
+    if (t->timestamp_state == TIMESTAMP_INIT_DONE)
+        bp += sprintf(bp, "%f,", t->f);
+    else
+        bp += sprintf(bp, "N/A,");
+    return 0;
+}
+#endif
 
 #include "assert.h"
 
@@ -82,15 +96,15 @@ void *pebs_monitor(void *state)
     pthread_setschedparam(pthread_self(), policy, &param);
 
     __u64 last_head = 0;
+    int cur_tid = syscall(SYS_gettid);
 
     // DEBUG
-    char buf[4096];
 #if LOG_TO_FILE
+    char buf[4*1048576];
     static int pid;
     static int log_file;
     int cur_pid = getpid();
-    int cur_tid = gettid();
-    printf("starting pebs monitor for thread %d\n", cur_tid);
+    printf("starting pebs monitor for thread %d", cur_tid);
     if (pid != cur_pid) {
         char name[255] = {0};
         sprintf(name, "tier_pid_%d_tid_%d.log", cur_pid, cur_tid);
@@ -223,27 +237,11 @@ void *pebs_monitor(void *state)
             }
 
             printf("new data from pebs: %d samples\n", samples);
-
 #if LOG_TO_FILE
-            // DEBUG
-            int nchars = 0;
-            int total_chars = 0;
-            for (int i = 0; i < 20; i++) {
-                struct ttype* tb = critnib_get_leaf(hash_to_type, i);
-
-                if (tb != NULL && tb->timestamp_state == TIMESTAMP_INIT_DONE)
-                {
-                    float f = tb->f;
-                    sprintf(buf + total_chars, "%f,%n", f, &nchars);
-                }
-                else {
-                    sprintf(buf + total_chars, "N/A,%n", &nchars);
-                }
-
-                total_chars += nchars;
-            }
-            sprintf(buf + total_chars, "\n");
-            if (write(log_file, buf, strlen(buf)));
+            bp = buf;
+            critnib_iter(hash_to_type, display_hotness);
+            bp += sprintf(bp, "\n");
+            if (write(log_file, buf, bp - buf));
 #endif
         }
 

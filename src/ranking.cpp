@@ -93,6 +93,7 @@ void ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry,
                 entry->f = f2 * ranking->oldWeight + f1 * ranking->newWeight;
                 entry->t2 = entry->t1;
                 entry->t1 = entry->t0;
+                // TODO - n2 should be calclated differently
                 entry->n2 = entry->n1;
                 entry->n1 = 0;
                 //                 printf("wre: hotness updated: [new, old]:

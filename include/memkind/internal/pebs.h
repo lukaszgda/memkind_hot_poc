@@ -8,9 +8,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-
-#include <asm/unistd.h>
 
 #include <linux/hw_breakpoint.h> /* Definition of HW_* constants */
 #include <linux/perf_event.h>    /* Definition of PERF_* constants */

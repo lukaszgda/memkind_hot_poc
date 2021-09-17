@@ -44,6 +44,7 @@ bool tachanka_ranking_event_push(EventEntry_t *event);
 bool tachanka_ranking_event_pop(EventEntry_t *event);
 
 struct ttype {
+    uint64_t hash;
     size_t size;
     int num_allocs; // TODO
     int total_size; // TODO
