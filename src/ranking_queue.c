@@ -31,7 +31,7 @@ MEMKIND_EXPORT void ranking_event_fini(lq_buffer_t *buff) {
 // TODO remove, only for debugging!!!
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
-bool ranking_event_push(lq_buffer_t *buff, EventEntry_t *event) {
+MEMKIND_EXPORT bool ranking_event_push(lq_buffer_t *buff, EventEntry_t *event) {
     pthread_mutex_lock(&mutex);
     bool ret = lq_push(buff, event);
     pthread_mutex_unlock(&mutex);
@@ -39,7 +39,7 @@ bool ranking_event_push(lq_buffer_t *buff, EventEntry_t *event) {
 //     return lq_push(buff, event);
 }
 
-bool ranking_event_pop(lq_buffer_t *buff, EventEntry_t *event) {
+MEMKIND_EXPORT bool ranking_event_pop(lq_buffer_t *buff, EventEntry_t *event) {
     pthread_mutex_lock(&mutex);
     bool ret = lq_pop(buff, event);
     pthread_mutex_unlock(&mutex);

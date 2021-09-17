@@ -273,5 +273,5 @@ MEMKIND_EXPORT bool tachanka_ranking_event_push(EventEntry_t *event) {
 
 MEMKIND_EXPORT bool tachanka_ranking_event_pop(EventEntry_t *event) {
     assert(initialized && "push onto non-initialized queue");
-    return ranking_event_push(&ranking_event_buff, event);
+    return ranking_event_pop(&ranking_event_buff, event);
 }
