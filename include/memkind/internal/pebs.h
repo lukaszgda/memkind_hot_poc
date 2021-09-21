@@ -21,7 +21,6 @@
 #include <perfmon/pfmlib.h>     // pfm_get_os_event_encoding
 #include <perfmon/pfmlib_perf_event.h>
 
-
 void pebs_init();
 void pebs_fini();
 void pebs_fork(pid_t pid);

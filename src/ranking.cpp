@@ -13,8 +13,8 @@ extern "C" {
 #include <vector>
 
 #include "memkind/internal/memkind_private.h"
+#include "memkind/internal/memkind_memtier.h"
 
-#define HOTNESS_MEASURE_WINDOW 1000000000ULL
 
 // approach:
 //  1) STL and inefficient data structures
@@ -85,6 +85,7 @@ void ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry,
             entry->t2 = timestamp;
             entry->timestamp_state = TIMESTAMP_INIT;
         }
+
         if (entry->timestamp_state == TIMESTAMP_INIT_DONE) {
             if ((entry->t0 - entry->t1) > HOTNESS_MEASURE_WINDOW) {
                 // move to next measurement window
@@ -186,7 +187,7 @@ ranking_calculate_hot_threshold_dram_pmem_internal(ranking_t *ranking,
 void ranking_add_internal(ranking_t *ranking, struct ttype *entry)
 {
     AggregatedHotness temp;
-    temp.hotness = entry->f; // only hotness matters for lookup
+    temp.hotness = entry->f; // only hotness matters for lookup // TODO: rrudnick ????
     AggregatedHotness_t *value =
         (AggregatedHotness_t *)wre_remove(ranking->entries, &temp);
     if (value) {

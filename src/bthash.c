@@ -1,3 +1,5 @@
+#include <include/memkind/internal/memkind_memtier.h>
+
 #include "stdbool.h"
 #include "stdlib.h"
 #include "execinfo.h"
@@ -14,11 +16,6 @@
 #include "emmintrin.h"
 #include "immintrin.h"
 
-
-#define CUSTOM_BACKTRACE
-#define STACK_RANGE
-#define REDUCED_STACK_SEARCH
-// #define SIMD_INSTRUCTIONS
 
 #define ARRAYSZ(x) (sizeof(x)/sizeof((x)[0]))
 
@@ -79,15 +76,16 @@ void read_maps(void)
     fclose(f);
     preprocess_maps();
 }
-// end condition is kind of weak;
-// apart from that, there are multiple entries for libpthread - currently, only the last one is taken into account, all others are ignored
+// TODO end condition is kind of weak;
+// apart from that, there are multiple entries for libpthread - currently,
+// only the last one is taken into account, all others are ignored
 
 
 static bool backtrace_unwinded(const void* addr, size_t idx) {
     return /* addr == __libc_csu_init || */ /* idx > 2 || */ (addr >= pthread_start && addr < pthread_end);
 }
 
-#ifdef CUSTOM_BACKTRACE
+#if CUSTOM_BACKTRACE
 
 /// Find highest start idx that lies before @p ptr
 /// @pre ptr >= start[0] && ptr < end[nm]
@@ -131,7 +129,7 @@ static int binsearch_end(const void *ptr) {
     return bend;
 }
 
-#ifdef LIB_BINSEARCH
+#if LIB_BINSEARCH
 /// @pre  addr < start[0] || addr >= end[nm-1]
 static int find_region_idx(void *addr)
 {
@@ -144,7 +142,7 @@ static int find_region_idx(void *addr)
     }
     return -1;
 }
-#elif defined(SIMD_INSTRUCTIONS)
+#elif SIMD_INSTRUCTIONS
 /// @pre  addr < start[0] || addr >= end[nm-1]
 /// @return 1 on successful find, -1 on failure
 static bool check_region(void *addr)
@@ -228,7 +226,7 @@ static bool is_on_stack(const void* ptr) {
 }
 
 #include "assert.h"
-#ifdef REDUCED_STACK_SEARCH
+#if REDUCED_STACK_SEARCH
 static const size_t max_searchable_stack_size=16u;// TODO move
 #else
 static const size_t max_searchable_stack_size=160u;// TODO move
@@ -268,8 +266,9 @@ void bthash_set_stack_range(void *p1, void *p2) {
                 max_diff = diff;
             }
 
-            // TODO actually, stack may grow/decrease; we should take the most "recent" elements, not the ones with the highest values
-            stack_bottom = stack_top-max_searchable_stack_size;
+            // TODO actually, stack may grow/decrease; we should take the most
+            // "recent" elements, not the ones with the highest values
+            stack_bottom = stack_top - max_searchable_stack_size;
         }
         align_up(&stack_bottom);
         align_down(&stack_top);
@@ -292,7 +291,7 @@ uint64_t bthash(uint64_t size)
     // can we directly obtain stack pointer?
 //     void *stock_ptr = __builtin_frame_address(0);
 //     for (void **sp = __builtin_frame_address(1); sp != stack0; sp++)
-#ifdef STACK_RANGE
+#if STACK_RANGE
     for (void **sp = stack_bottom; sp != stack_top; sp++)
 #else
     for (void **sp = __builtin_frame_address(0); sp != stack0; sp++)
@@ -320,9 +319,9 @@ uint64_t bthash(uint64_t size)
 //         assert(is_on_stack(sp));
 //         sp_counter++;
         void *addr=*sp; // dereference value at stack; assume that the dereferenced value is a void pointer
-#if defined(LIB_BINSEARCH)
+#if LIB_BINSEARCH
         if (find_region_idx(addr) != -1) {
-#elif defined(SIMD_INSTRUCTIONS)
+#elif SIMD_INSTRUCTIONS
         if (check_region(addr)) {
 #else
         int s;
@@ -341,7 +340,7 @@ uint64_t bthash(uint64_t size)
             h = update_hash(h, k, M, R);
         }
     }
-#ifdef FINALIZE_HASH
+#if FINALIZE_HASH
     // Enable if we want "random" hash values.
     h ^= h >> R;
     h *= M;
@@ -398,7 +397,7 @@ uint64_t bthash(uint64_t size)
         }
     }
 
-#ifdef FINALIZE_HASH
+#if FINALIZE_HASH
     // Enable if we want "random" hash values.
     h ^= h >> R;
     h *= M;

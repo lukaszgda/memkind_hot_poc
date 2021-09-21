@@ -231,6 +231,55 @@ int memtier_ctl_set(struct memtier_builder *builder, const char *name,
 // DEBUG
 // float get_obj_hotness(int size);
 
+// PEBS
+// smaller value -> more frequent sampling
+// 10000 = around 100 samples on *my machine* / sec in matmul test
+#define SAMPLE_FREQUENCY 10000
+#define PEBS_FREQ_HZ     20.0
+#define MMAP_DATA_SIZE   8
+
+// critnib
+// #define INIT_MALLOC_HOTNESS   20u
+#define INIT_MALLOC_HOTNESS 1u // TODO this does not work, at least for now
+#define MAXTYPES            1*1024*1024
+#define MAXBLOCKS           16*1024*1024
+
+// bthash
+#define CUSTOM_BACKTRACE 1
+#define STACK_RANGE 1
+#define REDUCED_STACK_SEARCH 1
+#define SIMD_INSTRUCTIONS 0
+#define LIB_BINSEARCH 0
+#define FINALIZE_HASH 0
+
+// hotness calculation
+#define HOTNESS_MEASURE_WINDOW 1000000000ULL
+// time window is 1s
+// #define OLD_TIME_WINDOW_HOTNESS_WEIGHT 0.999
+// #define OLD_TIME_WINDOW_HOTNESS_WEIGHT 0.4 // should not stay like this... only for tests and POC
+#define OLD_TIME_WINDOW_HOTNESS_WEIGHT  0.9 // should not stay like this... only for tests and POC
+#define RANKING_BUFFER_SIZE_ELEMENTS    1000000 // TODO make tests, add error handling and come up with some sensible value
+
+// logging
+#define PEBS_LOG_TO_FILE 0
+
+#define PRINT_PEBS_BASIC_INFO 1
+#define PRINT_PEBS_STATS_ON_COUNTER_OVERFLOW_INFO 0
+#define PRINT_PEBS_NEW_DATA_INFO 0
+#define PRINT_PEBS_TOUCH_INFO 0
+#define PRINT_PEBS_SAMPLES_NUM_INFO 0
+
+#define PRINT_CRITNIB_NEW_BLOCK_REGISTERED_INFO 0
+#define PRINT_CRITNIB_NOT_FOUND_ON_TOUCH_WARNING 0
+#define PRINT_CRITNIB_NOT_FOUND_ON_UNREGISTER_BLOCK_WARNING 0
+#define PRINT_CRITNIB_NOT_FOUND_ON_REALLOC_WARNING 0
+
+#define PRINT_POLICY_LOG_STATISTICS_INFO 0
+#define PRINT_POLICY_BACKTRACE_INFO 0
+#define PRINT_POLICY_CREATE_MEMORY_INFO 0
+#define PRINT_POLICY_CONSTRUCT_MEMORY_INFO 0
+#define PRINT_POLICY_DELETE_MEMORY_INFO 0
+
 #ifdef __cplusplus
 }
 #endif

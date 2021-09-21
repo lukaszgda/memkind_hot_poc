@@ -13,10 +13,10 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
-
-#include <threads.h> // TODO move elsewhere
-#include <stdatomic.h> // TODO move elsewhere
-#include <execinfo.h> // TODO move elsewhere
+#include <time.h>
+#include <pthread.h>
+#include <threads.h>
+#include <execinfo.h>
 
 #ifdef HAVE_STDATOMIC_H
 #include <stdatomic.h>
@@ -25,9 +25,7 @@
 #define MEMKIND_ATOMIC
 #endif
 
-#define LOG_STATISTICS
-
-#ifdef LOG_STATISTICS
+#if PRINT_POLICY_LOG_STATISTICS_INFO
     static atomic_size_t g_successful_adds=0;
     static atomic_size_t g_failed_adds=0;
     static atomic_size_t g_successful_adds_malloc=0;
@@ -99,11 +97,6 @@
 #define THRESHOLD_DEGREE    0.15 // 15%
 #define THRESHOLD_CHECK_CNT 20
 #define THRESHOLD_STEP      1024
-// time window is 1s
-// #define OLD_TIME_WINDOW_HOTNESS_WEIGHT 0.999
-// #define OLD_TIME_WINDOW_HOTNESS_WEIGHT 0.4 // should not stay like this... only for tests and POC
-#define OLD_TIME_WINDOW_HOTNESS_WEIGHT  0.9 // should not stay like this... only for tests and POC
-#define RANKING_BUFFER_SIZE_ELEMENTS    1000000 // TODO make tests, add error handling and come up with some sensible value
 
 // Macro to get number of thresholds from parent object
 #define THRESHOLD_NUM(obj) ((obj->cfg_size) - 1)
@@ -265,9 +258,10 @@ static bool memtier_policy_data_hotness_is_hot(uint64_t hash)
     // Currently, "ranking" and "tachanka" are de-facto singletons
     // can we deal with it?
     Hotness_e hotness = tachanka_get_hotness_type_hash(hash);
-    int ret=0;
+    int ret = 0;
+
     // DEBUG
-#ifdef LOG_STATISTICS
+#if PRINT_POLICY_LOG_STATISTICS_INFO
     static atomic_uint_fast16_t counter=0;
     static atomic_uint_fast64_t hotness_counter[3]= { 0 };
     const uint64_t interval=100000;
@@ -275,20 +269,26 @@ static bool memtier_policy_data_hotness_is_hot(uint64_t hash)
         struct timespec t;
         int ret = clock_gettime(CLOCK_MONOTONIC, &t);
         if (ret != 0) {
-            printf("ASSERT COUNTER FAILURE!\n");
+            log_fatal("critnib: ASSERT COUNTER FAILURE!\n");
+            exit(-1);
         }
-        assert(ret == 0);
+
         double hotness_thresh = tachanka_get_hot_thresh();
-        printf("hotness thresh: %f, counters [hot, cold, unknown]: %lu %lu %lu, [seconds, nanoseconds]: [%ld, %ld]\nsuccess/fail: %lu, %lu\n",
-               hotness_thresh, hotness_counter[0], hotness_counter[1], hotness_counter[2], t.tv_sec, t.tv_nsec, g_successful_adds, g_failed_adds);
-        printf("success/fail: malloc [%lu/%lu], realloc0 [%lu/%lu], realloc1 [%lu/%lu], free [%lu/%lu]\n",
-               g_successful_adds_malloc, g_failed_adds_malloc,
-               g_successful_adds_realloc0, g_failed_adds_realloc0,
-               g_successful_adds_realloc1, g_failed_adds_realloc1,
-               g_successful_adds_free, g_failed_adds_free
-               );
+        log_info("critnib: hotness thresh: %f, counters [hot, cold, unknown]: %lu %lu %lu, "
+            "[seconds, nanoseconds]: [%ld, %ld]\nsuccess/fail: %lu, %lu",
+            hotness_thresh, hotness_counter[0], hotness_counter[1], hotness_counter[2],
+            t.tv_sec, t.tv_nsec, g_successful_adds, g_failed_adds);
+
+        log_info("critnib: success/fail: malloc [%lu/%lu], realloc0 [%lu/%lu], "
+            "realloc1 [%lu/%lu], free [%lu/%lu]",
+            g_successful_adds_malloc, g_failed_adds_malloc,
+            g_successful_adds_realloc0, g_failed_adds_realloc0,
+            g_successful_adds_realloc1, g_failed_adds_realloc1,
+            g_successful_adds_free, g_failed_adds_free);
         counter=0u;
-#ifdef VERBOSE_DEBUG_INFO
+#endif // PRINT_POLICY_LOG_STATISTICS_INFO
+
+#if PRINT_POLICY_BACKTRACE_INFO
         static thread_local bool in_progress=false;
         if (!in_progress) {
             in_progress = true;
@@ -298,22 +298,18 @@ static bool memtier_policy_data_hotness_is_hot(uint64_t hash)
             ret = backtrace(buff, BUFF_SIZE);
             char **strings = backtrace_symbols(buff, ret);
             for (int i=0; i<ret; ++i) {
-                printf("backtrace: %s\n", strings[i]);
+                log_info("backtrace: %s", strings[i]);
             }
             free(strings);
             in_progress = false;
         }
-#endif
     }
-    // EOF DEBUG
-    if (hotness >= 3) {
-        printf("ASSERT FAILED!!!\n");
-    }
-#endif
-    assert(hotness < 3);
-#ifdef LOG_STATISTICS
+#endif //PRINT_POLICY_BACKTRACE_INFO
+
+#if PRINT_POLICY_LOG_STATISTICS_INFO
     ++hotness_counter[hotness];
 #endif
+
     switch (hotness) {
         case HOTNESS_COLD:
             ret = 0;
@@ -322,23 +318,30 @@ static bool memtier_policy_data_hotness_is_hot(uint64_t hash)
         case HOTNESS_HOT:
             ret = 1;
             break;
+        default:
+            log_fatal("critnib: invalid hotness enum val");
+            exit(-1);
     }
     return ret;
 }
-
-#include "pthread.h" // TODO move
 
 static thread_local void *stack_bottom=NULL;
 static thread_local bool stack_bottom_initialized=false;
 
 // TODO check if calling pthread functions from the context of pthread_once is ok...
 void initialize_stack_bottom(void) {
-    size_t stack_size=0; // value irrelevant
+    size_t stack_size = 0; // value irrelevant
     pthread_attr_t attr;
+
     if (!stack_bottom_initialized) {
-        stack_bottom_initialized=true;
+        stack_bottom_initialized = true;
+
         int ret = pthread_getattr_np(pthread_self(), &attr);
-        assert(ret == 0);
+        if (ret) {
+            log_fatal("pthread get stack failed!");
+            exit(-1);
+        }
+
         pthread_attr_getstack(&attr, &stack_bottom, &stack_size);
         pthread_attr_destroy(&attr);
     }
@@ -389,6 +392,7 @@ memtier_policy_data_hotness_post_alloc(uint64_t hash, void *addr, size_t size)
     // second here - this could be easily optimized
 //     register_block(hash, addr, size);
 //     touch(addr, 0, 1 /*called from malloc*/);
+
     EventEntry_t entry = {
         .type = EVENT_CREATE_ADD,
         .data.createAddData = {
@@ -397,9 +401,11 @@ memtier_policy_data_hotness_post_alloc(uint64_t hash, void *addr, size_t size)
             .size = size,
         },
     };
+
     // copy is performed, passing pointer to stack is ok
     bool success = tachanka_ranking_event_push(&entry);
-#ifdef LOG_STATISTICS
+
+#if PRINT_POLICY_LOG_STATISTICS_INFO
     if (success) {
         g_successful_adds++;
         g_successful_adds_malloc++;
@@ -788,8 +794,10 @@ builder_hot_create_memory(struct memtier_builder *builder)
         memtier_memory_init(builder->cfg_size, false, true);
     memory->hot_tier_id = -1;
 
-    if (memory->cfg_size != 2)
-        printf("Incorrect number of tiers"), exit(-1);
+    if (memory->cfg_size != 2) {
+        log_fatal("Incorrect number of tiers for data hotness policy");
+        exit(-1);
+    }
 
     double ratio_sum = builder->cfg[0].kind_ratio + builder->cfg[1].kind_ratio;
 
@@ -798,6 +806,7 @@ builder_hot_create_memory(struct memtier_builder *builder)
         memory->cfg[i].kind = builder->cfg[i].kind;
         memory->cfg[i].kind_ratio =
             builder->cfg[i].kind_ratio / ratio_sum;
+    // TODO - why this is commented out?
 //         memory->cfg[i].kind_ratio =
 //             builder->cfg[0].kind_ratio / builder->cfg[i].kind_ratio;
         if (memory->cfg[i].kind == MEMKIND_DEFAULT) {
@@ -813,18 +822,21 @@ builder_hot_create_memory(struct memtier_builder *builder)
     }
 
     if (memory->hot_tier_id == -1) {
-        log_err("No tier suitable for HOT memory defined.");
-        return NULL;
+        log_fatal("No tier suitable for HOT memory defined.");
+        exit(-1);
     }
     double dram_total_ratio=memory->cfg[memory->hot_tier_id].kind_ratio;
 
     struct timespec t;
     int ret = clock_gettime(CLOCK_MONOTONIC, &t);
     if (ret != 0) {
-        printf("ASSERT CREATE FAILURE!\n");
+        log_fatal("Create Memory: ASSERT CREATE FAILURE!\n");
     }
-    assert(ret == 0);
-    printf("creates memory [ratio %f], timespec [seconds, nanoseconds]: [%ld, %ld]\n", dram_total_ratio, t.tv_sec, t.tv_nsec);
+
+#if PRINT_POLICY_CREATE_MEMORY_INFO
+    log_info("creates memory [ratio %f], timespec [seconds, nanoseconds]: [%ld, %ld]",
+        dram_total_ratio, t.tv_sec, t.tv_nsec);
+#endif
 
     tachanka_set_dram_total_ratio(dram_total_ratio);
     return memory;
@@ -945,14 +957,17 @@ memtier_builder_construct_memtier_memory(struct memtier_builder *builder)
     struct timespec t;
     int ret = clock_gettime(CLOCK_MONOTONIC, &t);
     if (ret != 0) {
-        printf("ASSERT CONSTRUCT FAILURE!\n");
+        log_fatal("ASSERT CONSTRUCT FAILURE!");
+        exit(-1);
     }
-    assert(ret == 0);
-    printf("constructs memory, timespec [seconds, nanoseconds]: [%ld, %ld]\n", t.tv_sec, t.tv_nsec);
+
+#if PRINT_POLICY_CONSTRUCT_MEMORY_INFO
+    log_info("constructs memory, timespec [seconds, nanoseconds]: [%ld, %ld]",
+        t.tv_sec, t.tv_nsec);
+#endif
+
     return builder->create_mem(builder);
 }
-
-#include "time.h"
 
 MEMKIND_EXPORT void memtier_delete_memtier_memory(struct memtier_memory *memory)
 {
@@ -961,10 +976,15 @@ MEMKIND_EXPORT void memtier_delete_memtier_memory(struct memtier_memory *memory)
     struct timespec t;
     int ret = clock_gettime(CLOCK_MONOTONIC, &t);
         if (ret != 0) {
-        printf("ASSERT DELETE FAILURE!\n");
+        log_fatal("Delete Memory: ASSERT DELETE FAILURE!");
+        exit(-1);
     }
-    assert(ret == 0);
-    printf("constructs memory, timespec [seconds, nanoseconds]: [%ld, %ld]\n", t.tv_sec, t.tv_nsec);
+
+#if PRINT_POLICY_DELETE_MEMORY_INFO
+    log_info("delete memory, timespec [seconds, nanoseconds]: [%ld, %ld]",
+        t.tv_sec, t.tv_nsec);
+#endif
+
     print_memtier_memory(memory);
     jemk_free(memory->thres);
     jemk_free(memory->cfg);
@@ -1086,11 +1106,12 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
             EventEntry_t entry = {
                 .type = EVENT_DESTROY_REMOVE,
                 .data.destroyRemoveData = {
-                    .address = ptr,
+                .address = ptr,
                 }
             };
+
             bool success = tachanka_ranking_event_push(&entry);
-#ifdef LOG_STATISTICS
+#if PRINT_POLICY_LOG_STATISTICS_INFO
             if (success) {
                 g_successful_adds++;
                 g_successful_adds_realloc0++;
@@ -1122,7 +1143,7 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
             }
         };
         bool success = tachanka_ranking_event_push(&entry);
-#ifdef LOG_STATISTICS
+#if PRINT_POLICY_LOG_STATISTICS_INFO
         if (success) {
             g_successful_adds++;
             g_successful_adds_realloc1++;
@@ -1202,7 +1223,7 @@ MEMKIND_EXPORT void memtier_kind_free(memkind_t kind, void *ptr)
             }
         };
         bool success = tachanka_ranking_event_push(&entry);
-#ifdef LOG_STATISTICS
+#if PRINT_POLICY_LOG_STATISTICS_INFO
         if (success) {
             g_successful_adds++;
             g_successful_adds_free++;

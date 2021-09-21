@@ -3,11 +3,11 @@
 #include <memkind/internal/tachanka.h>
 #include <memkind/internal/critnib.h>
 #include <memkind/internal/memkind_private.h>
+#include <memkind/internal/memkind_memtier.h>
+#include <memkind/internal/memkind_log.h>
 
-// smaller value -> more frequent sampling
-// 10000 = around 100 samples on *my machine* / sec in matmul test
-#define SAMPLE_FREQUENCY 10000
-#define MMAP_DATA_SIZE   8
+#include <assert.h>
+
 #define rmb() asm volatile("lfence":::"memory")
 
 typedef enum {
@@ -29,8 +29,6 @@ static size_t g_queue_counter_callback=0;
 static size_t g_queue_counter_free=0;
 static size_t g_queue_counter_touch=0;
 extern struct ttype ttypes[];
-
-#define LOG_TO_FILE 0
 
 // static uint64_t timespec_diff_millis(const struct timespec *tnew, const struct timespec *told) {
 //     uint64_t diff_s = tnew->tv_sec - told->tv_sec;
@@ -63,7 +61,7 @@ static bool timespec_is_he(struct timespec *tv1, struct timespec *tv2) {
     return tv1->tv_sec>tv2->tv_sec || (tv1->tv_sec == tv2->tv_sec && tv1->tv_nsec > tv2->tv_nsec);
 }
 
-#if LOG_TO_FILE
+#if PEBS_LOG_TO_FILE
 // DEBUG
 static char *bp;
 static int display_hotness(int nt)
@@ -77,17 +75,14 @@ static int display_hotness(int nt)
 }
 #endif
 
-#include "assert.h"
-
 void *pebs_monitor(void *state)
 {
     ThreadState_t* pthread_state = state;
 
-//     double freq_Hz=1;
-    double freq_Hz=20;
-    double period_ms=1000/freq_Hz;
+    double period_ms = 1000 / PEBS_FREQ_HZ;
     struct timespec tv_period;
     timespec_millis_to_timespec(period_ms, &tv_period);
+
     // set low priority
     int policy;
     struct sched_param param;
@@ -99,7 +94,7 @@ void *pebs_monitor(void *state)
     int cur_tid = syscall(SYS_gettid);
 
     // DEBUG
-#if LOG_TO_FILE
+#if PEBS_LOG_TO_FILE
     char buf[4*1048576];
     static int pid;
     static int log_file;
@@ -116,11 +111,10 @@ void *pebs_monitor(void *state)
     struct timespec ntime;
     int ret = clock_gettime(CLOCK_MONOTONIC, &ntime);
     if (ret != 0) {
-        printf("ASSERT_CLOCK_GETTIME_FAILURE!\n");
-        assert(ret!=0);
+        log_fatal("ASSERT PEBS Monitor CLOCK_GETTIME_FAILURE!");
+        exit(-1);
     }
     timespec_add(&ntime, &tv_period);
-
 
     while (1) {
         // TODO - use mutex?
@@ -131,31 +125,38 @@ void *pebs_monitor(void *state)
         // must call this before read from data head
 		rmb();
 
+#if PRINT_PEBS_STATS_ON_COUNTER_OVERFLOW_INFO
         {
-            static uint64_t counter=0;
-            const uint64_t interval=1000;
+            static uint64_t counter = 0;
+            const uint64_t interval = 1000;
             if (++counter > interval) {
                 struct timespec t;
                 int ret = clock_gettime(CLOCK_MONOTONIC, &t);
                 if (ret != 0) {
-                    printf("ASSERT PEBS COUNTER FAILURE!\n");
+                    log_fatal("ASSERT_CLOCK_GETTIME_FAILURE!\n");
+                    exit(-1);
                 }
-                assert(ret == 0);
-                printf("pebs counter %lu hit, succcessful ranking_queue reads %lu, time [seconds, nanoseconds]: [%ld, %ld]\n",
-                    interval, g_queue_pop_counter, t.tv_sec, t.tv_nsec);
-// g_queue_counter_malloc, g_queue_counter_realloc, g_queue_counter_callback, g_queue_counter_free, g_queue_counter_touch
 
-                printf("g_queue_counter_malloc: %lu, g_queue_counter_realloc: %lu, g_queue_counter_callback: %lu, g_queue_counter_free: %lu, g_queue_counter_touch: %lu\n", g_queue_counter_malloc, g_queue_counter_realloc, g_queue_counter_callback, g_queue_counter_free, g_queue_counter_touch);
+                log_info("pebs counter %lu hit, succcessful ranking_queue reads %lu, "
+                    "time [seconds, nanoseconds]: [%ld, %ld]",
+                    interval, g_queue_pop_counter, t.tv_sec, t.tv_nsec);
+                log_info("g_queue_counter_malloc: %lu, g_queue_counter_realloc: %lu, "
+                    "g_queue_counter_callback: %lu, g_queue_counter_free: %lu, g_queue_counter_touch: %lu",
+                    g_queue_counter_malloc, g_queue_counter_realloc, g_queue_counter_callback,
+                    g_queue_counter_free, g_queue_counter_touch);
                 counter=0u;
             }
         }
+#endif
+
         struct perf_event_mmap_page* pebs_metadata =
             (struct perf_event_mmap_page*)pebs_mmap;
 
-        // DEBUG
-        // printf("head: %llu size: %lld\n", pebs_metadata->data_head, pebs_metadata->data_head - last_head);
+
         if (last_head < pebs_metadata->data_head) {
-//             printf("new data from PEBS\n");
+#if PRINT_PEBS_NEW_DATA_INFO
+            log_info("PEBS: new data to process!");
+#endif
             int samples = 0;
 
             while (last_head < pebs_metadata->data_head) {
@@ -186,7 +187,8 @@ void *pebs_monitor(void *state)
                         // 'addr' is the acessed address
                         __u64 addr = *(__u64*)(data_mmap + sizeof(struct perf_event_header) + sizeof(__u64));
 
-                        // TODO - is this a global or per-core timestamp? If per-core, this could lead to some problems
+                        // TODO - is this a global or per-core timestamp?
+                        // If per-core, this could lead to some problems
 
 // {    static uint64_t counter=0;
 //     const uint64_t interval=10;
@@ -203,6 +205,7 @@ void *pebs_monitor(void *state)
 //     }
 // }
 //                         printf("touches, timestamp: [%llu], from malloc [0]\n", timestamp);
+
                         // defer touch after corresponding malloc - put it onto queue
                         EventEntry_t entry = {
                             .type = EVENT_TOUCH,
@@ -211,20 +214,27 @@ void *pebs_monitor(void *state)
                                 .timestamp = timestamp,
                             },
                         };
+
                         // copy is performed, passing pointer to stack is ok
                         // losing single malloc should not cause issues,
                         // so we are just ignoring buffer overflows
                         (void)tachanka_ranking_event_push(&entry);
 //                         touch((void*)addr, timestamp, 0 /* from malloc */);
 //                         printf("touched, timestamp: [%llu], from malloc [0]\n", timestamp);
-#if LOG_TO_FILE
+
+#if PEBS_LOG_TO_FILE
                         // DEBUG
                         sprintf(buf, "last: %llu, head: %llu t: %llu addr: %llx\n",
                             last_head, pebs_metadata->data_head,
                             timestamp, addr);
                         //if (write(log_file, buf, strlen(buf))) ;
 #endif
-                        //printf("%s", buf);
+
+#if PRINT_PEBS_TOUCH_INFO
+                        log_info("PEBS touch(): last: %llu, head: %llu t: %llu addr: %llx",
+                            last_head, pebs_metadata->data_head,
+                            timestamp, addr);
+#endif
                     }
                     break;
                 default:
@@ -236,8 +246,11 @@ void *pebs_monitor(void *state)
                 samples++;
             }
 
-            printf("new data from pebs: %d samples\n", samples);
-#if LOG_TO_FILE
+#if PRINT_PEBS_SAMPLES_NUM_INFO
+            log_info("PEBS: processed %d samples", samples);
+#endif
+
+#if PEBS_LOG_TO_FILE
             bp = buf;
             critnib_iter(hash_to_type, display_hotness);
             bp += sprintf(bp, "\n");
@@ -257,7 +270,9 @@ void *pebs_monitor(void *state)
                 break;
             switch (event.type) {
                 case EVENT_CREATE_ADD:
-                    register_block(event.data.createAddData.hash, event.data.createAddData.address, event.data.createAddData.size);
+                    register_block(event.data.createAddData.hash,
+                        event.data.createAddData.address,
+                        event.data.createAddData.size);
                     touch(event.data.createAddData.address, 0, 1 /*called from malloc*/);
                     g_queue_counter_malloc++;
                     break;
@@ -266,7 +281,9 @@ void *pebs_monitor(void *state)
                     g_queue_counter_free++;
                     break;
                 case EVENT_REALLOC:
-                    realloc_block(event.data.reallocData.addressOld, event.data.reallocData.addressNew, event.data.reallocData.size);
+                    realloc_block(event.data.reallocData.addressOld,
+                        event.data.reallocData.addressNew,
+                        event.data.reallocData.size);
                     g_queue_counter_realloc++;
                     break;
                 case EVENT_SET_TOUCH_CALLBACK:
@@ -277,17 +294,19 @@ void *pebs_monitor(void *state)
                     g_queue_counter_callback++;
                     break;
                 case EVENT_TOUCH:
-                    touch(event.data.touchData.address, event.data.touchData.timestamp, 0 /*called from malloc*/);
+                    touch(event.data.touchData.address,
+                        event.data.touchData.timestamp, 0 /*called from malloc*/);
                     g_queue_counter_touch++;
                     break;
                 default:
-                    assert(false && "case not implemented!");
-
+                    log_fatal("PEBS: event queue - case not implemented!");
+                    exit(-1);
             }
             g_queue_pop_counter++;
         }
 
         tachanka_update_threshold();
+
 //         ret = clock_gettime(CLOCK_MONOTONIC, &ctime);
 //         if (ret != 0) {
 //             printf("ASSERT_CLOCK_GETTIME_FAILURE!\n");
@@ -304,19 +323,23 @@ void *pebs_monitor(void *state)
 
 // 		sleep(1); // TODO analysis depends on event number; better solution: const 1 Hz, with low priority
 //         usleep(1000);
+
         struct timespec temp;
         ret = clock_gettime(CLOCK_MONOTONIC, &temp);
         if (ret != 0) {
-            printf("ASSERT_CLOCK_GETTIME_FAILURE!\n");
-            assert(ret!=0);
+            log_fatal("ASSERT_CLOCK_GETTIME_FAILURE!");
+            exit(-1);
         }
         if (timespec_is_he(&temp, &ntime)) {
-            printf("WARN: deadline not met!\n");
+            log_err("PEBS: timespec deadline not met!");
         }
         (void)clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ntime, NULL);
         timespec_add(&ntime, &tv_period);
     }
-    printf("stopping pebs monitor for thread %d\n", cur_tid);
+
+#if PRINT_PEBS_BASIC_INFO
+    log_info("PEBS: stopping pebs monitor for thread %d", cur_tid);
+#endif
 
     return NULL;
 }
@@ -325,14 +348,17 @@ void pebs_init(pid_t pid)
 {
     // TODO add code that writes to /proc/sys/kernel/perf_event_paranoid ?
 
-    printf("pebs_init\n");
+#if PRINT_PEBS_BASIC_INFO
+    log_info("PEBS: init");
+#endif
+
     struct perf_event_attr pe;
     memset(&pe, 0, sizeof(struct perf_event_attr));
 
     // NOTE: code bellow requires link to libpfm
     int ret = pfm_initialize();
     if (ret != PFM_SUCCESS) {
-        printf("pfm_initialize() failed!\n");
+        log_fatal("PEBS: pfm_initialize() failed!");
         exit(-1);
     }
 
@@ -345,7 +371,8 @@ void pebs_init(pid_t pid)
 
     ret = pfm_get_os_event_encoding(event, PFM_PLM3, PFM_OS_PERF_EVENT_EXT, &arg);
     if (ret != PFM_SUCCESS) {
-        //printf("pfm_get_os_event_encoding() failed!\n");
+        log_err("PEBS: pfm_get_os_event_encoding() failed - "
+            "using magic numbers!");
         //exit(-1);
 
         pe.type = 4;
@@ -365,7 +392,9 @@ void pebs_init(pid_t pid)
     pe.exclude_hv = 1;
     pe.wakeup_events = 1;
 
-    //pid_t pid = 0;              // measure current process
+    // NOTE: pid is passed as an argument to this func
+    //pid_t pid = 0;            // measure current process
+
     int cpu = -1;               // .. on any CPU
     int group_fd = -1;          // use single event group
     unsigned long flags = 0;
@@ -377,8 +406,9 @@ void pebs_init(pid_t pid)
         pebs_mmap = mmap(NULL, map_size,
                         PROT_READ | PROT_WRITE, MAP_SHARED, pebs_fd, 0);
 
-        // DEBUG
-        //printf("PEBS thread start\n");
+#if PRINT_PEBS_BASIC_INFO
+        log_info("PEBS: thread start");
+#endif
 
         thread_state = THREAD_RUNNING;
         pthread_create(&pebs_thread, NULL, &pebs_monitor, (void*)&thread_state);
@@ -388,7 +418,7 @@ void pebs_init(pid_t pid)
     }
     else
     {
-        printf("PEBS NOT SUPPORTED! continuing without pebs\n");
+        log_err("PEBS: PEBS NOT SUPPORTED! continuing without pebs!");
     }
 }
 
@@ -408,12 +438,16 @@ void pebs_fini()
         pebs_mmap = 0;
         close(pebs_fd);
 
-        // DEBUG
-        //printf("PEBS thread end\n");
+#if PRINT_PEBS_BASIC_INFO
+        log_info("PEBS: thread end");
+#endif
     }
 }
 
 MEMKIND_EXPORT void pebs_fork(pid_t pid)
 {
+#if PRINT_PEBS_BASIC_INFO
+    log_info("PEBS: fork: %i", pid);
+#endif
     pebs_init(pid);
 }

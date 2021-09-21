@@ -702,13 +702,14 @@ static std::vector<TouchCbArg_t*> g_cbArgs; // for debugging purposes
 
 class TestBuffer {
 //     const size_t BUFF_SIZE = 1e9; // 1 GB
-    const size_t BUFF_SIZE = 2e8; // 200 MB
     const double frequency; /// @pre  0 < frequency <= 1
     double accumulated_freq=0;
-    uint8_t *data;
     RandomIncremeneter incrementer;
 
 public:
+    uint8_t *data;
+    const size_t BUFF_SIZE = 2e8; // 200 MB
+
     void operator =(const TestBuffer &mat)=delete;
     // required for vector<TestMatrix>::reserve:
     // TestMatrix(const TestMatrix &mat)=delete;
@@ -762,7 +763,7 @@ protected:
     TouchCbArg_t *AllocCreateCbArg() {
         static size_t counter=0;
         std::string name = std::string("buff_")+std::to_string(counter)+"]";
-        printf("allocated data [%s] at %p, size: [%lu]", name.c_str(), data, BUFF_SIZE);
+        printf("AllocCreateCbArg: allocated data [%s] at %p, size: [%lu]\n", name.c_str(), data, BUFF_SIZE);
         size_t str_size = strlen(name.c_str()) +1u;
         // use regular mallocs here - should not be an issue
         TouchCbArg_t *cb_arg = (TouchCbArg_t*)malloc(sizeof(TouchCbArg_t));
@@ -990,6 +991,10 @@ TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
     // SIMPLE TEST - use only one Matrix per type
     TestBufferA &ma = bufferA[0];
     TestBufferB &mb = bufferB[0]; // should do half the work of ma
+
+    printf("\nAddr range of bufferA: %p - %p\n", (char*)ma.data, (char*)(ma.data) + ma.BUFF_SIZE);
+    printf("Addr range of bufferB: %p - %p\n", (char*)mb.data, (char*)(mb.data) + mb.BUFF_SIZE);
+
     auto start_point = std::chrono::steady_clock::now();
     auto end_point = start_point;
     double millis_elapsed=0;
