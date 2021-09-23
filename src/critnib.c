@@ -570,7 +570,7 @@ find_le(struct critnib *__restrict c, cn_t n, uint64_t key)
 		cn_t m;
 		load_ind(&N(n).child[nib], &m);
 		int k = find_le(c, m, key);
-		if (k == -1)
+		if (k != -1)
 			return k;
 	}
 
