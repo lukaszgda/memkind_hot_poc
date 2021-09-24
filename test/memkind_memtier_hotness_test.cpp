@@ -113,6 +113,7 @@ TEST_F(MemkindMemtierHotnessTest, test_tier_two_kinds)
     ASSERT_NE(nullptr, m_tier_memory);
 }
 
+/*
 TEST_P(MemkindMemtierHotnessTest, test_matmul)
 {
     const int MATRIX_SIZE = 512;
@@ -152,23 +153,6 @@ TEST_P(MemkindMemtierHotnessTest, test_matmul)
     for (it = 0; it < OBJS_NUM; it++) {
         objs[it] = 0;
     }
-
-    // fill frequency array
-    // objects with lower ID are more frequent
-    // 0, 0, 1, 0, 1, 2, 0, 1, 2, 3, 0, 1, 2, 3, 4 ....
-    /*
-    const int FREQ_ARRAY_LEN = (OBJS_NUM * OBJS_NUM + OBJS_NUM) / 2;
-    int freq[FREQ_ARRAY_LEN];
-    int aa = 0, bb = 0;
-    for (it = 0; it < FREQ_ARRAY_LEN; it++) {
-        freq[it] = aa;
-        aa++;
-        if (aa > bb) {
-            bb++;
-            aa = 0;
-        }
-    }
-    */
 
     // fill frequency array using zipf distribution
     std::random_device rd;
@@ -278,6 +262,7 @@ TEST_P(MemkindMemtierHotnessTest, test_matmul)
         // For now, only "quickfix": make a test that's vulnerable to race condition
 	}
 }
+*/
 
 INSTANTIATE_TEST_CASE_P(numObjsParam, MemkindMemtierHotnessTest,
                         ::testing::Values(3, 20));
@@ -762,7 +747,7 @@ protected:
 
     TouchCbArg_t *AllocCreateCbArg() {
         static size_t counter=0;
-        std::string name = std::string("buff_")+std::to_string(counter)+"]";
+        std::string name = std::string("buff_")+std::to_string(counter);
         printf("AllocCreateCbArg: allocated data [%s] at %p, size: [%lu]\n", name.c_str(), data, BUFF_SIZE);
         size_t str_size = strlen(name.c_str()) +1u;
         // use regular mallocs here - should not be an issue
@@ -992,8 +977,8 @@ TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
     TestBufferA &ma = bufferA[0];
     TestBufferB &mb = bufferB[0]; // should do half the work of ma
 
-    printf("\nAddr range of bufferA: %p - %p\n", (char*)ma.data, (char*)(ma.data) + ma.BUFF_SIZE);
-    printf("Addr range of bufferB: %p - %p\n", (char*)mb.data, (char*)(mb.data) + mb.BUFF_SIZE);
+    //printf("\nAddr range of bufferA: %p - %p\n", (char*)ma.data, (char*)(ma.data) + ma.BUFF_SIZE);
+    //printf("Addr range of bufferB: %p - %p\n", (char*)mb.data, (char*)(mb.data) + mb.BUFF_SIZE);
 
     auto start_point = std::chrono::steady_clock::now();
     auto end_point = start_point;
@@ -1059,6 +1044,7 @@ TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
     ASSERT_EQ(b_kind, MEMKIND_DEFAULT);
 }
 
+/*
 TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
 {
     // this test has a very weird structure, it consists of:
@@ -1177,7 +1163,7 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
         }
     }
 }
-
+*/
 // TODO cleanup, maybe a separate file? currently, these tests take > min to complete
 
 

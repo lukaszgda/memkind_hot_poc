@@ -827,13 +827,13 @@ builder_hot_create_memory(struct memtier_builder *builder)
     }
     double dram_total_ratio=memory->cfg[memory->hot_tier_id].kind_ratio;
 
+#if PRINT_POLICY_CREATE_MEMORY_INFO
     struct timespec t;
     int ret = clock_gettime(CLOCK_MONOTONIC, &t);
     if (ret != 0) {
         log_fatal("Create Memory: ASSERT CREATE FAILURE!\n");
     }
 
-#if PRINT_POLICY_CREATE_MEMORY_INFO
     log_info("creates memory [ratio %f], timespec [seconds, nanoseconds]: [%ld, %ld]",
         dram_total_ratio, t.tv_sec, t.tv_nsec);
 #endif
@@ -954,6 +954,7 @@ MEMKIND_EXPORT int memtier_builder_add_tier(struct memtier_builder *builder,
 MEMKIND_EXPORT struct memtier_memory *
 memtier_builder_construct_memtier_memory(struct memtier_builder *builder)
 {
+#if PRINT_POLICY_CONSTRUCT_MEMORY_INFO
     struct timespec t;
     int ret = clock_gettime(CLOCK_MONOTONIC, &t);
     if (ret != 0) {
@@ -961,7 +962,6 @@ memtier_builder_construct_memtier_memory(struct memtier_builder *builder)
         exit(-1);
     }
 
-#if PRINT_POLICY_CONSTRUCT_MEMORY_INFO
     log_info("constructs memory, timespec [seconds, nanoseconds]: [%ld, %ld]",
         t.tv_sec, t.tv_nsec);
 #endif
@@ -973,6 +973,7 @@ MEMKIND_EXPORT void memtier_delete_memtier_memory(struct memtier_memory *memory)
 {
     pebs_fini(); // TODO conditional - only if pebs started
 
+#if PRINT_POLICY_DELETE_MEMORY_INFO
     struct timespec t;
     int ret = clock_gettime(CLOCK_MONOTONIC, &t);
         if (ret != 0) {
@@ -980,7 +981,6 @@ MEMKIND_EXPORT void memtier_delete_memtier_memory(struct memtier_memory *memory)
         exit(-1);
     }
 
-#if PRINT_POLICY_DELETE_MEMORY_INFO
     log_info("delete memory, timespec [seconds, nanoseconds]: [%ld, %ld]",
         t.tv_sec, t.tv_nsec);
 #endif

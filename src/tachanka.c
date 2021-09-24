@@ -43,6 +43,9 @@ static bigary ba_ttypes, ba_tblocks;
 void register_block(uint64_t hash, void *addr, size_t size)
 {
     struct ttype *t;
+
+    //printf("hash: %lu\n", hash);
+
     int nt = critnib_get(hash_to_type, hash);
     if (nt == -1) {
         nt = __sync_fetch_and_add(&ntypes, 1);
@@ -101,7 +104,7 @@ void register_block(uint64_t hash, void *addr, size_t size)
     bl->type = nt;
 
 #if PRINT_CRITNIB_NEW_BLOCK_REGISTERED_INFO
-    log_info("New block registered: addr %p size %lu", (void*)addr, size);
+    log_info("New block %d registered: addr %p size %lu type %d", fb, (void*)addr, size, nt);
 #endif
 
     critnib_insert(addr_to_block, fb);
@@ -117,6 +120,8 @@ void realloc_block(void *addr, void *new_addr, size_t size)
 #endif
     }
     struct tblock *bl = &tblocks[bln];
+
+    log_info("realloc %p -> %p (block %d, type %d)", addr, new_addr, bln, bl->type);
 
     bl->addr = new_addr;
     struct ttype *t = &ttypes[bl->type];
@@ -150,6 +155,9 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type(const void *addr)
     if (bln < 0 || addr >= tblocks[bln].addr + tblocks[bln].size)
         return HOTNESS_NOT_FOUND;
     struct ttype *t = &ttypes[tblocks[bln].type];
+
+    //printf("get_hotness block %d, type %d hot %g\n", bln, tblocks[bln].type, ttypes[tblocks[bln].type].f);
+
     if (ranking_is_hot(ranking, t))
         return HOTNESS_HOT;
     return HOTNESS_COLD;
@@ -188,6 +196,10 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
 #endif
         return;
     }
+
+    //printf("bln: %d", bln);
+    //printf("bl->type: %d\n", bl->type);
+
 //     else
 //     {
 //         printf("tachanka touch for known area!\n");
@@ -204,6 +216,7 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
         ranking_touch(ranking, t, timestamp, hotness);
     }
 
+#if PRINT_CRITNIB_TOUCH_INFO
     static atomic_uint_fast16_t counter=0;
     const uint64_t interval=1000;
     if (++counter > interval) {
@@ -213,10 +226,11 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
             log_fatal("ASSERT TOUCH COUNTER FAILURE!\n");
             exit(-1);
         }
-        //printf("touch counter %lu hit, [seconds, nanoseconds]: [%ld, %ld]\n",
-        //    interval, t.tv_sec, t.tv_nsec);
+        log_info("touch counter %lu hit, [seconds, nanoseconds]: [%ld, %ld]",
+            interval, t.tv_sec, t.tv_nsec);
         counter=0u;
     }
+#endif
 
     // TODO make decisions regarding thread-safeness
     // thread-safeness:

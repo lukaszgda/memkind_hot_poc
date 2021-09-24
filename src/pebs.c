@@ -330,9 +330,11 @@ void *pebs_monitor(void *state)
             log_fatal("ASSERT_CLOCK_GETTIME_FAILURE!");
             exit(-1);
         }
+#if PRINT_PEBS_TIMESPEC_DEADLINE_INFO
         if (timespec_is_he(&temp, &ntime)) {
-            log_err("PEBS: timespec deadline not met!");
+            log_info("PEBS: timespec deadline not met!");
         }
+#endif
         (void)clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ntime, NULL);
         timespec_add(&ntime, &tv_period);
     }

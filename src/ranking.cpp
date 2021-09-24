@@ -13,6 +13,7 @@ extern "C" {
 #include <vector>
 
 #include "memkind/internal/memkind_private.h"
+#include "memkind/internal/memkind_log.h"
 #include "memkind/internal/memkind_memtier.h"
 
 
@@ -215,7 +216,10 @@ void ranking_remove_internal(ranking_t *ranking, const struct ttype *entry)
     AggregatedHotness_t *removed =
         (AggregatedHotness_t *)wre_remove(ranking->entries, &temp);
     if (removed) {
-        assert(entry->size <= removed->size);
+        if (entry->size > removed->size)
+        {
+            log_fatal("ranking_remove_internal: tried to removed more that added!");
+        }
         removed->size -= entry->size;
         if (removed->size == 0)
             jemk_free(removed);

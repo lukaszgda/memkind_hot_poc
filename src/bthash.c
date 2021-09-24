@@ -1,14 +1,15 @@
 #include <include/memkind/internal/memkind_memtier.h>
 
-#include "stdbool.h"
-#include "stdlib.h"
-#include "execinfo.h"
-#include "threads.h"
+#include <stdbool.h>
+#include <stdlib.h>
+#include <execinfo.h>
+#include <threads.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <assert.h>
 
 // SIMD instructions
 #include "mmintrin.h"
@@ -43,6 +44,8 @@ static void preprocess_maps(void) {
         } else {
             ++inew;
         }
+
+        //printf("map: start %p end %p\n", start[i], end[i]);
     }
     if (nm>0) {
         nm=inew+1;
@@ -225,7 +228,6 @@ static bool is_on_stack(const void* ptr) {
     return ptr >= stack_start && ptr < stack_end;
 }
 
-#include "assert.h"
 #if REDUCED_STACK_SEARCH
 static const size_t max_searchable_stack_size=16u;// TODO move
 #else
@@ -279,8 +281,6 @@ void bthash_set_stack_range(void *p1, void *p2) {
 
 uint64_t bthash(uint64_t size)
 {
-    volatile static uint64_t call_counter=0;
-    call_counter++;
     // MurmurHash2 by Austin Appleby, public domain.
     const uint64_t M = 0xc6a4a7935bd1e995ULL;
     const int R = 47;
