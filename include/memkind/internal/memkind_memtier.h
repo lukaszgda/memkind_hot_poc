@@ -235,7 +235,8 @@ int memtier_ctl_set(struct memtier_builder *builder, const char *name,
 // smaller value -> more frequent sampling
 // 10000 = around 100 samples on *my machine* / sec in matmul test
 #define SAMPLE_FREQUENCY 10000
-#define PEBS_FREQ_HZ     20.0
+// #define PEBS_FREQ_HZ     20.0
+#define PEBS_FREQ_HZ     5.0
 #define MMAP_DATA_SIZE   8
 
 // critnib
