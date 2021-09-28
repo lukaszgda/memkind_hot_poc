@@ -242,8 +242,8 @@ struct critnib *
 critnib_new(const uint64_t *leaves, int leaf_stride)
 {
 	bigary ba;
-// 	bigary_init(&ba, BIGARY_DRAM, 0);
-	bigary_init(&ba, -1, MAP_ANONYMOUS | MAP_PRIVATE, 0);
+	bigary_init(&ba, BIGARY_DRAM, 0);
+// 	bigary_init(&ba, -1, MAP_ANONYMOUS | MAP_PRIVATE, 0);
 	struct critnib *c = ba.area;
 	c->ba_critnib = ba;
 

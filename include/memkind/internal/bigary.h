@@ -16,6 +16,6 @@ struct bigary
 };
 typedef struct bigary bigary;
 
-void bigary_init(bigary *ba, int fd, int flags, size_t max);
+void bigary_init(bigary *restrict ba, int fd, int flags, size_t max);
 void bigary_alloc(bigary *restrict ba, size_t top);
 void bigary_free(bigary *restrict ba);
