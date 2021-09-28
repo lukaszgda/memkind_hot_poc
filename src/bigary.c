@@ -5,7 +5,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#include "include/memkind/internal/bigary.h"
+#include "memkind/internal/bigary.h"
 
 #define BIGARY_DEFAULT_MAX (16 * 1024 * 1048576ULL)
 #define BIGARY_PAGESIZE 2097152
@@ -28,7 +28,9 @@ void bigary_init(bigary *restrict ba, int fd, int flags, size_t max)
 {
     if (!max)
         max = BIGARY_DEFAULT_MAX;
-    pthread_mutex_init(&ba->enlargement, 0);
+    int ret = pthread_mutex_init(&ba->enlargement, 0);
+    if (ret != 0)
+        die("mutex init failed\n");
     ba->declared = max;
     ba->fd = fd;
     ba->flags = fd;

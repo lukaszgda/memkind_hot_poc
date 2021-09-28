@@ -244,10 +244,12 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
 static bool initialized=false;
 void tachanka_init(double old_window_hotness_weight, size_t event_queue_size)
 {
-    bigary_init(&ba_tblocks, BIGARY_DRAM, 0);
+//     bigary_init(&ba_tblocks, BIGARY_DRAM, MAP_ANONYMOUS, 0);
+    bigary_init(&ba_tblocks, -1, MAP_ANONYMOUS | MAP_PRIVATE, 0);
     tblocks = ba_tblocks.area;
 
-    bigary_init(&ba_ttypes, BIGARY_DRAM, 0);
+//     bigary_init(&ba_ttypes, BIGARY_DRAM, MAP_ANONYMOUS, 0); // TODO NOT 0 !!!
+    bigary_init(&ba_ttypes, -1, MAP_ANONYMOUS | MAP_PRIVATE, 0); // TODO NOT 0 !!!
     ttypes = ba_ttypes.area;
 
     read_maps();
