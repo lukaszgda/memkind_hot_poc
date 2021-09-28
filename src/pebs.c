@@ -149,6 +149,50 @@ void *pebs_monitor(void *state)
         }
 #endif
 
+
+
+        EventEntry_t event;
+        bool pop_success;
+        while (true) {
+            pop_success = tachanka_ranking_event_pop(&event);
+            if (!pop_success)
+                break;
+            switch (event.type) {
+                case EVENT_CREATE_ADD:
+                    register_block(event.data.createAddData.hash,
+                        event.data.createAddData.address,
+                        event.data.createAddData.size);
+                    touch(event.data.createAddData.address, 0, 1 /*called from malloc*/);
+                    g_queue_counter_malloc++;
+                    break;
+                case EVENT_DESTROY_REMOVE:
+                    unregister_block(event.data.destroyRemoveData.address);
+                    g_queue_counter_free++;
+                    break;
+                case EVENT_REALLOC:
+                    realloc_block(event.data.reallocData.addressOld,
+                        event.data.reallocData.addressNew,
+                        event.data.reallocData.size);
+                    g_queue_counter_realloc++;
+                    break;
+                case EVENT_SET_TOUCH_CALLBACK:
+                    tachanka_set_touch_callback(
+                        event.data.touchCallbackData.address,
+                        event.data.touchCallbackData.callback,
+                        event.data.touchCallbackData.callbackArg);
+                    g_queue_counter_callback++;
+                    break;
+                case EVENT_TOUCH:
+                    touch(event.data.touchData.address,
+                        event.data.touchData.timestamp, 0 /*called from malloc*/);
+                    g_queue_counter_touch++;
+                    break;
+                default:
+                    log_fatal("PEBS: event queue - case not implemented!");
+                    exit(-1);
+            }
+            g_queue_pop_counter++;
+        }
         struct perf_event_mmap_page* pebs_metadata =
             (struct perf_event_mmap_page*)pebs_mmap;
 
@@ -218,7 +262,11 @@ void *pebs_monitor(void *state)
                         // copy is performed, passing pointer to stack is ok
                         // losing single malloc should not cause issues,
                         // so we are just ignoring buffer overflows
-                        (void)tachanka_ranking_event_push(&entry);
+//                         (void)tachanka_ranking_event_push(&entry); // TODO
+                        touch(entry.data.touchData.address,
+                        entry.data.touchData.timestamp, 0 /*called from malloc*/);
+                        g_queue_counter_touch++;
+
 //                         touch((void*)addr, timestamp, 0 /* from malloc */);
 //                         printf("touched, timestamp: [%llu], from malloc [0]\n", timestamp);
 
@@ -261,50 +309,6 @@ void *pebs_monitor(void *state)
 		ioctl(pebs_fd, PERF_EVENT_IOC_REFRESH, 0);
         last_head = pebs_metadata->data_head;
         pebs_metadata->data_tail = pebs_metadata->data_head;
-
-        EventEntry_t event;
-        bool pop_success;
-        while (true) {
-            pop_success = tachanka_ranking_event_pop(&event);
-            if (!pop_success)
-                break;
-            switch (event.type) {
-                case EVENT_CREATE_ADD:
-                    register_block(event.data.createAddData.hash,
-                        event.data.createAddData.address,
-                        event.data.createAddData.size);
-                    touch(event.data.createAddData.address, 0, 1 /*called from malloc*/);
-                    g_queue_counter_malloc++;
-                    break;
-                case EVENT_DESTROY_REMOVE:
-                    unregister_block(event.data.destroyRemoveData.address);
-                    g_queue_counter_free++;
-                    break;
-                case EVENT_REALLOC:
-                    realloc_block(event.data.reallocData.addressOld,
-                        event.data.reallocData.addressNew,
-                        event.data.reallocData.size);
-                    g_queue_counter_realloc++;
-                    break;
-                case EVENT_SET_TOUCH_CALLBACK:
-                    tachanka_set_touch_callback(
-                        event.data.touchCallbackData.address,
-                        event.data.touchCallbackData.callback,
-                        event.data.touchCallbackData.callbackArg);
-                    g_queue_counter_callback++;
-                    break;
-                case EVENT_TOUCH:
-                    touch(event.data.touchData.address,
-                        event.data.touchData.timestamp, 0 /*called from malloc*/);
-                    g_queue_counter_touch++;
-                    break;
-                default:
-                    log_fatal("PEBS: event queue - case not implemented!");
-                    exit(-1);
-            }
-            g_queue_pop_counter++;
-        }
-
         tachanka_update_threshold();
 
 //         ret = clock_gettime(CLOCK_MONOTONIC, &ctime);

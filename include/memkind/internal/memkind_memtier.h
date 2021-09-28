@@ -246,7 +246,7 @@ int memtier_ctl_set(struct memtier_builder *builder, const char *name,
 
 // bthash
 #define CUSTOM_BACKTRACE 1
-#define STACK_RANGE 0
+#define STACK_RANGE 1
 #define REDUCED_STACK_SEARCH 1
 #define SIMD_INSTRUCTIONS 0
 #define LIB_BINSEARCH 0

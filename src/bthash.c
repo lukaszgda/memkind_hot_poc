@@ -1,4 +1,4 @@
-#include <include/memkind/internal/memkind_memtier.h>
+#include <memkind/internal/memkind_memtier.h>
 
 #include <stdbool.h>
 #include <stdlib.h>
