@@ -19,7 +19,37 @@ extern "C" {
 #define THREAD_SAFE
 
 #ifdef THREAD_SAFE
-#define RANKING_LOCK_GUARD(ranking) std::lock_guard<std::mutex> lock_guard((ranking)->mutex)
+
+class recursion_counter {
+    static thread_local int counter;
+public:
+    recursion_counter() {
+        counter++;
+        assert(counter == 1);
+    }
+    ~recursion_counter() {
+        counter--;
+        assert(counter == 0);
+    }
+};
+
+thread_local int recursion_counter::counter=0;
+
+// #define RANKING_LOCK_GUARD(ranking) std::lock_guard<std::mutex> lock_guard((ranking)->mutex)
+#define RANKING_LOCK_GUARD(ranking) /* do { */                       \
+    static thread_local bool thread_counted=false;              \
+    static std::atomic<int> thread_counter(0);                  \
+    recursion_counter counter;                                  \
+    if (!thread_counted) {                                      \
+        thread_counter++;                                       \
+        assert(thread_counter == 1);                            \
+        thread_counted = true;                                  \
+    }                                                           \
+    std::lock_guard<std::mutex> lock_guard((ranking)->mutex);   \
+/* } while (0) */
+
+//     std::lock_guard<std::mutex> lock_guard((ranking)->mutex);
+
 #else
 #define RANKING_LOCK_GUARD(ranking) (void)(ranking)->mutex
 #endif
