@@ -286,7 +286,6 @@ static bool memtier_policy_data_hotness_is_hot(uint64_t hash)
             g_successful_adds_realloc1, g_failed_adds_realloc1,
             g_successful_adds_free, g_failed_adds_free);
         counter=0u;
-#endif // PRINT_POLICY_LOG_STATISTICS_INFO
 
 #if PRINT_POLICY_BACKTRACE_INFO
         static thread_local bool in_progress=false;
@@ -303,8 +302,9 @@ static bool memtier_policy_data_hotness_is_hot(uint64_t hash)
             free(strings);
             in_progress = false;
         }
-    }
 #endif //PRINT_POLICY_BACKTRACE_INFO
+    }
+#endif // PRINT_POLICY_LOG_STATISTICS_INFO
 
 #if PRINT_POLICY_LOG_STATISTICS_INFO
     ++hotness_counter[hotness];
