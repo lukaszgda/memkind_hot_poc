@@ -16,7 +16,7 @@ extern "C" {
 #include "memkind/internal/memkind_log.h"
 #include "memkind/internal/memkind_memtier.h"
 
-// #define THREAD_SAFE
+#define THREAD_SAFE
 
 #ifdef THREAD_SAFE
 #define RANKING_LOCK_GUARD(ranking) std::lock_guard<std::mutex> lock_guard((ranking)->mutex)
