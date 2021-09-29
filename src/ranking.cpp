@@ -16,9 +16,11 @@ extern "C" {
 #include "memkind/internal/memkind_log.h"
 #include "memkind/internal/memkind_memtier.h"
 
-#define THREAD_SAFE
+// #define THREAD_SAFE
+// #define THREAD_CHECKER
 
 #ifdef THREAD_SAFE
+#ifdef THREAD_CHECKER
 
 class recursion_counter {
     static thread_local int counter;
@@ -47,10 +49,10 @@ thread_local int recursion_counter::counter=0;
     }                                                           \
     std::lock_guard<std::mutex> lock_guard((ranking)->mutex);   \
 /* } while (0) */
-
-//     std::lock_guard<std::mutex> lock_guard((ranking)->mutex);
-
-#else
+#else /* ndef THREAD_CHECKER */
+    std::lock_guard<std::mutex> lock_guard((ranking)->mutex);
+#endif
+#else /* ndef THREAD_SAFE */
 #define RANKING_LOCK_GUARD(ranking) (void)(ranking)->mutex
 #endif
 
@@ -85,7 +87,14 @@ static bool is_hotter_agg_hot(const void *a, const void *b)
 
 static void ranking_create_internal(ranking_t **ranking, double old_weight);
 static void ranking_destroy_internal(ranking_t *ranking);
-static void ranking_add_internal(ranking_t *ranking, struct ttype *entry);
+static void ranking_add_internal(ranking_t *ranking, const struct ttype *entry);
+/// Attempt to remove from ranking the entry
+/// If entry does not exist or has insufficient size,
+/// remove all that can be removed and return the removed size
+///
+/// @return the size that was actually removed
+static size_t ranking_remove_internal_relaxed(ranking_t *ranking,
+                                              const struct ttype *entry);
 static void ranking_remove_internal(ranking_t *ranking,
                                     const struct ttype *entry);
 static double ranking_get_hot_threshold_internal(ranking_t *ranking);
@@ -222,7 +231,7 @@ ranking_calculate_hot_threshold_dram_pmem_internal(ranking_t *ranking,
     return ranking_calculate_hot_threshold_dram_total_internal(ranking, ratio);
 }
 
-void ranking_add_internal(ranking_t *ranking, struct ttype *entry)
+void ranking_add_internal(ranking_t *ranking, const struct ttype *entry)
 {
     AggregatedHotness temp;
     temp.hotness = entry->f; // only hotness matters for lookup // TODO: rrudnick ????
@@ -246,6 +255,33 @@ bool ranking_is_hot_internal(ranking_t *ranking, struct ttype *entry)
     return entry->f >= ranking_get_hot_threshold_internal(ranking);
 }
 
+size_t ranking_remove_internal_relaxed(ranking_t *ranking, const struct ttype *entry)
+{
+    size_t ret = 0;
+    AggregatedHotness temp;
+    temp.hotness = entry->f; // only hotness matters for lookup
+    AggregatedHotness_t *removed =
+        (AggregatedHotness_t *)wre_remove(ranking->entries, &temp);
+    if (removed) {
+        if (entry->size > removed->size)
+        {
+            ret = removed->size;
+            removed->size = 0;
+        } else {
+            ret = entry->size;
+            removed->size -= entry->size;
+        }
+        if (removed->size == 0)
+            jemk_free(removed);
+        else
+            wre_put(ranking->entries, removed, removed->size);
+    } else {
+        ret = 0; // defensive programming - nothing found, nothing removed
+    }
+
+    return ret;
+}
+
 void ranking_remove_internal(ranking_t *ranking, const struct ttype *entry)
 {
     AggregatedHotness temp;
@@ -256,6 +292,7 @@ void ranking_remove_internal(ranking_t *ranking, const struct ttype *entry)
         if (entry->size > removed->size)
         {
             log_fatal("ranking_remove_internal: tried to removed more that added!");
+            assert(false && "attempt to remove non-existent data!");
         }
         removed->size -= entry->size;
         if (removed->size == 0)
@@ -263,8 +300,7 @@ void ranking_remove_internal(ranking_t *ranking, const struct ttype *entry)
         else
             wre_put(ranking->entries, removed, removed->size);
     } else {
-        // TODO add error handling instead of assert
-        assert(false); // entry does not exist, error occurred
+        assert(false && "attempt to remove non-existent data!");
     }
 }
 
@@ -281,9 +317,11 @@ void ranking_touch_internal(ranking_t *ranking, struct ttype *entry,
                             uint64_t timestamp, uint64_t add_hotness)
 {
     //     printf("touches internal, timestamp: [%lu]\n", timestamp);
-    ranking_remove_internal(ranking, entry);
+    size_t removed = ranking_remove_internal_relaxed(ranking, entry);
     ranking_touch_entry_internal(ranking, entry, timestamp, add_hotness);
-    ranking_add_internal(ranking, entry);
+    struct ttype entry_cpy = *entry;
+    entry_cpy.size = removed; // update size - add only as much as was removed
+    ranking_add_internal(ranking, &entry_cpy);
 }
 
 //--------public function implementation---------
