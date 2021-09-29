@@ -33,7 +33,7 @@ void bigary_init(bigary *restrict ba, int fd, int flags, size_t max)
         die("mutex init failed\n");
     ba->declared = max;
     ba->fd = fd;
-    ba->flags = fd;
+    ba->flags = flags;
     if ((ba->area = mmap(0, max, PROT_NONE, flags, fd, 0)) == MAP_FAILED)
         die("mmapping bigary(%zd) failed: %m\n", max);
     if (mmap(ba->area, BIGARY_PAGESIZE, PROT_READ|PROT_WRITE,

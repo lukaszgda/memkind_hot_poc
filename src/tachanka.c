@@ -83,7 +83,7 @@ void register_block(uint64_t hash, void *addr, size_t size)
         fb = freeblock;
         if (fb == -1) {
             fb = __sync_fetch_and_add(&nblocks, 1);
-            bigary_alloc(&ba_tblocks, fb*sizeof(struct tblock));
+            bigary_alloc(&ba_tblocks, (fb+1)*sizeof(struct tblock));
             if (fb >= MAXBLOCKS) {
                 log_fatal("Too many allocated blocks");
                 exit(-1);
