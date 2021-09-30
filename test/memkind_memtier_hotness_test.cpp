@@ -113,7 +113,6 @@ TEST_F(MemkindMemtierHotnessTest, test_tier_two_kinds)
     ASSERT_NE(nullptr, m_tier_memory);
 }
 
-/*
 TEST_P(MemkindMemtierHotnessTest, test_matmul)
 {
     const int MATRIX_SIZE = 512;
@@ -262,7 +261,6 @@ TEST_P(MemkindMemtierHotnessTest, test_matmul)
         // For now, only "quickfix": make a test that's vulnerable to race condition
 	}
 }
-*/
 
 INSTANTIATE_TEST_CASE_P(numObjsParam, MemkindMemtierHotnessTest,
                         ::testing::Values(3, 20));

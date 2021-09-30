@@ -81,7 +81,15 @@ void register_block(uint64_t hash, void *addr, size_t size)
     int fb, nf;
     do {
         fb = freeblock;
-        if (fb == -1) {
+        // WARNING HACK AHEAD
+        // background: non-initialized blocks have nextfree == 0
+        // issue: when uninitialized block is taken, nextfree is incorrect (0)
+        // this leads to reuse of block 0,
+        // which produces serious errors in execution
+        // initialization would probably be welcome, but is non-trivial:
+        // separate initialized size should be stored here,
+        // we cannot rely solely on bigary_alloc
+        if (fb <= 0) {
             fb = __sync_fetch_and_add(&nblocks, 1);
             bigary_alloc(&ba_tblocks, (fb+1)*sizeof(struct tblock));
             if (fb >= MAXBLOCKS) {
@@ -118,6 +126,8 @@ void realloc_block(void *addr, void *new_addr, size_t size)
 #if PRINT_CRITNIB_NOT_FOUND_ON_REALLOC_WARNING
         log_info("WARNING: Tried realloc a non-allocated block at %p", addr);
 #endif
+        assert(false && "dealloc non-allocated block!"); // TODO remove!
+        return;
     }
     struct tblock *bl = &tblocks[bln];
 
@@ -138,6 +148,8 @@ void unregister_block(void *addr)
 #if PRINT_CRITNIB_NOT_FOUND_ON_UNREGISTER_BLOCK_WARNING
         log_info("WARNING: Tried deallocating a non-allocated block at %p", addr);
 #endif
+        assert(false && "dealloc non-allocated block!"); // TODO remove!
+        return;
     }
     struct tblock *bl = &tblocks[bln];
     struct ttype *t = &ttypes[bl->type];
