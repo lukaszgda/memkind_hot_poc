@@ -7,6 +7,7 @@
 #include <random>
 #include <thread>
 #include <vector>
+#include <mutex>
 #include <pthread.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -690,7 +691,7 @@ class TestBuffer {
     RandomIncremeneter incrementer;
 
 public:
-    uint8_t *data;
+    volatile uint8_t *data;
     const size_t BUFF_SIZE = 2e8; // 200 MB
 
     void operator =(const TestBuffer &mat)=delete;
@@ -730,15 +731,15 @@ public:
     }
 
     memkind_t DetectKind() {
-        return memkind_detect_kind(data);
+        return memkind_detect_kind((void*)data);
     }
 
     double GetHotness() {
-        return tachanka_get_addr_hotness(data);
+        return tachanka_get_addr_hotness((void*)data);
     }
 
     Hotness_e GetHotnessType() {
-        return tachanka_get_hotness_type(data);
+        return tachanka_get_hotness_type((void*)data);
     }
 
 protected:
@@ -768,7 +769,7 @@ protected:
 //         int ret = tachanka_set_touch_callback(data, touch_cb, cb_arg);
         EventEntry_t entry;
         entry.type = EVENT_SET_TOUCH_CALLBACK,
-        entry.data.touchCallbackData.address = data;
+        entry.data.touchCallbackData.address = (void*)data;
         entry.data.touchCallbackData.callback = touch_cb;
         entry.data.touchCallbackData.callbackArg = cb_arg;
         bool ret = tachanka_ranking_event_push(&entry);
@@ -777,19 +778,19 @@ protected:
     }
 
     virtual void FreeData() {
-        memtier_free(data);
+        memtier_free((void*)data);
         data=nullptr;
     }
 
     virtual void AllocData(struct memtier_memory *m) {
-        memtier_free(data);
+        memtier_free((void*)data);
         data = (uint8_t*)memtier_malloc(m, BUFF_SIZE);
         RegisterCallback();
     }
 
     virtual void ReallocData(struct memtier_memory *m) {
         uint8_t *data_temp = (uint8_t*)memtier_malloc(m, BUFF_SIZE);
-        memtier_free(data);
+        memtier_free((void*)data);
         data = data_temp;
         RegisterCallback();
     }
@@ -813,9 +814,23 @@ public:
         return TestBuffer::FreeData();
     }
     MEMKIND_NO_INLINE void AllocData(struct memtier_memory *m) {
+        std::mutex mut;
+        // mutex: avoid optimisations
+        std::unique_lock<std::mutex> lock(mut);
+        volatile char buff[100];
+        for (size_t i=0; i< sizeof(buff)/sizeof(buff[0]); ++i)
+            buff[i]=0xFF;
+        lock.unlock();
         return TestBuffer::AllocData(m);
     }
     MEMKIND_NO_INLINE void ReallocData(struct memtier_memory *m) {
+        std::mutex mut;
+        // mutex: avoid optimisations
+        std::unique_lock<std::mutex> lock(mut);
+        volatile char buff[100];
+        for (size_t i=0; i< sizeof(buff)/sizeof(buff[0]); ++i)
+            buff[i]=0xFF;
+        lock.unlock();
         return TestBuffer::ReallocData(m);
     }
 };
@@ -831,9 +846,23 @@ public:
         return TestBuffer::FreeData();
     }
     MEMKIND_NO_INLINE void AllocData(struct memtier_memory *m) {
+        std::mutex mut;
+        // mutex: avoid optimisations
+        std::unique_lock<std::mutex> lock(mut);
+        volatile char buff[200];
+        for (size_t i=0; i< sizeof(buff)/sizeof(buff[0]); ++i)
+            buff[i]=0xFF;
+        lock.unlock();
         return TestBuffer::AllocData(m);
     }
     MEMKIND_NO_INLINE void ReallocData(struct memtier_memory *m) {
+        std::mutex mut;
+        // mutex: avoid optimisations
+        std::unique_lock<std::mutex> lock(mut);
+        volatile char buff[200];
+        for (size_t i=0; i< sizeof(buff)/sizeof(buff[0]); ++i)
+            buff[i]=0xFF;
+        lock.unlock();
         return TestBuffer::ReallocData(m);
     }
 };
@@ -849,9 +878,23 @@ public:
         return TestBuffer::FreeData();
     }
     MEMKIND_NO_INLINE void AllocData(struct memtier_memory *m) {
+        std::mutex mut;
+        // mutex: avoid optimisations
+        std::unique_lock<std::mutex> lock(mut);
+        volatile char buff[300];
+        for (size_t i=0; i< sizeof(buff)/sizeof(buff[0]); ++i)
+            buff[i]=0xFF;
+        lock.unlock();
         return TestBuffer::AllocData(m);
     }
     MEMKIND_NO_INLINE void ReallocData(struct memtier_memory *m) {
+        std::mutex mut;
+        // mutex: avoid optimisations
+        std::unique_lock<std::mutex> lock(mut);
+        volatile char buff[300];
+        for (size_t i=0; i< sizeof(buff)/sizeof(buff[0]); ++i)
+            buff[i]=0xFF;
+        lock.unlock();
         return TestBuffer::ReallocData(m);
     }
 };
@@ -1042,7 +1085,6 @@ TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
     ASSERT_EQ(b_kind, MEMKIND_DEFAULT);
 }
 
-/*
 TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
 {
     // this test has a very weird structure, it consists of:
@@ -1100,6 +1142,9 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
                 size_t touches_b = g_cbArgs[1]->counter;
                 size_t touches_c = g_cbArgs[2]->counter;
 
+                ASSERT_EQ(touches_a, 0u);
+                ASSERT_EQ(touches_b, 0u);
+                ASSERT_EQ(touches_c, 0u);
 
                 uint64_t asum = ma.CalculateSum();
                 uint64_t bsum = mb.CalculateSum();
@@ -1111,6 +1156,10 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
                 touches_a = g_cbArgs[3]->counter;
                 touches_b = g_cbArgs[4]->counter;
                 touches_c = g_cbArgs[5]->counter;
+
+                ASSERT_GT(touches_a, 0u);
+                ASSERT_GT(touches_b, 0u);
+                ASSERT_GT(touches_c, 0u);
 
                 double touch_ratio = ((double)touches_a)/touches_b;
 
@@ -1146,6 +1195,14 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
                 break;
             }
             case 1: {
+                // block is registered asynchronously,
+                // so hotness information will be visible with a delay
+                // this delay is normally not a problem:
+                //      1) allocations are done using hash, not address,
+                //      2) all required manipulations are done from single
+                //          (PEBS) thread, data races should either
+                //          not be a concern, or should be handled
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 Hotness_e a_type=ma.GetHotnessType();
                 Hotness_e b_type=mb.GetHotnessType();
                 ASSERT_EQ(a_type, HOTNESS_HOT);
@@ -1161,7 +1218,6 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
         }
     }
 }
-*/
 // TODO cleanup, maybe a separate file? currently, these tests take > min to complete
 
 
