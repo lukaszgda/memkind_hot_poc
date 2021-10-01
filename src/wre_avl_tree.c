@@ -128,7 +128,9 @@ static void fix_rotate_left(wre_tree_t *tree, wre_node_t *node)
     int64_t left_nodes = right_node->left ? right_node->left->height + 1 : 0;
     int64_t right_nodes = right_node->right ? right_node->right->height + 1 : 0;
     int64_t diff = right_nodes - left_nodes;
-    if (diff == -1)
+//     assert((diff == 0) || (diff == -1); TODO decide if this should stay
+    assert(diff >= -2);
+    if (diff < 0 )
         rotate_right(tree, right_node);
     rotate_left(tree, node);
 }
@@ -140,7 +142,9 @@ static void fix_rotate_right(wre_tree_t *tree, wre_node_t *node)
     int64_t left_nodes = left_node->left ? left_node->left->height + 1 : 0;
     int64_t right_nodes = left_node->right ? left_node->right->height + 1 : 0;
     int64_t diff = right_nodes - left_nodes;
-    if (diff == 1)
+//     assert((diff == 0) || (diff == 1)); TODO decide if this should stay
+    assert(diff <= 2);
+    if (diff > 0)
         rotate_left(tree, left_node);
     rotate_right(tree, node);
 }
@@ -178,6 +182,9 @@ static void balance_upwards(wre_tree_t *tree, wre_node_t *node)
         int64_t left_nodes = node->left ? node->left->height + 1 : 0;
         int64_t right_nodes = node->right ? node->right->height + 1 : 0;
         int64_t diff = right_nodes - left_nodes;
+        // TODO decide the assert below should stay
+        // assert((diff>=0 ? diff : -diff ) <= 2);
+        assert((diff>=0 ? diff : -diff ) <= 3);
         if (diff > 1) {
             fix_rotate_left(tree, node);
         } else if (diff < -1) {
