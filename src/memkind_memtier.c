@@ -252,19 +252,18 @@ memtier_policy_dynamic_threshold_get_kind(struct memtier_memory *memory,
     return memory->cfg[i].kind;
 }
 
-static bool memtier_policy_data_hotness_is_hot(uint64_t hash)
+static Hotness_e memtier_policy_data_hotness_calculate_hotness_type(uint64_t hash)
 {
     // TODO this requires more data
     // Currently, "ranking" and "tachanka" are de-facto singletons
     // can we deal with it?
     Hotness_e hotness = tachanka_get_hotness_type_hash(hash);
-    int ret = 0;
 
     // DEBUG
 #if PRINT_POLICY_LOG_STATISTICS_INFO
     static atomic_uint_fast16_t counter=0;
     static atomic_uint_fast64_t hotness_counter[3]= { 0 };
-    const uint64_t interval=100000;
+    const uint64_t interval=1000;
     if (++counter > interval) {
         struct timespec t;
         int ret = clock_gettime(CLOCK_MONOTONIC, &t);
@@ -274,7 +273,7 @@ static bool memtier_policy_data_hotness_is_hot(uint64_t hash)
         }
 
         double hotness_thresh = tachanka_get_hot_thresh();
-        log_info("critnib: hotness thresh: %f, counters [hot, cold, unknown]: %lu %lu %lu, "
+        log_info("critnib: hotness thresh: %.16f, counters [hot, cold, unknown]: %lu %lu %lu, "
             "[seconds, nanoseconds]: [%ld, %ld]\nsuccess/fail: %lu, %lu",
             hotness_thresh, hotness_counter[0], hotness_counter[1], hotness_counter[2],
             t.tv_sec, t.tv_nsec, g_successful_adds, g_failed_adds);
@@ -304,25 +303,11 @@ static bool memtier_policy_data_hotness_is_hot(uint64_t hash)
         }
 #endif //PRINT_POLICY_BACKTRACE_INFO
     }
+
+    ++hotness_counter[hotness];
 #endif // PRINT_POLICY_LOG_STATISTICS_INFO
 
-#if PRINT_POLICY_LOG_STATISTICS_INFO
-    ++hotness_counter[hotness];
-#endif
-
-    switch (hotness) {
-        case HOTNESS_COLD:
-            ret = 0;
-            break;
-        case HOTNESS_NOT_FOUND:
-        case HOTNESS_HOT:
-            ret = 1;
-            break;
-        default:
-            log_fatal("critnib: invalid hotness enum val");
-            exit(-1);
-    }
-    return ret;
+    return hotness;
 }
 
 static thread_local void *stack_bottom=NULL;
@@ -355,6 +340,7 @@ memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
     void *foo=NULL; // value is irrelevant
     // corner case, which is not handled: actual stack is different from the one returned by pthread
     void *stack_top= &foo;
+    int dest_tier;
     initialize_stack_bottom();
 //     int ret = pthread_once(&stack_bottom_init, initialize_stack_bottom);
 //     assert(ret == 0);
@@ -362,12 +348,30 @@ memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
     *data = bthash(size);
     // TODO support for multiple tiers could be added
     // instead of bool (,mis hot), an index of memory tier could be returned
-    int dest_tier = memtier_policy_data_hotness_is_hot(*data) ?
-        memory->hot_tier_id : 1 - memory->hot_tier_id;
-
+//     int dest_tier = memtier_policy_data_hotness_is_hot(*data) ?
+//         memory->hot_tier_id : 1 - memory->hot_tier_id;
+// memtier_policy_static_ratio_get_kind();
+    Hotness_e hotness = memtier_policy_data_hotness_calculate_hotness_type(*data);
     //char buf[128];
     //if (write(1, buf, sprintf(buf, "hash %016zx size %zd is %s\n", *data, size,
     //               memtier_policy_data_hotness_is_hot(*data) ? "♨": "❄")));
+
+    switch (hotness) {
+        case HOTNESS_COLD:
+            dest_tier = 1 - memory->hot_tier_id;
+            break;
+        case HOTNESS_NOT_FOUND:
+            // type not registered yet, fallback to static ratio
+            // TODO add static ratio handling in other places !!!
+            return memtier_policy_static_ratio_get_kind(memory, size, NULL);
+            break; // unreachable
+        case HOTNESS_HOT:
+            dest_tier = memory->hot_tier_id;
+            break;
+        default:
+            log_fatal("critnib: invalid hotness enum val");
+            exit(-1);
+    }
 
     return memory->cfg[dest_tier].kind;
 }
