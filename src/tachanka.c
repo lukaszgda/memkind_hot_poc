@@ -71,6 +71,11 @@ void register_block(uint64_t hash, void *addr, size_t size)
         t->n2=0u;
         t->touchCb = NULL;
         t->touchCbArg = NULL;
+#if PRINT_POLICY_LOG_STATISTICS_INFO
+        static atomic_uint_fast64_t counter=0;
+        counter++;
+        log_info("new type created, total types: %lu", counter);
+#endif
     } else {
         t = &ttypes[nt];
     }
