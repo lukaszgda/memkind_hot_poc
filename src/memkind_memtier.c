@@ -252,7 +252,8 @@ memtier_policy_dynamic_threshold_get_kind(struct memtier_memory *memory,
     return memory->cfg[i].kind;
 }
 
-static Hotness_e memtier_policy_data_hotness_calculate_hotness_type(uint64_t hash)
+/// @p size for debugging purposes
+static Hotness_e memtier_policy_data_hotness_calculate_hotness_type(uint64_t hash, size_t size)
 {
     // TODO this requires more data
     // Currently, "ranking" and "tachanka" are de-facto singletons
@@ -263,6 +264,7 @@ static Hotness_e memtier_policy_data_hotness_calculate_hotness_type(uint64_t has
 #if PRINT_POLICY_LOG_STATISTICS_INFO
     static atomic_uint_fast16_t counter=0;
     static atomic_uint_fast64_t hotness_counter[3]= { 0 };
+    static atomic_uint_fast64_t hotness_alloc_counter[3]= { 0 };
     const uint64_t interval=1000;
     if (++counter > interval) {
         struct timespec t;
@@ -274,8 +276,10 @@ static Hotness_e memtier_policy_data_hotness_calculate_hotness_type(uint64_t has
 
         double hotness_thresh = tachanka_get_hot_thresh();
         log_info("critnib: hotness thresh: %.16f, counters [hot, cold, unknown]: %lu %lu %lu, "
+            "allocated [dram, pmem, unknown]: %lu %lu %lu\n"
             "[seconds, nanoseconds]: [%ld, %ld]\nsuccess/fail: %lu, %lu",
             hotness_thresh, hotness_counter[0], hotness_counter[1], hotness_counter[2],
+            hotness_alloc_counter[0], hotness_alloc_counter[1], hotness_alloc_counter[2],
             t.tv_sec, t.tv_nsec, g_successful_adds, g_failed_adds);
 
         log_info("critnib: success/fail: malloc [%lu/%lu], realloc0 [%lu/%lu], "
@@ -305,6 +309,7 @@ static Hotness_e memtier_policy_data_hotness_calculate_hotness_type(uint64_t has
     }
 
     ++hotness_counter[hotness];
+    hotness_alloc_counter[hotness] += size;
 #endif // PRINT_POLICY_LOG_STATISTICS_INFO
 
     return hotness;
@@ -351,7 +356,7 @@ memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
 //     int dest_tier = memtier_policy_data_hotness_is_hot(*data) ?
 //         memory->hot_tier_id : 1 - memory->hot_tier_id;
 // memtier_policy_static_ratio_get_kind();
-    Hotness_e hotness = memtier_policy_data_hotness_calculate_hotness_type(*data);
+    Hotness_e hotness = memtier_policy_data_hotness_calculate_hotness_type(*data, size);
     //char buf[128];
     //if (write(1, buf, sprintf(buf, "hash %016zx size %zd is %s\n", *data, size,
     //               memtier_policy_data_hotness_is_hot(*data) ? "♨": "❄")));

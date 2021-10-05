@@ -58,8 +58,10 @@ void register_block(uint64_t hash, void *addr, size_t size)
         }
         t->hash = hash;
         t->size = size;
+        t->total_size = 0; // will be incremented later
         t->timestamp_state = TIMESTAMP_NOT_SET;
         if (critnib_insert(hash_to_type, nt) == EEXIST) {
+            // TODO FREE nt !!!
             nt = critnib_get(hash_to_type, hash); // raced with another thread
             if (nt == -1) {
                 log_fatal("Alloc type disappeared?!?");
@@ -200,6 +202,9 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
     return ret;
 }
 
+/// @warning NOT THREAD SAFE
+/// This function operates on block that should not be freed/modifed
+/// in the meantime
 void touch(void *addr, __u64 timestamp, int from_malloc)
 {
     int bln = critnib_find_le(addr_to_block, (uint64_t)addr);
@@ -225,7 +230,9 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
     // TODO - is this thread safeness needed? or best effort will be enough?
     //__sync_fetch_and_add(&t->accesses, 1);
 
-    int hotness =1 ;
+//     int hotness =1 ;
+    size_t total_size = ttypes[bl->type].total_size;
+    double hotness = 1e16/total_size ;
     if (from_malloc) {
         ranking_add(ranking, t); // first of all, add
 //         hotness=INIT_MALLOC_HOTNESS; TODO this does not work, for now

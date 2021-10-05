@@ -4,6 +4,12 @@
 #include "memkind/internal/memkind_private.h"
 #include "stdint.h"
 
+#define DEBUG_PRINTFS // TODO move/remove
+
+#ifdef DEBUG_PRINTFS
+#include "stdatomic.h"
+#endif
+
 #define max(X, Y) (((X) > (Y)) ? (X) : (Y))
 
 //---private functions
@@ -413,11 +419,16 @@ typedef struct AggregatedHotness {
     double hotness;
 } AggregatedHotness_t;
 // EOF REMOVE
+
 MEMKIND_EXPORT void *wre_find_weighted(wre_tree_t *tree, double ratio)
 {
     void *ret = NULL;
     wre_node_t *best_node = tree->rootNode;
     wre_node_t *cnode = tree->rootNode;
+#ifdef DEBUG_PRINTFS
+    size_t left_subtrees=0u;
+    size_t right_subtrees=0u;
+#endif
     while (cnode) {
         if (cnode->subtreeWeight == 0) {
             // reached a leaf node, which has 0 weight
@@ -450,6 +461,10 @@ MEMKIND_EXPORT void *wre_find_weighted(wre_tree_t *tree, double ratio)
                 //                 printf("wre: descend left [%.16f]\n",
                 //                 ((AggregatedHotness_t*)cnode->data)->hotness);
                 //                 // TODO remove
+#ifdef DEBUG_PRINTFS
+                right_subtrees++;
+#endif
+
             } else if (ratio > nratio_right) {
                 // right is best - descend into right branch
                 cnode = cnode->right;
@@ -457,6 +472,9 @@ MEMKIND_EXPORT void *wre_find_weighted(wre_tree_t *tree, double ratio)
                 //                 printf("wre: descend right [%.16f]\n",
                 //                 ((AggregatedHotness_t*)cnode->data)->hotness);
                 //                 // TODO remove
+#ifdef DEBUG_PRINTFS
+                left_subtrees++;
+#endif
             } else {
                 // cnode is best node
                 best_node = cnode;
@@ -467,7 +485,18 @@ MEMKIND_EXPORT void *wre_find_weighted(wre_tree_t *tree, double ratio)
             }
         }
     }
-    if (best_node)
+    if (best_node) {
         ret = best_node->data;
+#ifdef DEBUG_PRINTFS
+        static atomic_size_t counter=0;
+        counter++;
+        const size_t interval = 1000;
+        if (counter>interval) {
+            printf("wre found, subtrees to left: %lu, subtrees to right %lu\n", left_subtrees, right_subtrees);
+            counter=0;
+        }
+#endif
+    }
+
     return ret;
 }

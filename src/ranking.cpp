@@ -111,17 +111,27 @@ static void ranking_update_internal(ranking_t *ranking,
 static void ranking_touch_entry_internal(ranking_t *ranking,
                                          struct ttype *entry,
                                          uint64_t timestamp,
-                                         uint64_t add_hotness);
+                                         double add_hotness);
+
+static void ranking_touch_internal(ranking_t *ranking, struct ttype *entry,
+                                   uint64_t timestamp, double add_hotness);
 
 //--------private function implementation---------
 
 #if 1
+// #define TOTAL_COUNTER_POLICY // TODO added for debugging purposes
 // old touch entry definition - as described in design doc
 void ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry,
-                                  uint64_t timestamp, uint64_t add_hotness)
+                                  uint64_t timestamp, double add_hotness)
 {
     //     printf("touches internal internal, timestamp: [%lu]\n", timestamp);
+#ifdef TOTAL_COUNTER_POLICY
+    if (entry->touchCb)
+        entry->touchCb(entry->touchCbArg);
 
+    entry->n1 += add_hotness;
+    entry->f = entry->n1;
+#else
     if (entry->touchCb)
         entry->touchCb(entry->touchCbArg);
 
@@ -162,6 +172,7 @@ void ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry,
     } else {
         //         printf("wre: hotness touch without timestamp!\n");
     }
+#endif
 }
 
 #else
@@ -252,7 +263,7 @@ void ranking_add_internal(ranking_t *ranking, const struct ttype *entry)
 
 bool ranking_is_hot_internal(ranking_t *ranking, struct ttype *entry)
 {
-    return entry->f >= ranking_get_hot_threshold_internal(ranking);
+    return entry->f > ranking_get_hot_threshold_internal(ranking);
 }
 
 size_t ranking_remove_internal_relaxed(ranking_t *ranking, const struct ttype *entry)
@@ -313,8 +324,8 @@ static void ranking_update_internal(ranking_t *ranking,
     ranking_add_internal(ranking, entry_to_update);
 }
 
-void ranking_touch_internal(ranking_t *ranking, struct ttype *entry,
-                            uint64_t timestamp, uint64_t add_hotness)
+static void ranking_touch_internal(ranking_t *ranking, struct ttype *entry,
+                                   uint64_t timestamp, double add_hotness)
 {
     //     printf("touches internal, timestamp: [%lu]\n", timestamp);
     size_t removed = ranking_remove_internal_relaxed(ranking, entry);
@@ -396,7 +407,7 @@ MEMKIND_EXPORT void ranking_update(ranking_t *ranking,
 }
 
 MEMKIND_EXPORT void ranking_touch(ranking_t *ranking, struct ttype *entry,
-                                  uint64_t timestamp, uint64_t add_hotness)
+                                  uint64_t timestamp, double add_hotness)
 {
     //     printf("touches ranking, timestamp: [%lu]\n", timestamp);
 //     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
