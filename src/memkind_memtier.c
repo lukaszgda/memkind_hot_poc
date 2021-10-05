@@ -143,6 +143,7 @@ struct memtier_memory {
                                          // threshold
     float thres_degree; // % of threshold change in case of update
     int hot_tier_id;                     // ID of "hot" tier
+    int cold_tier_id;                     // ID of "cold" tier
 
     // memtier_memory operations
     memkind_t (*get_kind)(struct memtier_memory *memory, size_t size, uint64_t *data);
@@ -363,7 +364,7 @@ memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
 
     switch (hotness) {
         case HOTNESS_COLD:
-            dest_tier = 1 - memory->hot_tier_id;
+            dest_tier = memory->cold_tier_id;
             break;
         case HOTNESS_NOT_FOUND:
             // type not registered yet, fallback to static ratio
@@ -457,6 +458,8 @@ static void print_memtier_memory(struct memtier_memory *memory)
     log_info("Threshold counter setting value %u",
              memory->thres_init_check_cnt);
     log_info("Threshold counter current value %u", memory->thres_check_cnt);
+    log_info("Hot tier ID %d", memory->hot_tier_id);
+    log_info("Cold tier ID %d", memory->cold_tier_id);
 }
 
 static void print_builder(struct memtier_builder *builder)
@@ -815,19 +818,10 @@ builder_hot_create_memory(struct memtier_builder *builder)
         memory->cfg[i].kind = builder->cfg[i].kind;
         memory->cfg[i].kind_ratio =
             builder->cfg[i].kind_ratio / ratio_sum;
-    // TODO - why this is commented out?
-//         memory->cfg[i].kind_ratio =
-//             builder->cfg[0].kind_ratio / builder->cfg[i].kind_ratio;
         if (memory->cfg[i].kind == MEMKIND_DEFAULT) {
             memory->hot_tier_id = i; // the usage of this variable might cause some confusion...
+            memory->cold_tier_id = 1-i;
         }
-    }
-
-    // TODO requires cleanup
-    memory->cfg[0].kind = builder->cfg[0].kind;
-//     memory->cfg[0].kind_ratio = 1.0;
-    if (memory->cfg[0].kind == MEMKIND_DEFAULT) {
-        memory->hot_tier_id = 0;
     }
 
     if (memory->hot_tier_id == -1) {

@@ -147,6 +147,19 @@ void realloc_block(void *addr, void *new_addr, size_t size)
     critnib_insert(addr_to_block, bln);
 }
 
+void unregister_block_from_ranking(void *addr)
+{
+    // TODO this looks like a workaround...
+    int bln = critnib_find_le(addr_to_block, (uint64_t)addr);
+    if (bln == -1) {
+        assert(false && "only existing blocks can be unregistered!"); // !!!! THIS WAS ENTERED HERE!!! THE CASE SHOULD NEVER OCCUR!!!
+        return;
+    }
+    struct ttype dummy_type = ttypes[tblocks[bln].type];
+    dummy_type.size = tblocks[bln].size; // only remove block's size
+    ranking_remove(ranking, &dummy_type);
+}
+
 void unregister_block(void *addr)
 {
     int bln = critnib_remove(addr_to_block, (intptr_t)addr);
