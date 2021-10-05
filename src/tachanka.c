@@ -131,7 +131,9 @@ void realloc_block(void *addr, void *new_addr, size_t size)
     }
     struct tblock *bl = &tblocks[bln];
 
+#if PRINT_CRITNIB_REALLOC_INFO
     log_info("realloc %p -> %p (block %d, type %d)", addr, new_addr, bln, bl->type);
+#endif
 
     bl->addr = new_addr;
     struct ttype *t = &ttypes[bl->type];

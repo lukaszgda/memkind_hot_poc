@@ -56,7 +56,7 @@ void bigary_alloc(bigary *restrict ba, size_t top)
     if (ba->top >= top) // re-check
         goto done;
     top = (top + BIGARY_PAGESIZE - 1) & ~(BIGARY_PAGESIZE - 1); // align up
-    printf("extending to %zd\n", top);
+    // printf("extending to %zd\n", top);
     if (top > ba->declared)
         die("bigary's max is %zd, %zd requested.\n", ba->declared, top);
     if (mmap(ba->area + ba->top, top - ba->top, PROT_READ|PROT_WRITE,
