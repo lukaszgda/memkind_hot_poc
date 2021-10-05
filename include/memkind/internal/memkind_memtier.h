@@ -232,11 +232,8 @@ int memtier_ctl_set(struct memtier_builder *builder, const char *name,
 // float get_obj_hotness(int size);
 
 // PEBS
-// smaller value -> more frequent sampling
-// 10000 = around 100 samples on *my machine* / sec in matmul test
-#define SAMPLE_FREQUENCY 10000
-// #define PEBS_FREQ_HZ     20.0
-#define PEBS_FREQ_HZ     5.0
+extern double sample_frequency;
+extern double pebs_freq_hz;
 #define MMAP_DATA_SIZE   8
 
 // critnib
@@ -254,11 +251,8 @@ int memtier_ctl_set(struct memtier_builder *builder, const char *name,
 #define FINALIZE_HASH 0
 
 // hotness calculation
-#define HOTNESS_MEASURE_WINDOW 1000000000ULL
-// time window is 1s
-// #define OLD_TIME_WINDOW_HOTNESS_WEIGHT 0.999
-#define OLD_TIME_WINDOW_HOTNESS_WEIGHT 0.4 // should not stay like this... only for tests and POC
-// #define OLD_TIME_WINDOW_HOTNESS_WEIGHT  0.9 // should not stay like this... only for tests and POC
+extern unsigned long long hotness_measure_window;
+extern double old_time_window_hotness_weight;
 #define RANKING_BUFFER_SIZE_ELEMENTS    1000000 // TODO make tests, add error handling and come up with some sensible value
 
 // logging

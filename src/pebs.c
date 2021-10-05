@@ -79,7 +79,7 @@ void *pebs_monitor(void *state)
 {
     ThreadState_t* pthread_state = state;
 
-    double period_ms = 1000 / PEBS_FREQ_HZ;
+    double period_ms = 1000 / pebs_freq_hz;
     struct timespec tv_period;
     timespec_millis_to_timespec(period_ms, &tv_period);
 
@@ -398,7 +398,7 @@ void pebs_init(pid_t pid)
     }
 
     pe.size = sizeof(struct perf_event_attr);
-    pe.sample_period = SAMPLE_FREQUENCY;
+    pe.sample_period = sample_frequency;
     pe.sample_type = PERF_SAMPLE_ADDR | PERF_SAMPLE_TIME;
 
     pe.precise_ip = 2; // NOTE: this is reqired but was not set
