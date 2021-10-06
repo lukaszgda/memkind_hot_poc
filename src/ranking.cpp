@@ -319,7 +319,10 @@ void ranking_remove_internal(ranking_t *ranking, const struct ttype *entry)
         if (entry->size > removed->size)
         {
             log_fatal("ranking_remove_internal: tried to removed more that added!");
+#if CRASH_ON_BLOCK_NOT_FOUND
+            assert(false && "dealloc non-allocated block!"); // TODO remove!
             assert(false && "attempt to remove non-existent data!");
+#endif
         }
         removed->size -= entry->size;
         if (removed->size == 0)
@@ -327,7 +330,10 @@ void ranking_remove_internal(ranking_t *ranking, const struct ttype *entry)
         else
             wre_put(ranking->entries, removed, removed->size);
     } else {
+#if CRASH_ON_BLOCK_NOT_FOUND
+        assert(false && "dealloc non-allocated block!"); // TODO remove!
         assert(false && "attempt to remove non-existent data!");
+#endif
     }
 }
 
