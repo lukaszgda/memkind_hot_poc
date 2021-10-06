@@ -11,6 +11,7 @@ extern "C" {
 #include <limits>
 #include <mutex>
 #include <vector>
+#include <cmath>
 
 #include "memkind/internal/memkind_private.h"
 #include "memkind/internal/memkind_log.h"
@@ -73,15 +74,15 @@ struct ranking {
 
 typedef struct AggregatedHotness {
     size_t size;
-    double hotness;
+    int quantifiedHotness;
 } AggregatedHotness_t;
 
 //--------private function implementation---------
 
 static bool is_hotter_agg_hot(const void *a, const void *b)
 {
-    double a_hot = ((AggregatedHotness_t *)a)->hotness;
-    double b_hot = ((AggregatedHotness_t *)b)->hotness;
+    int a_hot = ((AggregatedHotness_t *)a)->quantifiedHotness;
+    int b_hot = ((AggregatedHotness_t *)b)->quantifiedHotness;
     return a_hot > b_hot;
 }
 
@@ -116,7 +117,16 @@ static void ranking_touch_entry_internal(ranking_t *ranking,
 static void ranking_touch_internal(ranking_t *ranking, struct ttype *entry,
                                    uint64_t timestamp, double add_hotness);
 
+/// Reduce the number of possible hotness steps
+static int ranking_quantify_hotness(double hotness);
+
 //--------private function implementation---------
+
+static int ranking_quantify_hotness(double hotness)
+{
+    return int(log(hotness));
+}
+
 
 #if 1
 // #define TOTAL_COUNTER_POLICY // TODO added for debugging purposes
@@ -224,7 +234,7 @@ ranking_calculate_hot_threshold_dram_total_internal(ranking_t *ranking,
     AggregatedHotness_t *agg_hot = (AggregatedHotness_t *)wre_find_weighted(
         ranking->entries, dram_pmem_ratio);
     if (agg_hot) {
-        ranking->hotThreshold = agg_hot->hotness;
+        ranking->hotThreshold = exp(agg_hot->quantifiedHotness);
     }
     // TODO remove this!!!
     //     printf("wre: threshold_dram_total_internal\n");
@@ -248,7 +258,8 @@ ranking_calculate_hot_threshold_dram_pmem_internal(ranking_t *ranking,
 void ranking_add_internal(ranking_t *ranking, const struct ttype *entry)
 {
     AggregatedHotness temp;
-    temp.hotness = entry->f; // only hotness matters for lookup // TODO: rrudnick ????
+    // only hotness matters for lookup // TODO: rrudnick ????
+    temp.quantifiedHotness = ranking_quantify_hotness(entry->f);
     AggregatedHotness_t *value =
         (AggregatedHotness_t *)wre_remove(ranking->entries, &temp);
     if (value) {
@@ -257,7 +268,7 @@ void ranking_add_internal(ranking_t *ranking, const struct ttype *entry)
         //         printf("wre: hotness found, aggregates\n");
     } else {
         value = (AggregatedHotness_t *)jemk_malloc(sizeof(AggregatedHotness_t));
-        value->hotness = entry->f;
+        value->quantifiedHotness = ranking_quantify_hotness(entry->f);
         value->size = entry->size;
         //         printf("wre: hotness not found, adds\n");
     }
@@ -266,14 +277,15 @@ void ranking_add_internal(ranking_t *ranking, const struct ttype *entry)
 
 bool ranking_is_hot_internal(ranking_t *ranking, struct ttype *entry)
 {
-    return entry->f > ranking_get_hot_threshold_internal(ranking);
+    return ranking_quantify_hotness(entry->f) > ranking_get_hot_threshold_internal(ranking);
 }
 
 size_t ranking_remove_internal_relaxed(ranking_t *ranking, const struct ttype *entry)
 {
     size_t ret = 0;
     AggregatedHotness temp;
-    temp.hotness = entry->f; // only hotness matters for lookup
+    // only hotness matters for lookup
+    temp.quantifiedHotness = ranking_quantify_hotness(entry->f);
     AggregatedHotness_t *removed =
         (AggregatedHotness_t *)wre_remove(ranking->entries, &temp);
     if (removed) {
@@ -299,7 +311,8 @@ size_t ranking_remove_internal_relaxed(ranking_t *ranking, const struct ttype *e
 void ranking_remove_internal(ranking_t *ranking, const struct ttype *entry)
 {
     AggregatedHotness temp;
-    temp.hotness = entry->f; // only hotness matters for lookup
+    // only hotness matters for lookup
+    temp.quantifiedHotness = ranking_quantify_hotness(entry->f);
     AggregatedHotness_t *removed =
         (AggregatedHotness_t *)wre_remove(ranking->entries, &temp);
     if (removed) {
