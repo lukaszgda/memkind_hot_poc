@@ -26,6 +26,10 @@
 #endif
 
 #if PRINT_POLICY_LOG_STATISTICS_INFO
+#include "stdatomic.h" // TODO use built-in mechanism
+    static atomic_size_t g_memtier_free_called=0;
+    static atomic_size_t g_memtier_hotness_free_called=0;
+
     static atomic_size_t g_successful_adds=0;
     static atomic_size_t g_failed_adds=0;
     static atomic_size_t g_successful_adds_malloc=0;
@@ -1215,6 +1219,7 @@ MEMKIND_EXPORT void memtier_kind_free(memkind_t kind, void *ptr)
             return;
     }
 
+    g_memtier_free_called++;
     if (pol == MEMTIER_POLICY_DATA_HOTNESS) {
         // TODO offload to PEBS (ranking_queue) !!! Currently contains race conditions
 //         unregister_block(ptr);
@@ -1227,6 +1232,7 @@ MEMKIND_EXPORT void memtier_kind_free(memkind_t kind, void *ptr)
         };
         bool success = tachanka_ranking_event_push(&entry);
 #if PRINT_POLICY_LOG_STATISTICS_INFO
+        g_memtier_hotness_free_called++;
         if (success) {
             g_successful_adds++;
             g_successful_adds_free++;
