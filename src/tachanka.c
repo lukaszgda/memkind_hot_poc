@@ -152,7 +152,10 @@ void unregister_block_from_ranking(void *addr)
     // TODO this looks like a workaround...
     int bln = critnib_find_le(addr_to_block, (uint64_t)addr);
     if (bln == -1) {
-        assert(false && "only existing blocks can be unregistered!"); // !!!! THIS WAS ENTERED HERE!!! THE CASE SHOULD NEVER OCCUR!!!
+#if PRINT_CRITNIB_NOT_FOUND_ON_UNREGISTER_BLOCK_WARNING
+        log_info("WARNING: Tried deallocating a non-allocated block at %p", addr);
+#endif
+        assert(false && "only existing blocks can be unregistered!");
         return;
     }
     struct ttype dummy_type = ttypes[tblocks[bln].type];

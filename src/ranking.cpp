@@ -135,6 +135,9 @@ void ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry,
     if (entry->touchCb)
         entry->touchCb(entry->touchCbArg);
 
+    assert(add_hotness>=0);
+    assert(entry->n1>=0);
+    assert(entry->n2>=0);
     entry->n1 += add_hotness;
     entry->t0 = timestamp;
     if (timestamp != 0) {
