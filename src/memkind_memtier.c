@@ -373,7 +373,8 @@ memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
         case HOTNESS_NOT_FOUND:
             // type not registered yet, fallback to static ratio
             // TODO add static ratio handling in other places !!!
-            return memtier_policy_static_ratio_get_kind(memory, size, NULL);
+//             return memtier_policy_static_ratio_get_kind(memory, size, NULL);
+            dest_tier = memory->hot_tier_id;
             break; // unreachable
         case HOTNESS_HOT:
             dest_tier = memory->hot_tier_id;
