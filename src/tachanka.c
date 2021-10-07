@@ -218,14 +218,21 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
 void touch(void *addr, __u64 timestamp, int from_malloc)
 {
     int bln = critnib_find_le(addr_to_block, (uint64_t)addr);
-    if (bln == -1)
+    if (bln == -1) {
+#if PRINT_CRITNIB_NOT_FOUND_ON_TOUCH_WARNING
+        log_info("WARNING: Addr %p not in known tachanka range  %p - %p", (char*)addr,
+            (char*)bl->addr, (char*)(bl->addr + bl->size));
+#endif
+        assert(from_malloc == 0);
         return;
+    }
     struct tblock *bl = &tblocks[bln];
     if ((char*)addr >= (char*)(bl->addr + bl->size)) {
 #if PRINT_CRITNIB_NOT_FOUND_ON_TOUCH_WARNING
         log_info("WARNING: Addr %p not in known tachanka range  %p - %p", (char*)addr,
             (char*)bl->addr, (char*)(bl->addr + bl->size));
 #endif
+        assert(from_malloc == 0);
         return;
     }
 
@@ -236,18 +243,27 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
 //     {
 //         printf("tachanka touch for known area!\n");
 //     }
+    assert(bl->type >= 0);
+//     assert(bl->type > 0); TODO check if this is the case in our scenario
     struct ttype *t = &ttypes[bl->type];
     // TODO - is this thread safeness needed? or best effort will be enough?
     //__sync_fetch_and_add(&t->accesses, 1);
 
 //     int hotness =1 ;
-    size_t total_size = ttypes[bl->type].total_size;
-    double hotness = 1e16/total_size ;
-    if (from_malloc) {
-        ranking_add(ranking, bl); // first of all, add
-//         hotness=INIT_MALLOC_HOTNESS; TODO this does not work, for now
-    } else {
-        ranking_touch(ranking, t, timestamp, hotness);
+    size_t total_size = t->total_size;
+    if (total_size>0) {
+        // TODO FIXME RACE CONDITION!!!!
+        // if free is called right after alloc, before PEBS updates the values,
+        // bl might be reused and its values - OUTDATED!!!!
+        // SOLUTION: BLOCK SIZE SHOULD BE TRANSFERRED DIRECTLY!!!
+        if (from_malloc) {
+            assert(from_malloc == 1); // other case should not occur
+            ranking_add(ranking, bl); // first of all, add
+    //         hotness=INIT_MALLOC_HOTNESS; TODO this does not work, for now
+        } else {
+            double hotness = 1e16/total_size ;
+            ranking_touch(ranking, t, timestamp, hotness);
+        }
     }
 
 #if PRINT_CRITNIB_TOUCH_INFO

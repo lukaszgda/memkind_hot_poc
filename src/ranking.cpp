@@ -285,14 +285,18 @@ size_t ranking_remove_internal_relaxed(ranking_t *ranking, const struct tblock *
     temp.hotness = entry->f; // only hotness matters for lookup
     AggregatedHotness_t *removed =
         (AggregatedHotness_t *)wre_remove(ranking->entries, &temp);
+    // needs to put back as much as was removed, even if the block gets modified in the meantime // TODO mmaybe we should store a copy of the blocks?
+    // TODO handle case - what if the block looses validity/gets reallocated in the meantime ?
+    // FIXME race conditions!!! TOUCH SHOULD NOT RACE WITH THE THREAD THAT REGISTERS/UNREGISTERS BLOCKS!
+    size_t block_size = block->size;
     if (removed) {
-        if (block->size > removed->size)
+        if (block_size > removed->size)
         {
             ret = removed->size;
             removed->size = 0;
         } else {
-            ret = block->size;
-            removed->size -= block->size;
+            ret = block_size;
+            removed->size -= block_size;
         }
         if (removed->size == 0)
             jemk_free(removed);
@@ -317,7 +321,7 @@ void ranking_remove_internal(ranking_t *ranking, const struct tblock *block)
     if (removed) {
         if (block->size > removed->size)
         {
-            log_fatal("ranking_remove_internal: tried to removed more that added (%lu vs %lu)!", block->size, removed->size);
+            log_fatal("ranking_remove_internal: tried to remove more than added (%lu vs %lu)!", block->size, removed->size);
             assert(false && "attempt to remove non-existent data!");
         }
         removed->size -= block->size;

@@ -158,43 +158,48 @@ void *pebs_monitor(void *state)
             if (!pop_success)
                 break;
             switch (event.type) {
-                case EVENT_CREATE_ADD:
-                    register_block(event.data.createAddData.hash,
-                        event.data.createAddData.address,
-                        event.data.createAddData.size);
-                    touch(event.data.createAddData.address, 0, 1 /*called from malloc*/);
+                case EVENT_CREATE_ADD: {
+                    EventDataCreateAdd *data = &event.data.createAddData;
+                    register_block(data->hash, data->address, data->size);
+                    touch(data->address, 0, 1 /*called from malloc*/);
                     g_queue_counter_malloc++;
                     break;
-                case EVENT_DESTROY_REMOVE:
+                }
+                case EVENT_DESTROY_REMOVE: {
+                    EventDataDestroyRemove *data = &event.data.destroyRemoveData;
                     // REMOVE THE BLOCK FROM RANKING!!!
                     // TODO remove all the exclamation marks and clean up once this is done
-                    unregister_block_from_ranking(event.data.destroyRemoveData.address);
-                    unregister_block(event.data.destroyRemoveData.address);
+                    unregister_block_from_ranking(data->address);
+                    unregister_block(data->address);
                     g_queue_counter_free++;
                     break;
-                case EVENT_REALLOC:
-                    unregister_block_from_ranking(event.data.reallocData.addressOld);
-                    realloc_block(event.data.reallocData.addressOld,
-                        event.data.reallocData.addressNew,
-                        event.data.reallocData.size);
-                    touch(event.data.reallocData.addressNew, 0, 1 /*called from malloc*/);
+                }
+                case EVENT_REALLOC: {
+                    EventDataRealloc *data = &event.data.reallocData;
+                    unregister_block_from_ranking(data->addressOld);
+                    realloc_block(data->addressOld, data->addressNew, data->size);
+                    touch(data->addressNew, 0, 1 /*called from malloc*/);
                     g_queue_counter_realloc++;
                     break;
-                case EVENT_SET_TOUCH_CALLBACK:
-                    tachanka_set_touch_callback(
-                        event.data.touchCallbackData.address,
-                        event.data.touchCallbackData.callback,
-                        event.data.touchCallbackData.callbackArg);
+                }
+                case EVENT_SET_TOUCH_CALLBACK: {
+                    EventDataSetTouchCallback *data = &event.data.touchCallbackData;
+                    tachanka_set_touch_callback(data->address,
+                                                data->callback,
+                                                data->callbackArg);
                     g_queue_counter_callback++;
                     break;
-                case EVENT_TOUCH:
-                    touch(event.data.touchData.address,
-                        event.data.touchData.timestamp, 0 /*called from malloc*/);
+                }
+                case EVENT_TOUCH: {
+                    EventDataTouch *data = &event.data.touchData;
+                    touch(data->address, data->timestamp, 0 /*called from malloc*/);
                     g_queue_counter_touch++;
                     break;
-                default:
+                }
+                default: {
                     log_fatal("PEBS: event queue - case not implemented!");
                     exit(-1);
+                }
             }
             g_queue_pop_counter++;
         }

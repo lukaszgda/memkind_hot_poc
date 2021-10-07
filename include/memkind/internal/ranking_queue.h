@@ -33,12 +33,16 @@ typedef struct EventDataRealloc {
     void *addressOld;
     void *addressNew;
     size_t size;
+    // TODO sizeNew and sizeOld!!! both are required to correctly update ranking!
 } EventDataRealloc;
 
 typedef struct EventDataCreateAdd {
     uint64_t hash;
     void *address;
     size_t size;
+    // TODO use size in TOUCH!!!
+    // idea: pass it instead of FROM_MALLOC parameter:
+    // nonzero-> from_malloc, size; zero: pebs touch, not from malloc!
 } EventDataCreateAdd;
 
 typedef struct EventDataSetTouchCallback {
