@@ -157,8 +157,7 @@ void unregister_block_from_ranking(void *addr)
     }
     struct ttype dummy_type = ttypes[tblocks[bln].type];
     dummy_type.size = tblocks[bln].size; // only remove block's size
-    (void)dummy_type;
-//     ranking_remove(ranking, &dummy_type);
+    ranking_remove(ranking, &dummy_type);
 }
 
 void unregister_block(void *addr)

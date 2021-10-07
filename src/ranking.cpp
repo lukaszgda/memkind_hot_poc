@@ -258,7 +258,10 @@ void ranking_add_internal(ranking_t *ranking, const struct ttype *entry)
         value->size = entry->size;
         //         printf("wre: hotness not found, adds\n");
     }
-    wre_put(ranking->entries, value, value->size);
+    if (value->size > 0)
+        wre_put(ranking->entries, value, value->size);
+    else
+        jemk_free(value);
 }
 
 bool ranking_is_hot_internal(ranking_t *ranking, struct ttype *entry)
@@ -310,9 +313,12 @@ void ranking_remove_internal(ranking_t *ranking, const struct ttype *entry)
             jemk_free(removed);
         else
             wre_put(ranking->entries, removed, removed->size);
-    } else {
-        assert(false && "attempt to remove non-existent data!");
     }
+    // else {
+        // attempt was made to remove entry with 0 size
+        // such entries are not added to ranking
+        // but this is a case of successful operation
+    //}
 }
 
 static void ranking_update_internal(ranking_t *ranking,
@@ -328,7 +334,10 @@ static void ranking_touch_internal(ranking_t *ranking, struct ttype *entry,
                                    uint64_t timestamp, double add_hotness)
 {
     //     printf("touches internal, timestamp: [%lu]\n", timestamp);
-    size_t removed = ranking_remove_internal_relaxed(ranking, entry);
+    struct ttype dummy_entry = *entry;
+    dummy_entry.size = dummy_entry.total_size; // whole entry is touched
+    size_t removed = ranking_remove_internal_relaxed(ranking, &dummy_entry);
+    // touch true entry
     ranking_touch_entry_internal(ranking, entry, timestamp, add_hotness);
     struct ttype entry_cpy = *entry;
     entry_cpy.size = removed; // update size - add only as much as was removed

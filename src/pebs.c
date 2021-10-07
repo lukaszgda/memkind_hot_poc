@@ -176,6 +176,7 @@ void *pebs_monitor(void *state)
                     realloc_block(event.data.reallocData.addressOld,
                         event.data.reallocData.addressNew,
                         event.data.reallocData.size);
+                    touch(event.data.reallocData.addressNew, 0, 1 /*called from malloc*/);
                     g_queue_counter_realloc++;
                     break;
                 case EVENT_SET_TOUCH_CALLBACK:
