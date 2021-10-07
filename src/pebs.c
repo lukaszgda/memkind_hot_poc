@@ -168,7 +168,7 @@ void *pebs_monitor(void *state)
                 case EVENT_DESTROY_REMOVE:
                     // REMOVE THE BLOCK FROM RANKING!!!
                     // TODO remove all the exclamation marks and clean up once this is done
-//                     unregister_block_from_ranking(event.data.destroyRemoveData.address);
+                    unregister_block_from_ranking(event.data.destroyRemoveData.address);
                     unregister_block(event.data.destroyRemoveData.address);
                     g_queue_counter_free++;
                     break;
