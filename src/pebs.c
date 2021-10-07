@@ -173,6 +173,7 @@ void *pebs_monitor(void *state)
                     g_queue_counter_free++;
                     break;
                 case EVENT_REALLOC:
+                    unregister_block_from_ranking(event.data.reallocData.addressOld);
                     realloc_block(event.data.reallocData.addressOld,
                         event.data.reallocData.addressNew,
                         event.data.reallocData.size);

@@ -307,9 +307,9 @@ size_t ranking_remove_internal_relaxed(ranking_t *ranking, const struct tblock *
 
 void ranking_remove_internal(ranking_t *ranking, const struct tblock *block)
 {
-    int tindx = block->type;
-    assert(tindx != -1 && "invalid ttype!");
-    struct ttype *entry = &ttypes[tindx];
+    int tidx = block->type;
+    assert(tidx != -1 && "invalid ttype!");
+    struct ttype *entry = &ttypes[tidx];
     AggregatedHotness temp;
     temp.hotness = entry->f; // only hotness matters for lookup
     AggregatedHotness_t *removed =

@@ -26,6 +26,7 @@
 #endif
 
 #if PRINT_POLICY_LOG_STATISTICS_INFO
+#include <stdatomic.h>
     static atomic_size_t g_successful_adds=0;
     static atomic_size_t g_failed_adds=0;
     static atomic_size_t g_successful_adds_malloc=0;
@@ -1137,6 +1138,7 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
     void *n_ptr = memkind_realloc(kind, ptr, size);
     if (pol == MEMTIER_POLICY_DATA_HOTNESS) {
         // TODO offload to separate thread
+        // TODO this case is incorrect - we should have a different type and a new hash...
         EventEntry_t entry = {
             .type = EVENT_REALLOC,
             .data.reallocData = {
