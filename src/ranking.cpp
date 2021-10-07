@@ -16,6 +16,10 @@ extern "C" {
 #include "memkind/internal/memkind_log.h"
 #include "memkind/internal/memkind_memtier.h"
 
+// TODO extern ttypes cannot stay like that!!!
+// this should be fixed once custom allocator is created
+extern struct ttype *ttypes;
+
 // #define THREAD_SAFE
 // #define THREAD_CHECKER
 
@@ -87,16 +91,18 @@ static bool is_hotter_agg_hot(const void *a, const void *b)
 
 static void ranking_create_internal(ranking_t **ranking, double old_weight);
 static void ranking_destroy_internal(ranking_t *ranking);
-static void ranking_add_internal(ranking_t *ranking, const struct ttype *entry);
+static void ranking_add_internal(ranking_t *ranking, const struct tblock *block);
 /// Attempt to remove from ranking the entry
 /// If entry does not exist or has insufficient size,
 /// remove all that can be removed and return the removed size
 ///
 /// @return the size that was actually removed
+/// @warning @todo remove @p entry !!! Can be done once custom allocator is ready
 static size_t ranking_remove_internal_relaxed(ranking_t *ranking,
+                                              const struct tblock *block,
                                               const struct ttype *entry);
 static void ranking_remove_internal(ranking_t *ranking,
-                                    const struct ttype *entry);
+                                    const struct tblock *block);
 static double ranking_get_hot_threshold_internal(ranking_t *ranking);
 static double
 ranking_calculate_hot_threshold_dram_total_internal(ranking_t *ranking,
@@ -105,9 +111,9 @@ static double
 ranking_calculate_hot_threshold_dram_pmem_internal(ranking_t *ranking,
                                                    double dram_pmem_ratio);
 static bool ranking_is_hot_internal(ranking_t *ranking, struct ttype *entry);
-static void ranking_update_internal(ranking_t *ranking,
-                                    struct ttype *entry_to_update,
-                                    const struct ttype *updated_values);
+// static void ranking_update_internal(ranking_t *ranking,
+//                                     struct ttype *entry_to_update,
+//                                     const struct ttype *updated_values);
 static void ranking_touch_entry_internal(ranking_t *ranking,
                                          struct ttype *entry,
                                          uint64_t timestamp,
@@ -242,20 +248,23 @@ ranking_calculate_hot_threshold_dram_pmem_internal(ranking_t *ranking,
     return ranking_calculate_hot_threshold_dram_total_internal(ranking, ratio);
 }
 
-void ranking_add_internal(ranking_t *ranking, const struct ttype *entry)
+void ranking_add_internal(ranking_t *ranking, const struct tblock *block)
 {
+    int tidx = block->type;
+    assert(tidx != -1 && tidx >=0 && "tidx invalid!");
+    struct ttype *entry = &ttypes[tidx];
     AggregatedHotness temp;
     temp.hotness = entry->f; // only hotness matters for lookup // TODO: rrudnick ????
     AggregatedHotness_t *value =
         (AggregatedHotness_t *)wre_remove(ranking->entries, &temp);
     if (value) {
         // value with the same hotness is already there, should be aggregated
-        value->size += entry->size;
+        value->size += block->size;
         //         printf("wre: hotness found, aggregates\n");
     } else {
         value = (AggregatedHotness_t *)jemk_malloc(sizeof(AggregatedHotness_t));
         value->hotness = entry->f;
-        value->size = entry->size;
+        value->size = block->size;
         //         printf("wre: hotness not found, adds\n");
     }
     if (value->size > 0)
@@ -269,7 +278,7 @@ bool ranking_is_hot_internal(ranking_t *ranking, struct ttype *entry)
     return entry->f > ranking_get_hot_threshold_internal(ranking);
 }
 
-size_t ranking_remove_internal_relaxed(ranking_t *ranking, const struct ttype *entry)
+size_t ranking_remove_internal_relaxed(ranking_t *ranking, const struct tblock *block, const struct ttype *entry)
 {
     size_t ret = 0;
     AggregatedHotness temp;
@@ -277,13 +286,13 @@ size_t ranking_remove_internal_relaxed(ranking_t *ranking, const struct ttype *e
     AggregatedHotness_t *removed =
         (AggregatedHotness_t *)wre_remove(ranking->entries, &temp);
     if (removed) {
-        if (entry->size > removed->size)
+        if (block->size > removed->size)
         {
             ret = removed->size;
             removed->size = 0;
         } else {
-            ret = entry->size;
-            removed->size -= entry->size;
+            ret = block->size;
+            removed->size -= block->size;
         }
         if (removed->size == 0)
             jemk_free(removed);
@@ -296,19 +305,22 @@ size_t ranking_remove_internal_relaxed(ranking_t *ranking, const struct ttype *e
     return ret;
 }
 
-void ranking_remove_internal(ranking_t *ranking, const struct ttype *entry)
+void ranking_remove_internal(ranking_t *ranking, const struct tblock *block)
 {
+    int tindx = block->type;
+    assert(tindx != -1 && "invalid ttype!");
+    struct ttype *entry = &ttypes[tindx];
     AggregatedHotness temp;
     temp.hotness = entry->f; // only hotness matters for lookup
     AggregatedHotness_t *removed =
         (AggregatedHotness_t *)wre_remove(ranking->entries, &temp);
     if (removed) {
-        if (entry->size > removed->size)
+        if (block->size > removed->size)
         {
             log_fatal("ranking_remove_internal: tried to removed more that added!");
             assert(false && "attempt to remove non-existent data!");
         }
-        removed->size -= entry->size;
+        removed->size -= block->size;
         if (removed->size == 0)
             jemk_free(removed);
         else
@@ -321,27 +333,37 @@ void ranking_remove_internal(ranking_t *ranking, const struct ttype *entry)
     //}
 }
 
-static void ranking_update_internal(ranking_t *ranking,
-                                    struct ttype *entry_to_update,
-                                    const struct ttype *updated_values)
-{
-    ranking_remove_internal(ranking, entry_to_update);
-    memcpy(entry_to_update, updated_values, sizeof(*entry_to_update));
-    ranking_add_internal(ranking, entry_to_update);
-}
+// static void ranking_update_internal(ranking_t *ranking,
+//                                     struct ttype *entry_to_update,
+//                                     const struct ttype *updated_values)
+// {
+//     ranking_remove_internal(ranking, entry_to_update);
+//     memcpy(entry_to_update, updated_values, sizeof(*entry_to_update));
+//     ranking_add_internal(ranking, entry_to_update);
+// }
 
 static void ranking_touch_internal(ranking_t *ranking, struct ttype *entry,
                                    uint64_t timestamp, double add_hotness)
 {
     //     printf("touches internal, timestamp: [%lu]\n", timestamp);
-    struct ttype dummy_entry = *entry;
-    dummy_entry.size = dummy_entry.total_size; // whole entry is touched
-    size_t removed = ranking_remove_internal_relaxed(ranking, &dummy_entry);
+    struct tblock dummy_block;
+//     = *entry;
+    dummy_block.size = entry->total_size; // whole entry is touched
+    size_t removed = ranking_remove_internal_relaxed(ranking, &dummy_block, entry);
     // touch true entry
     ranking_touch_entry_internal(ranking, entry, timestamp, add_hotness);
-    struct ttype entry_cpy = *entry;
-    entry_cpy.size = removed; // update size - add only as much as was removed
-    ranking_add_internal(ranking, &entry_cpy);
+    // WARNING HACK AHEAD
+    // to be corrected once custom allocator is ready!!!
+    // we use ttypes[0] as a temporary block, because it is unused
+    // seriously, just write allocator and use pointer to ttype in block
+    // bofore someone gets hurt by this mess !
+    struct ttype *temp = &ttypes[0];
+    *temp = *entry;
+    dummy_block.size = removed; // update size - add as much as was removed
+    dummy_block.type=0;
+    // TODO we should directly add AggregatedHotness here, not tblock!
+    // idea: create separate function and use current functions as wrappers
+    ranking_add_internal(ranking, &dummy_block);
 }
 
 //--------public function implementation---------
@@ -383,11 +405,11 @@ ranking_calculate_hot_threshold_dram_pmem(ranking_t *ranking,
                                                               dram_pmem_ratio);
 }
 
-MEMKIND_EXPORT void ranking_add(ranking_t *ranking, struct ttype *entry)
+MEMKIND_EXPORT void ranking_add(ranking_t *ranking, struct tblock *block)
 {
 //     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
     RANKING_LOCK_GUARD(ranking);
-    ranking_add_internal(ranking, entry);
+    ranking_add_internal(ranking, block);
 }
 
 MEMKIND_EXPORT bool ranking_is_hot(ranking_t *ranking, struct ttype *entry)
@@ -399,21 +421,20 @@ MEMKIND_EXPORT bool ranking_is_hot(ranking_t *ranking, struct ttype *entry)
 }
 
 MEMKIND_EXPORT void ranking_remove(ranking_t *ranking,
-                                   const struct ttype *entry)
+                                   const struct tblock *block)
 {
 //     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
     RANKING_LOCK_GUARD(ranking);
-    ranking_remove_internal(ranking, entry);
+    ranking_remove_internal(ranking, block);
 }
 
-MEMKIND_EXPORT void ranking_update(ranking_t *ranking,
-                                   struct ttype *entry_to_update,
-                                   const struct ttype *updated_value)
-{
-//     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
-    RANKING_LOCK_GUARD(ranking);
-    ranking_update_internal(ranking, entry_to_update, updated_value);
-}
+// MEMKIND_EXPORT void ranking_update(ranking_t *ranking,
+//                                    struct ttype *entry_to_update,
+//                                    const struct ttype *updated_value)
+// {
+//     RANKING_LOCK_GUARD(ranking);
+//     ranking_update_internal(ranking, entry_to_update, updated_value);
+// }
 
 MEMKIND_EXPORT void ranking_touch(ranking_t *ranking, struct ttype *entry,
                                   uint64_t timestamp, double add_hotness)

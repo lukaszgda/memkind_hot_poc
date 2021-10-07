@@ -57,7 +57,6 @@ void register_block(uint64_t hash, void *addr, size_t size)
             exit(-1);
         }
         t->hash = hash;
-        t->size = size;
         t->total_size = 0; // will be incremented later
         t->timestamp_state = TIMESTAMP_NOT_SET;
         if (critnib_insert(hash_to_type, nt) == EEXIST) {
@@ -155,9 +154,7 @@ void unregister_block_from_ranking(void *addr)
         assert(false && "only existing blocks can be unregistered!"); // !!!! THIS WAS ENTERED HERE!!! THE CASE SHOULD NEVER OCCUR!!!
         return;
     }
-    struct ttype dummy_type = ttypes[tblocks[bln].type];
-    dummy_type.size = tblocks[bln].size; // only remove block's size
-    ranking_remove(ranking, &dummy_type);
+    ranking_remove(ranking, &tblocks[bln]);
 }
 
 void unregister_block(void *addr)
@@ -247,7 +244,7 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
     size_t total_size = ttypes[bl->type].total_size;
     double hotness = 1e16/total_size ;
     if (from_malloc) {
-        ranking_add(ranking, t); // first of all, add
+        ranking_add(ranking, bl); // first of all, add
 //         hotness=INIT_MALLOC_HOTNESS; TODO this does not work, for now
     } else {
         ranking_touch(ranking, t, timestamp, hotness);
@@ -326,7 +323,7 @@ static double _hotness;
 
 static int size_hotness(int nt)
 {
-    if (ttypes[nt].size == _size) {
+    if (ttypes[nt].total_size == _size) {
         _hotness = ttypes[nt].f;
         return 1;
     }

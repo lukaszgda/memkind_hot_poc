@@ -46,7 +46,6 @@ bool tachanka_ranking_event_pop(EventEntry_t *event);
 
 struct ttype {
     uint64_t hash;
-    size_t size;
     int num_allocs; // TODO
     int total_size; // TODO
 
@@ -69,7 +68,7 @@ struct ttype {
 struct tblock
 {
     void *addr;
-    ssize_t size;
+    size_t size;
     int type;
     int nextfree; // can reuse one of other fields
 };
