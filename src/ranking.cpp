@@ -317,7 +317,7 @@ void ranking_remove_internal(ranking_t *ranking, const struct tblock *block)
     if (removed) {
         if (block->size > removed->size)
         {
-            log_fatal("ranking_remove_internal: tried to removed more that added!");
+            log_fatal("ranking_remove_internal: tried to removed more that added (%lu vs %lu)!", block->size, removed->size);
             assert(false && "attempt to remove non-existent data!");
         }
         removed->size -= block->size;
@@ -326,11 +326,12 @@ void ranking_remove_internal(ranking_t *ranking, const struct tblock *block)
         else
             wre_put(ranking->entries, removed, removed->size);
     }
-    // else {
+    else {
         // attempt was made to remove entry with 0 size
         // such entries are not added to ranking
         // but this is a case of successful operation
-    //}
+        assert(block->size == 0u);
+    }
 }
 
 // static void ranking_update_internal(ranking_t *ranking,
