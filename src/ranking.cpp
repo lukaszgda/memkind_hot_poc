@@ -16,6 +16,8 @@ extern "C" {
 #include "memkind/internal/memkind_log.h"
 #include "memkind/internal/memkind_memtier.h"
 
+#define abs(x) ((x) >= 0 ? (x) : -(x))
+
 // TODO extern ttypes cannot stay like that!!!
 // this should be fixed once custom allocator is created
 extern struct ttype *ttypes;
@@ -126,6 +128,34 @@ static void ranking_touch_internal(ranking_t *ranking, struct ttype *entry,
 
 //--------private function implementation---------
 
+
+// TODO clean up and move elsewhere
+static size_t wre_calculate_subtree_size(wre_node_t *node) {
+    size_t ret=0;
+    if (node) {
+        ret += wre_calculate_subtree_size(node->left);
+        ret += wre_calculate_subtree_size(node->right);
+        ret += node->ownWeight;
+        assert(ret == node->subtreeWeight);
+        size_t max_subheight=0;
+        int max_subheight_left=0;
+        int max_subheight_right=0;
+        if (node->left) {
+            assert(node->left->which == LEFT_NODE);
+            max_subheight_left = node->left->height + 1;
+        }
+        if (node->right) {
+            assert(node->right->which == RIGHT_NODE);
+            max_subheight_right = node->right->height + 1;
+        }
+        max_subheight = max(max_subheight_left, max_subheight_right);
+        assert(max_subheight == node->height);
+        assert(abs(max_subheight_left-max_subheight_right) < 2);
+    }
+    return ret;
+}
+
+
 #if 1
 // #define TOTAL_COUNTER_POLICY // TODO added for debugging purposes
 // old touch entry definition - as described in design doc
@@ -180,6 +210,9 @@ void ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry,
     } else {
         //         printf("wre: hotness touch without timestamp!\n");
     }
+    assert(entry->f >= 0);
+    assert(entry->n1 >= 0);
+//     assert(entry->n0 >= 0);
 #endif
 }
 
@@ -302,11 +335,19 @@ bool ranking_is_hot_internal(ranking_t *ranking, struct ttype *entry)
 
 static size_t ranking_remove_internal_relaxed(ranking_t *ranking, const struct ttype *entry)
 {
+    // TODO there is probably a problem somewhere in here!!!
+    // wre_avl_tree looses integrity!!!
     size_t ret = 0;
     AggregatedHotness temp;
     temp.hotness = entry->f; // only hotness matters for lookup
+#ifdef CHECK_ADDED_SIZE
+    (void)ranking_calculate_total_size(ranking); // only for asserts
+#endif
     AggregatedHotness_t *removed =
         (AggregatedHotness_t *)wre_remove(ranking->entries, &temp);
+#ifdef CHECK_ADDED_SIZE
+    (void)ranking_calculate_total_size(ranking); // only for asserts
+#endif
     // needs to put back as much as was removed,
     // even if the entry gets modified in the meantime
     size_t block_size = entry->total_size;
@@ -321,12 +362,19 @@ static size_t ranking_remove_internal_relaxed(ranking_t *ranking, const struct t
         }
         if (removed->size == 0)
             jemk_free(removed);
-        else
+        else {
             wre_put(ranking->entries, removed, removed->size);
+#ifdef CHECK_ADDED_SIZE
+    (void)ranking_calculate_total_size(ranking); // only for asserts
+#endif
+        }
     } else {
         assert(entry->total_size == 0);
         ret = 0; // defensive programming - nothing found, nothing removed
     }
+#ifdef CHECK_ADDED_SIZE
+    (void)ranking_calculate_total_size(ranking); // only for asserts
+#endif
 
     return ret;
 }
@@ -365,15 +413,28 @@ void ranking_remove_internal(ranking_t *ranking, double hotness, size_t size)
 //     memcpy(entry_to_update, updated_values, sizeof(*entry_to_update));
 //     ranking_add_internal(ranking, entry_to_update);
 // }
-
+// TODO cleanup
+#define CHECK_ADDED_SIZE
 static void ranking_touch_internal(ranking_t *ranking, struct ttype *entry,
                                    uint64_t timestamp, double add_hotness)
 {
+#ifdef CHECK_ADDED_SIZE
+    (void)ranking_calculate_total_size(ranking); // only for asserts
+#endif
     size_t removed = ranking_remove_internal_relaxed(ranking, entry);
+#ifdef CHECK_ADDED_SIZE
+    (void)ranking_calculate_total_size(ranking); // only for asserts
+#endif
     // touch true entry
     ranking_touch_entry_internal(ranking, entry, timestamp, add_hotness);
+#ifdef CHECK_ADDED_SIZE
+    (void)ranking_calculate_total_size(ranking); // only for asserts
+#endif
     // add data back to ranking - as much as was removed
     ranking_add_internal(ranking, entry->f, removed);
+#ifdef CHECK_ADDED_SIZE
+    (void)ranking_calculate_total_size(ranking); // only for asserts
+#endif
 }
 
 //--------public function implementation---------
@@ -468,19 +529,6 @@ MEMKIND_EXPORT void ranking_set_touch_callback(ranking_t *ranking,
     RANKING_LOCK_GUARD(ranking);
     type->touchCb = cb;
     type->touchCbArg = arg;
-}
-
-// TODO clean up and move elsewhere
-
-static size_t wre_calculate_subtree_size(wre_node_t *node) {
-    size_t ret=0;
-    if (node) {
-        ret += wre_calculate_subtree_size(node->left);
-        ret += wre_calculate_subtree_size(node->right);
-        ret += node->ownWeight;
-        assert(ret == node->subtreeWeight);
-    }
-    return ret;
 }
 
 MEMKIND_EXPORT size_t ranking_calculate_total_size(ranking_t *ranking) {

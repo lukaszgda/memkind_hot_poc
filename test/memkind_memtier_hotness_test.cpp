@@ -285,9 +285,9 @@ private:
         ranking_create(&ranking, 0.9);
 
         for (size_t i=0; i<BLOCKS_SIZE; ++i) {
-            blocks[i].size=BLOCKS_SIZE-i;
+            blocks[i].num_allocs=BLOCKS_SIZE-i;
             blocks[i].f=i;
-            ranking_add(ranking, &blocks[i]);
+            ranking_add(ranking, blocks[i].f,  blocks[i].num_allocs);
         }
 
     }
@@ -308,10 +308,9 @@ TEST_F(RankingTest, check_hotness_highest) {
     ASSERT_EQ(thresh_highest, thresh_highest_pmem); // double for equality
     ASSERT_EQ(thresh_highest, BLOCKS_SIZE-1);
     ASSERT_EQ(thresh_highest, 99);
-    for (size_t i=0; i<BLOCKS_SIZE-1; ++i) {
+    for (size_t i=0; i<BLOCKS_SIZE; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
     }
-    ASSERT_EQ(ranking_is_hot(ranking, &blocks[BLOCKS_SIZE-1]), true);
 }
 
 TEST_F(RankingTest, check_hotness_lowest) {
@@ -324,7 +323,8 @@ TEST_F(RankingTest, check_hotness_lowest) {
             ranking, std::numeric_limits<double>::max());
     ASSERT_EQ(thresh_lowest, thresh_lowest_pmem); // double for equality
     ASSERT_EQ(thresh_lowest, 0);
-    for (size_t i=0; i<BLOCKS_SIZE; ++i) {
+    ASSERT_EQ(ranking_is_hot(ranking, &blocks[0]), false);
+    for (size_t i=1; i<BLOCKS_SIZE; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
     }
 }
@@ -348,10 +348,10 @@ TEST_F(RankingTest, check_hotness_50_50) {
         ranking_calculate_hot_threshold_dram_pmem(ranking, 1);
     ASSERT_EQ(thresh_equal, thresh_equal_pmem);
     ASSERT_EQ(thresh_equal, 29);
-    for (size_t i=0; i<29; ++i) {
+    for (size_t i=0; i<30; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
     }
-    for (size_t i=29; i<100; ++i) {
+    for (size_t i=30; i<100; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
     }
     ASSERT_EQ(BLOCKS_SIZE, 100u);
@@ -360,7 +360,7 @@ TEST_F(RankingTest, check_hotness_50_50) {
 TEST_F(RankingTest, check_hotness_50_50_removed) {
     const size_t SUBSIZE=10u;
     for (size_t i=SUBSIZE; i<BLOCKS_SIZE; ++i) {
-        ranking_remove(ranking, &blocks[i]);
+        ranking_remove(ranking, blocks[i].f, blocks[i].num_allocs);
     }
     double RATIO_EQUAL_TOTAL=0.5;
     double RATIO_EQUAL_PMEM=1;
@@ -374,10 +374,10 @@ TEST_F(RankingTest, check_hotness_50_50_removed) {
     // 100, 199, 297, 394, 490 <- this is the one we are looking for
     ASSERT_EQ(thresh_equal, 4);
     ASSERT_EQ(thresh_equal, thresh_equal_pmem);
-    for (size_t i=0; i<4; ++i) {
+    for (size_t i=0; i<5; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
     }
-    for (size_t i=4; i<10; ++i) {
+    for (size_t i=5; i<10; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
     }
     ASSERT_EQ(BLOCKS_SIZE, 100u);
@@ -396,9 +396,9 @@ private:
         ranking_create(&ranking, 0.9);
 
         for (size_t i=0; i<BLOCKS_SIZE; ++i) {
-            blocks[i].size=BLOCKS_SIZE-i;
+            blocks[i].num_allocs=BLOCKS_SIZE-i;
             blocks[i].f=i%50;
-            ranking_add(ranking, &blocks[i]);
+            ranking_add(ranking, blocks[i].f, blocks[i].num_allocs);
         }
 
     }
@@ -420,10 +420,10 @@ TEST_F(RankingTestSameHotness, check_hotness_highest) {
     ASSERT_EQ(thresh_highest, (BLOCKS_SIZE-1)%50);
     ASSERT_EQ(thresh_highest, 49);
     ASSERT_EQ(thresh_highest, thresh_highest_pmem);
-    for (size_t i=0; i<BLOCKS_SIZE-1; ++i) {
-        ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), i==49);
+    for (size_t i=0; i<BLOCKS_SIZE; ++i) {
+        ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
     }
-    ASSERT_EQ(ranking_is_hot(ranking, &blocks[BLOCKS_SIZE-1]), true);
+//     ASSERT_EQ(ranking_is_hot(ranking, &blocks[BLOCKS_SIZE-1]), true);
 }
 
 TEST_F(RankingTestSameHotness, check_hotness_lowest) {
@@ -435,7 +435,7 @@ TEST_F(RankingTestSameHotness, check_hotness_lowest) {
     ASSERT_EQ(thresh_lowest, 0);
     ASSERT_EQ(thresh_lowest, thresh_lowest_pmem);
     for (size_t i=0; i<BLOCKS_SIZE; ++i) {
-        ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
+        ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), i%50 != 0);
     }
 }
 
@@ -457,16 +457,16 @@ TEST_F(RankingTestSameHotness, check_hotness_50_50) {
         ranking, RATIO_EQUAL_PMEM);
     ASSERT_EQ(thresh_equal, 19);
     ASSERT_EQ(thresh_equal, thresh_equal_pmem);
-    for (size_t i=0; i<19; ++i) {
+    for (size_t i=0; i<20; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
     }
-    for (size_t i=19; i<50; ++i) {
+    for (size_t i=20; i<50; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
     }
-    for (size_t i=50; i<69; ++i) {
+    for (size_t i=50; i<70; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
     }
-    for (size_t i=69; i<100; ++i) {
+    for (size_t i=70; i<100; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
     }
     ASSERT_EQ(BLOCKS_SIZE, 100u);
@@ -475,7 +475,7 @@ TEST_F(RankingTestSameHotness, check_hotness_50_50) {
 TEST_F(RankingTestSameHotness, check_hotness_50_50_removed) {
     const size_t SUBSIZE=10u;
     for (size_t i=SUBSIZE; i<BLOCKS_SIZE; ++i) {
-        ranking_remove(ranking, &blocks[i]);
+        ranking_remove(ranking, blocks[i].f, blocks[i].num_allocs);
     }
     double RATIO_EQUAL_TOTAL=0.5;
     double RATIO_EQUAL_PMEM=1;
@@ -489,10 +489,10 @@ TEST_F(RankingTestSameHotness, check_hotness_50_50_removed) {
     // 100, 199, 297, 394, 490 <- this is the one we are looking for
     ASSERT_EQ(thresh_equal, 4);
     ASSERT_EQ(thresh_equal, thresh_equal_pmem);
-    for (size_t i=0; i<4; ++i) {
+    for (size_t i=0; i<5; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
     }
-    for (size_t i=4; i<10; ++i) {
+    for (size_t i=5; i<10; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
     }
     ASSERT_EQ(BLOCKS_SIZE, 100u);

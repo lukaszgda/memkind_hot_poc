@@ -55,8 +55,8 @@ struct ttype {
     __u64 t1;   // start of current window
     __u64 t0;   // timestamp of last processed data
 
-    int n2;   // num of access in prev window
-    int n1;   // num of access in current window
+    double n2;   // add hotness in prev window
+    double n1;   // add hotness in current window
 
     tachanka_touch_callback touchCb;
     void *touchCbArg;
