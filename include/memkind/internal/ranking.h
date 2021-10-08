@@ -24,9 +24,7 @@ typedef struct ranking ranking_t;
 ///     - (1 - @p old_weight) is the weight of current frequency
 extern void ranking_create(ranking_t **ranking, double old_weight);
 extern void ranking_destroy(ranking_t *ranking);
-/// @p block ownership stays with the caller
-/// @p block should not be freed until it is removed from ranking
-extern void ranking_add(ranking_t *ranking, struct tblock *block);
+extern void ranking_add(ranking_t *ranking, double hotness, size_t size);
 /// @p entry ownership stays with the caller
 /// @p entry should not be freed until it is removed from ranking
 /// @pre @p entry should already be added to ranking
@@ -36,9 +34,7 @@ extern void ranking_add(ranking_t *ranking, struct tblock *block);
 /// malloc, not pebs), value "0" can be passed - timestamp will be ignored
 extern void ranking_touch(ranking_t *ranking, struct ttype *entry,
                           uint64_t timestamp, double add_hotness);
-/// @p block ownership stays with the caller
-/// @p block should not be freed until it is removed from ranking
-extern void ranking_remove(ranking_t *ranking, const struct tblock *block);
+extern void ranking_remove(ranking_t *ranking, double hotness, size_t size);
 
 // --- extended API ---
 /// @brief atomically update values of @p entry_to_update with values from @p

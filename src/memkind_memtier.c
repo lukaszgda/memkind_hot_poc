@@ -1099,7 +1099,9 @@ MEMKIND_EXPORT void *memtier_realloc(struct memtier_memory *memory, void *ptr,
 MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
                                           size_t size)
 {
+    size_t old_size = 0u;
     if (size == 0 && ptr != NULL) {
+        old_size = jemk_malloc_usable_size(ptr);
 #ifdef MEMKIND_DECORATION_ENABLED
         if (memtier_kind_free_pre)
             memtier_kind_free_pre(&ptr);
@@ -1111,6 +1113,7 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
                 .type = EVENT_DESTROY_REMOVE,
                 .data.destroyRemoveData = {
                 .address = ptr,
+                .size = old_size,
                 }
             };
 
@@ -1127,24 +1130,45 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
             (void)success;
 #endif
         }
-        decrement_alloc_size(kind->partition, jemk_malloc_usable_size(ptr));
+        decrement_alloc_size(kind->partition, old_size);
         memkind_free(kind, ptr);
         return NULL;
     } else if (ptr == NULL) {
+            EventEntry_t entry = {
+                .type = EVENT_CREATE_ADD,
+                .data.createAddData = {
+                    .address = ptr,
+                    .size = size,
+                }
+            };
+
+            bool success = tachanka_ranking_event_push(&entry);
+#if PRINT_POLICY_LOG_STATISTICS_INFO
+            if (success) {
+                g_successful_adds++;
+                g_successful_adds_realloc0++;
+            } else {
+                g_failed_adds++;
+                g_failed_adds_realloc0++;
+            }
+#else
+        (void)success;
+#endif
         return memtier_kind_malloc(kind, size);
     }
-    decrement_alloc_size(kind->partition, jemk_malloc_usable_size(ptr));
+    decrement_alloc_size(kind->partition, old_size);
 
     void *n_ptr = memkind_realloc(kind, ptr, size);
     if (pol == MEMTIER_POLICY_DATA_HOTNESS) {
-        // TODO offload to separate thread
         // TODO this case is incorrect - we should have a different type and a new hash...
+        size_t old_size = jemk_malloc_usable_size(ptr);
         EventEntry_t entry = {
             .type = EVENT_REALLOC,
             .data.reallocData = {
                 .addressOld = ptr,
                 .addressNew = n_ptr,
-                .size = size,
+                .sizeOld = old_size,
+                .sizeNew = size,
             }
         };
         bool success = tachanka_ranking_event_push(&entry);

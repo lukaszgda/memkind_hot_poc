@@ -91,7 +91,8 @@ static bool is_hotter_agg_hot(const void *a, const void *b)
 
 static void ranking_create_internal(ranking_t **ranking, double old_weight);
 static void ranking_destroy_internal(ranking_t *ranking);
-static void ranking_add_internal(ranking_t *ranking, const struct tblock *block);
+// static void ranking_add_internal(ranking_t *ranking, const struct tblock *block);
+static void ranking_add_internal(ranking_t *ranking, double hotness, size_t size);
 /// Attempt to remove from ranking the entry
 /// If entry does not exist or has insufficient size,
 /// remove all that can be removed and return the removed size
@@ -99,10 +100,11 @@ static void ranking_add_internal(ranking_t *ranking, const struct tblock *block)
 /// @return the size that was actually removed
 /// @warning @todo remove @p entry !!! Can be done once custom allocator is ready
 static size_t ranking_remove_internal_relaxed(ranking_t *ranking,
-                                              const struct tblock *block,
                                               const struct ttype *entry);
-static void ranking_remove_internal(ranking_t *ranking,
-                                    const struct tblock *block);
+// static void ranking_remove_internal(ranking_t *ranking,
+//                                     const struct tblock *block);
+static void
+ranking_remove_internal(ranking_t *ranking, double hotness, size_t size);
 static double ranking_get_hot_threshold_internal(ranking_t *ranking);
 static double
 ranking_calculate_hot_threshold_dram_total_internal(ranking_t *ranking,
@@ -248,24 +250,44 @@ ranking_calculate_hot_threshold_dram_pmem_internal(ranking_t *ranking,
     return ranking_calculate_hot_threshold_dram_total_internal(ranking, ratio);
 }
 
-void ranking_add_internal(ranking_t *ranking, const struct tblock *block)
+// void ranking_add_internal(ranking_t *ranking, const struct tblock *block)
+// {
+//     int tidx = block->type;
+//     assert(tidx != -1 && tidx >=0 && "tidx invalid!");
+//     struct ttype *entry = &ttypes[tidx];
+//     AggregatedHotness temp;
+//     temp.hotness = entry->f; // only hotness matters for lookup // TODO: rrudnick ????
+//     AggregatedHotness_t *value =
+//         (AggregatedHotness_t *)wre_remove(ranking->entries, &temp);
+//     if (value) {
+//         value with the same hotness is already there, should be aggregated
+//         value->size += block->size;
+//     } else {
+//         value = (AggregatedHotness_t *)jemk_malloc(sizeof(AggregatedHotness_t));
+//         value->hotness = entry->f;
+//         value->size = block->size;
+//                 printf("wre: hotness not found, adds\n");
+//     }
+//     if (value->size > 0)
+//         wre_put(ranking->entries, value, value->size);
+//     else
+//         jemk_free(value);
+// }
+
+void ranking_add_internal(ranking_t *ranking, double hotness, size_t size)
 {
-    int tidx = block->type;
-    assert(tidx != -1 && tidx >=0 && "tidx invalid!");
-    struct ttype *entry = &ttypes[tidx];
     AggregatedHotness temp;
-    temp.hotness = entry->f; // only hotness matters for lookup // TODO: rrudnick ????
+    temp.hotness = hotness; // only hotness matters for lookup // TODO: rrudnick ????
     AggregatedHotness_t *value =
         (AggregatedHotness_t *)wre_remove(ranking->entries, &temp);
     if (value) {
         // value with the same hotness is already there, should be aggregated
-        value->size += block->size;
-        //         printf("wre: hotness found, aggregates\n");
+        value->size += size;
     } else {
         value = (AggregatedHotness_t *)jemk_malloc(sizeof(AggregatedHotness_t));
-        value->hotness = entry->f;
-        value->size = block->size;
-        //         printf("wre: hotness not found, adds\n");
+        value->hotness = hotness;
+        value->size = size;
+//                 printf("wre: hotness not found, adds\n");
     }
     if (value->size > 0)
         wre_put(ranking->entries, value, value->size);
@@ -278,17 +300,16 @@ bool ranking_is_hot_internal(ranking_t *ranking, struct ttype *entry)
     return entry->f > ranking_get_hot_threshold_internal(ranking);
 }
 
-size_t ranking_remove_internal_relaxed(ranking_t *ranking, const struct tblock *block, const struct ttype *entry)
+static size_t ranking_remove_internal_relaxed(ranking_t *ranking, const struct ttype *entry)
 {
     size_t ret = 0;
     AggregatedHotness temp;
     temp.hotness = entry->f; // only hotness matters for lookup
     AggregatedHotness_t *removed =
         (AggregatedHotness_t *)wre_remove(ranking->entries, &temp);
-    // needs to put back as much as was removed, even if the block gets modified in the meantime // TODO mmaybe we should store a copy of the blocks?
-    // TODO handle case - what if the block looses validity/gets reallocated in the meantime ?
-    // FIXME race conditions!!! TOUCH SHOULD NOT RACE WITH THE THREAD THAT REGISTERS/UNREGISTERS BLOCKS!
-    size_t block_size = block->size;
+    // needs to put back as much as was removed,
+    // even if the entry gets modified in the meantime
+    size_t block_size = entry->total_size;
     if (removed) {
         if (block_size > removed->size)
         {
@@ -303,38 +324,36 @@ size_t ranking_remove_internal_relaxed(ranking_t *ranking, const struct tblock *
         else
             wre_put(ranking->entries, removed, removed->size);
     } else {
+        assert(entry->total_size == 0);
         ret = 0; // defensive programming - nothing found, nothing removed
     }
 
     return ret;
 }
 
-void ranking_remove_internal(ranking_t *ranking, const struct tblock *block)
+void ranking_remove_internal(ranking_t *ranking, double hotness, size_t size)
 {
-    int tidx = block->type;
-    assert(tidx != -1 && "invalid ttype!");
-    struct ttype *entry = &ttypes[tidx];
+    if (size == 0u) // nothing to do
+        return;
     AggregatedHotness temp;
-    temp.hotness = entry->f; // only hotness matters for lookup
+    temp.hotness = hotness; // only hotness matters for lookup
     AggregatedHotness_t *removed =
         (AggregatedHotness_t *)wre_remove(ranking->entries, &temp);
     if (removed) {
-        if (block->size > removed->size)
+        if (size > removed->size)
         {
-            log_fatal("ranking_remove_internal: tried to remove more than added (%lu vs %lu)!", block->size, removed->size);
+            log_fatal("ranking_remove_internal: tried to remove more than added (%lu vs %lu)!", size, removed->size);
             assert(false && "attempt to remove non-existent data!");
         }
-        removed->size -= block->size;
+        removed->size -= size;
         if (removed->size == 0)
             jemk_free(removed);
         else
             wre_put(ranking->entries, removed, removed->size);
     }
     else {
-        // attempt was made to remove entry with 0 size
-        // such entries are not added to ranking
-        // but this is a case of successful operation
-        assert(block->size == 0u);
+        // should never occur
+        assert(false);
     }
 }
 
@@ -350,25 +369,11 @@ void ranking_remove_internal(ranking_t *ranking, const struct tblock *block)
 static void ranking_touch_internal(ranking_t *ranking, struct ttype *entry,
                                    uint64_t timestamp, double add_hotness)
 {
-    //     printf("touches internal, timestamp: [%lu]\n", timestamp);
-    struct tblock dummy_block;
-//     = *entry;
-    dummy_block.size = entry->total_size; // whole entry is touched
-    size_t removed = ranking_remove_internal_relaxed(ranking, &dummy_block, entry);
+    size_t removed = ranking_remove_internal_relaxed(ranking, entry);
     // touch true entry
     ranking_touch_entry_internal(ranking, entry, timestamp, add_hotness);
-    // WARNING HACK AHEAD
-    // to be corrected once custom allocator is ready!!!
-    // we use ttypes[0] as a temporary block, because it is unused
-    // seriously, just write allocator and use pointer to ttype in block
-    // bofore someone gets hurt by this mess !
-    struct ttype *temp = &ttypes[0];
-    *temp = *entry;
-    dummy_block.size = removed; // update size - add as much as was removed
-    dummy_block.type=0;
-    // TODO we should directly add AggregatedHotness here, not tblock!
-    // idea: create separate function and use current functions as wrappers
-    ranking_add_internal(ranking, &dummy_block);
+    // add data back to ranking - as much as was removed
+    ranking_add_internal(ranking, entry->f, removed);
 }
 
 //--------public function implementation---------
@@ -410,11 +415,16 @@ ranking_calculate_hot_threshold_dram_pmem(ranking_t *ranking,
                                                               dram_pmem_ratio);
 }
 
-MEMKIND_EXPORT void ranking_add(ranking_t *ranking, struct tblock *block)
+// MEMKIND_EXPORT void ranking_add(ranking_t *ranking, struct tblock *block)
+// {
+//     RANKING_LOCK_GUARD(ranking);
+//     ranking_add_internal(ranking, block);
+// }
+
+MEMKIND_EXPORT void ranking_add(ranking_t *ranking, double hotness, size_t size)
 {
-//     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
     RANKING_LOCK_GUARD(ranking);
-    ranking_add_internal(ranking, block);
+    ranking_add_internal(ranking, hotness, size);
 }
 
 MEMKIND_EXPORT bool ranking_is_hot(ranking_t *ranking, struct ttype *entry)
@@ -425,12 +435,12 @@ MEMKIND_EXPORT bool ranking_is_hot(ranking_t *ranking, struct ttype *entry)
     return ranking_is_hot_internal(ranking, entry);
 }
 
-MEMKIND_EXPORT void ranking_remove(ranking_t *ranking,
-                                   const struct tblock *block)
+MEMKIND_EXPORT void
+ranking_remove(ranking_t *ranking, double hotness, size_t size)
 {
 //     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
     RANKING_LOCK_GUARD(ranking);
-    ranking_remove_internal(ranking, block);
+    ranking_remove_internal(ranking, hotness, size);
 }
 
 // MEMKIND_EXPORT void ranking_update(ranking_t *ranking,

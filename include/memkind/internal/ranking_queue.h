@@ -27,13 +27,14 @@ typedef struct EventDataTouch {
 
 typedef struct EventDataDestroyRemove {
     void *address;
+    size_t size;
 } EventDataDestroyRemove;
 
 typedef struct EventDataRealloc {
     void *addressOld;
     void *addressNew;
-    size_t size;
-    // TODO sizeNew and sizeOld!!! both are required to correctly update ranking!
+    size_t sizeOld;
+    size_t sizeNew;
 } EventDataRealloc;
 
 typedef struct EventDataCreateAdd {

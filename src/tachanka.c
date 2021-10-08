@@ -146,15 +146,28 @@ void realloc_block(void *addr, void *new_addr, size_t size)
     critnib_insert(addr_to_block, bln);
 }
 
-void unregister_block_from_ranking(void *addr)
+void register_block_in_ranking(void * addr, size_t size)
 {
-    // TODO this looks like a workaround...
     int bln = critnib_find_le(addr_to_block, (uint64_t)addr);
     if (bln == -1) {
-        assert(false && "only existing blocks can be unregistered!"); // !!!! THIS WAS ENTERED HERE!!! THE CASE SHOULD NEVER OCCUR!!!
+        assert(false && "only existing blocks can be registered!");
         return;
     }
-    ranking_remove(ranking, &tblocks[bln]);
+    int type = tblocks[bln].type;
+    assert(type != -1);
+    ranking_add(ranking, ttypes[type].f, size);
+}
+
+void unregister_block_from_ranking(void * addr, size_t size)
+{
+    int bln = critnib_find_le(addr_to_block, (uint64_t)addr);
+    if (bln == -1) {
+        assert(false && "only existing blocks can be unregistered!");
+        return;
+    }
+    int type = tblocks[bln].type;
+    assert(type != -1);
+    ranking_remove(ranking, ttypes[type].f, size);
 }
 
 void unregister_block(void *addr)
@@ -252,13 +265,11 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
 //     int hotness =1 ;
     size_t total_size = t->total_size;
     if (total_size>0) {
-        // TODO FIXME RACE CONDITION!!!!
-        // if free is called right after alloc, before PEBS updates the values,
-        // bl might be reused and its values - OUTDATED!!!!
-        // SOLUTION: BLOCK SIZE SHOULD BE TRANSFERRED DIRECTLY!!!
         if (from_malloc) {
             assert(from_malloc == 1); // other case should not occur
-            ranking_add(ranking, bl); // first of all, add
+            // TODO clean this up, this is (should be?) dead code
+            assert(false); // interface changed, this should never be called
+//             ranking_add(ranking, bl); // first of all, add
     //         hotness=INIT_MALLOC_HOTNESS; TODO this does not work, for now
         } else {
             double hotness = 1e16/total_size ;

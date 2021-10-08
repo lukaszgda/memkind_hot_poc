@@ -161,7 +161,7 @@ void *pebs_monitor(void *state)
                 case EVENT_CREATE_ADD: {
                     EventDataCreateAdd *data = &event.data.createAddData;
                     register_block(data->hash, data->address, data->size);
-                    touch(data->address, 0, 1 /*called from malloc*/);
+                    register_block_in_ranking(data->address, data->size);
                     g_queue_counter_malloc++;
                     break;
                 }
@@ -169,16 +169,16 @@ void *pebs_monitor(void *state)
                     EventDataDestroyRemove *data = &event.data.destroyRemoveData;
                     // REMOVE THE BLOCK FROM RANKING!!!
                     // TODO remove all the exclamation marks and clean up once this is done
-                    unregister_block_from_ranking(data->address);
+                    unregister_block_from_ranking(data->address, data->size);
                     unregister_block(data->address);
                     g_queue_counter_free++;
                     break;
                 }
                 case EVENT_REALLOC: {
                     EventDataRealloc *data = &event.data.reallocData;
-                    unregister_block_from_ranking(data->addressOld);
-                    realloc_block(data->addressOld, data->addressNew, data->size);
-                    touch(data->addressNew, 0, 1 /*called from malloc*/);
+                    unregister_block_from_ranking(data->addressOld, data->sizeOld);
+                    realloc_block(data->addressOld, data->addressNew, data->sizeNew);
+                    register_block_in_ranking(data->addressNew, data->sizeNew);
                     g_queue_counter_realloc++;
                     break;
                 }
