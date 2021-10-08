@@ -469,3 +469,21 @@ MEMKIND_EXPORT void ranking_set_touch_callback(ranking_t *ranking,
     type->touchCb = cb;
     type->touchCbArg = arg;
 }
+
+// TODO clean up and move elsewhere
+
+static size_t wre_calculate_subtree_size(wre_node_t *node) {
+    size_t ret=0;
+    if (node) {
+        ret += wre_calculate_subtree_size(node->left);
+        ret += wre_calculate_subtree_size(node->right);
+        ret += node->ownWeight;
+        assert(ret == node->subtreeWeight);
+    }
+    return ret;
+}
+
+MEMKIND_EXPORT size_t ranking_calculate_total_size(ranking_t *ranking) {
+    // traverse tree using DFS and aggregate all sizes
+    return wre_calculate_subtree_size(ranking->entries->rootNode);
+}

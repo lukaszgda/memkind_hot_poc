@@ -169,15 +169,17 @@ void *pebs_monitor(void *state)
                     EventDataDestroyRemove *data = &event.data.destroyRemoveData;
                     // REMOVE THE BLOCK FROM RANKING!!!
                     // TODO remove all the exclamation marks and clean up once this is done
-                    unregister_block_from_ranking(data->address, data->size);
+                    unregister_block_from_ranking(data->address);
                     unregister_block(data->address);
                     g_queue_counter_free++;
                     break;
                 }
                 case EVENT_REALLOC: {
                     EventDataRealloc *data = &event.data.reallocData;
-                    unregister_block_from_ranking(data->addressOld, data->sizeOld);
-                    realloc_block(data->addressOld, data->addressNew, data->sizeNew);
+                    unregister_block_from_ranking(data->addressOld);
+                    unregister_block(data->addressOld);
+//                     realloc_block(data->addressOld, data->addressNew, data->sizeNew);
+                    register_block(0u /* FIXME hash should not be zero !!! */, data->addressNew, data->sizeNew);
                     register_block_in_ranking(data->addressNew, data->sizeNew);
                     g_queue_counter_realloc++;
                     break;

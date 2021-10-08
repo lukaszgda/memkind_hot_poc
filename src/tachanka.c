@@ -40,9 +40,19 @@ static bigary ba_ttypes, ba_tblocks;
 #define ADD(var,x) __sync_fetch_and_add(&(var), (x))
 #define SUB(var,x) __sync_fetch_and_sub(&(var), (x))
 
+#define CHECK_ADDED_SIZE
+
+#ifdef CHECK_ADDED_SIZE
+static size_t g_total_critnib_size=0u;
+static size_t g_total_ranking_size=0u;
+#endif
+
 void register_block(uint64_t hash, void *addr, size_t size)
 {
     struct ttype *t;
+#ifdef CHECK_ADDED_SIZE
+    assert(g_total_ranking_size == g_total_critnib_size);
+#endif
 
     //printf("hash: %lu\n", hash);
 
@@ -122,11 +132,15 @@ void register_block(uint64_t hash, void *addr, size_t size)
 #endif
 
     critnib_insert(addr_to_block, fb);
+#ifdef CHECK_ADDED_SIZE
+    g_total_critnib_size += size;
+#endif
 }
 
 void realloc_block(void *addr, void *new_addr, size_t size)
 {
     int bln = critnib_remove(addr_to_block, (intptr_t)addr);
+
     if (bln == -1)
     {
 #if PRINT_CRITNIB_NOT_FOUND_ON_REALLOC_WARNING
@@ -136,6 +150,11 @@ void realloc_block(void *addr, void *new_addr, size_t size)
         return;
     }
     struct tblock *bl = &tblocks[bln];
+#ifdef CHECK_ADDED_SIZE
+    assert(g_total_critnib_size >= bl->size);
+    g_total_critnib_size -= bl->size;
+    assert(g_total_ranking_size == g_total_critnib_size);
+#endif
 
     log_info("realloc %p -> %p (block %d, type %d)", addr, new_addr, bln, bl->type);
 
@@ -144,6 +163,9 @@ void realloc_block(void *addr, void *new_addr, size_t size)
     SUB(t->total_size, bl->size);
     ADD(t->total_size, size);
     critnib_insert(addr_to_block, bln);
+#ifdef CHECK_ADDED_SIZE
+    g_total_critnib_size += size;
+#endif
 }
 
 void register_block_in_ranking(void * addr, size_t size)
@@ -156,10 +178,18 @@ void register_block_in_ranking(void * addr, size_t size)
     int type = tblocks[bln].type;
     assert(type != -1);
     ranking_add(ranking, ttypes[type].f, size);
+#ifdef CHECK_ADDED_SIZE
+    g_total_ranking_size += size;
+    assert(g_total_ranking_size == g_total_critnib_size);
+    assert(g_total_ranking_size == ranking_calculate_total_size(ranking));
+#endif
 }
 
-void unregister_block_from_ranking(void * addr, size_t size)
+void unregister_block_from_ranking(void * addr)
 {
+#ifdef CHECK_ADDED_SIZE
+    assert(g_total_ranking_size == g_total_critnib_size);
+#endif
     int bln = critnib_find_le(addr_to_block, (uint64_t)addr);
     if (bln == -1) {
         assert(false && "only existing blocks can be unregistered!");
@@ -167,7 +197,11 @@ void unregister_block_from_ranking(void * addr, size_t size)
     }
     int type = tblocks[bln].type;
     assert(type != -1);
-    ranking_remove(ranking, ttypes[type].f, size);
+    ranking_remove(ranking, ttypes[type].f, tblocks[bln].size);
+#ifdef CHECK_ADDED_SIZE
+    assert(g_total_ranking_size >= tblocks[bln].size);
+    g_total_ranking_size -= tblocks[bln].size;
+#endif
 }
 
 void unregister_block(void *addr)
@@ -185,6 +219,12 @@ void unregister_block(void *addr)
     struct ttype *t = &ttypes[bl->type];
     SUB(t->num_allocs, 1);
     SUB(t->total_size, bl->size);
+#ifdef CHECK_ADDED_SIZE
+    assert(g_total_critnib_size >= bl->size);
+    g_total_critnib_size -= bl->size;
+    assert(g_total_ranking_size == g_total_critnib_size);
+    assert(g_total_ranking_size == ranking_calculate_total_size(ranking));
+#endif
     bl->addr = 0;
     bl->size = 0;
     __atomic_exchange(&freeblock, &bln, &bl->nextfree, __ATOMIC_ACQ_REL);
@@ -230,6 +270,9 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
 /// in the meantime
 void touch(void *addr, __u64 timestamp, int from_malloc)
 {
+#ifdef CHECK_ADDED_SIZE
+    assert(g_total_ranking_size == ranking_calculate_total_size(ranking));
+#endif
     int bln = critnib_find_le(addr_to_block, (uint64_t)addr);
     if (bln == -1) {
 #if PRINT_CRITNIB_NOT_FOUND_ON_TOUCH_WARNING
@@ -300,6 +343,9 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
     // current solution: assert(FALSE)
     // future solution: ignore?
 //     printf("touches tachanka, timestamp: [%llu]\n", timestamp);
+#ifdef CHECK_ADDED_SIZE
+    assert(g_total_ranking_size == ranking_calculate_total_size(ranking));
+#endif
 }
 
 static bool initialized=false;

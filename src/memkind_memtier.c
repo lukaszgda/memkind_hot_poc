@@ -35,6 +35,8 @@
     static atomic_size_t g_failed_adds_realloc0=0;
     static atomic_size_t g_successful_adds_realloc1=0;
     static atomic_size_t g_failed_adds_realloc1=0;
+    static atomic_size_t g_successful_adds_realloc2=0;
+    static atomic_size_t g_failed_adds_realloc2=0;
     static atomic_size_t g_successful_adds_free=0;
     static atomic_size_t g_failed_adds_free=0;
 #endif
@@ -1146,10 +1148,10 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
 #if PRINT_POLICY_LOG_STATISTICS_INFO
             if (success) {
                 g_successful_adds++;
-                g_successful_adds_realloc0++;
+                g_successful_adds_realloc2++;
             } else {
                 g_failed_adds++;
-                g_failed_adds_realloc0++;
+                g_failed_adds_realloc2++;
             }
 #else
         (void)success;
@@ -1161,13 +1163,13 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
     void *n_ptr = memkind_realloc(kind, ptr, size);
     if (pol == MEMTIER_POLICY_DATA_HOTNESS) {
         // TODO this case is incorrect - we should have a different type and a new hash...
-        size_t old_size = jemk_malloc_usable_size(ptr);
+//         size_t old_size = jemk_malloc_usable_size(ptr);
         EventEntry_t entry = {
             .type = EVENT_REALLOC,
             .data.reallocData = {
                 .addressOld = ptr,
                 .addressNew = n_ptr,
-                .sizeOld = old_size,
+//                 .sizeOld = old_size,
                 .sizeNew = size,
             }
         };
