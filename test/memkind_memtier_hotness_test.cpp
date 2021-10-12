@@ -920,7 +920,7 @@ private:
 
         int res = memtier_builder_add_tier(m_builder, MEMKIND_DEFAULT, 1); // add dram kind
         ASSERT_EQ(0, res);
-        res = memtier_builder_add_tier(m_builder, MEMKIND_REGULAR, 8); // add pmem kind
+        res = memtier_builder_add_tier(m_builder, MEMKIND_REGULAR, 1); // add pmem kind
         ASSERT_EQ(0, res);
         m_tier_memory = memtier_builder_construct_memtier_memory(m_builder);
         ASSERT_NE(nullptr, m_tier_memory);
@@ -1015,9 +1015,10 @@ private:
 TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
 {
     // SIMPLE TEST - use only one Matrix per type
-    TestBufferA &ma = bufferA[0];
     TestBufferB &mb = bufferB[0]; // should do half the work of ma
     TestBufferC &mc = bufferC[0]; // should do (ma_work+mb_work)/2
+    TestBufferA &ma = bufferA[0];
+//     TestBufferC &mc = bufferC[0]; // should do (ma_work+mb_work)/2
 
     //printf("\nAddr range of bufferA: %p - %p\n", (char*)ma.data, (char*)(ma.data) + ma.BUFF_SIZE);
     //printf("Addr range of bufferB: %p - %p\n", (char*)mb.data, (char*)(mb.data) + mb.BUFF_SIZE);
@@ -1080,17 +1081,22 @@ TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
 
     Hotness_e a_type=ma.GetHotnessType();
     Hotness_e b_type=mb.GetHotnessType();
+    Hotness_e c_type=mc.GetHotnessType();
 
     ASSERT_EQ(a_type, HOTNESS_HOT);
     ASSERT_EQ(b_type, HOTNESS_COLD);
+    ASSERT_EQ(c_type, HOTNESS_COLD); // when exactly equal thresh
 
     memkind_t a_kind = ma.DetectKind();
     memkind_t b_kind = mb.DetectKind();
+    memkind_t c_kind = mb.DetectKind();
 
-    // check that both are on DRAM: initial allocation, hotness not known
-    // at the beginning
+    // check that fallback to static ratio happened
     ASSERT_EQ(a_kind, MEMKIND_DEFAULT);
-    ASSERT_EQ(b_kind, MEMKIND_DEFAULT);
+    ASSERT_EQ(b_kind, MEMKIND_REGULAR);
+    ASSERT_EQ(c_kind, MEMKIND_REGULAR);
+    // TODO upgrade the test - this is not a good example, fallback to static
+    // is same as detected kinds
 }
 
 TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
@@ -1105,6 +1111,7 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
     TestBufferB &mb = bufferB[0]; // should do half the work of ma
     TestBufferC &mc = bufferC[0]; // should do (ma_work+mb_work)/2
     TestBufferA &ma = bufferA[0];
+//     TestBufferD &md = bufferD[0];
 
     for (volatile int iteration=0; iteration<2; ++iteration) {
         // reallocate data - constructor has different backtrace from Realloc
@@ -1129,7 +1136,7 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
                 // at the beginning
                 ASSERT_EQ(a_kind, MEMKIND_DEFAULT);
                 ASSERT_EQ(b_kind, MEMKIND_DEFAULT);
-                ASSERT_EQ(c_kind, MEMKIND_DEFAULT);
+                ASSERT_EQ(c_kind, MEMKIND_REGULAR);
 
                 for (iterations=0; millis_elapsed < LIMIT_MILLIS; ++iterations) {
                     ma.DoSomeWork();
@@ -1197,9 +1204,12 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
 
                 Hotness_e a_type=ma.GetHotnessType();
                 Hotness_e b_type=mb.GetHotnessType();
+                Hotness_e c_type=mc.GetHotnessType();
 
                 ASSERT_EQ(a_type, HOTNESS_HOT);
                 ASSERT_EQ(b_type, HOTNESS_COLD);
+                // exactly at thresh - round to cold
+                ASSERT_EQ(c_type, HOTNESS_COLD);
                 break;
             }
             case 1: {
@@ -1213,14 +1223,19 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 Hotness_e a_type=ma.GetHotnessType();
                 Hotness_e b_type=mb.GetHotnessType();
+                Hotness_e c_type=mc.GetHotnessType();
                 ASSERT_EQ(a_type, HOTNESS_HOT);
                 ASSERT_EQ(b_type, HOTNESS_COLD);
+                // exactly at thresh - round to cold
+                ASSERT_EQ(c_type, HOTNESS_COLD);
 
 
                 memkind_t a_kind = ma.DetectKind();
                 memkind_t b_kind = mb.DetectKind();
+                memkind_t c_kind = mb.DetectKind();
                 ASSERT_EQ(a_kind, MEMKIND_DEFAULT); // DRAM
                 ASSERT_EQ(b_kind, MEMKIND_REGULAR); // PMEM
+                ASSERT_EQ(c_kind, MEMKIND_REGULAR); // PMEM
                 break;
             }
         }
