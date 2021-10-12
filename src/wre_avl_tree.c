@@ -220,6 +220,21 @@ static void node_destroy(wre_node_t *node)
     jemk_free(node);
 }
 
+static void copy_recursive(wre_node_t *dest, wre_node_t *src) {
+    if (src->right) {
+        dest->right = node_create(RIGHT_NODE);
+        *dest->right = *src->right;
+        dest->right->parent = dest;
+        copy_recursive(dest->right, src->right);
+    }
+    if (src->left) {
+        dest->left = node_create(RIGHT_NODE);
+        *dest->left = *src->left;
+        dest->left->parent = dest;
+        copy_recursive(dest->left, src->left);
+    }
+}
+
 //---public functions
 
 MEMKIND_EXPORT void wre_create(wre_tree_t **tree, is_lower compare)
@@ -277,10 +292,12 @@ MEMKIND_EXPORT void *wre_remove(wre_tree_t *tree, const void *data)
         wre_node_t *balanced_node = NULL;
         if (!cnode->left) { // if does not contain left
             if (cnode->right) {
+                // only has right child
                 replacer = cnode->right;  //  take right - leaf node
                 balanced_node = replacer; //  right is leaf => is balanced
                 cnode->right = NULL;      //  prepare cnode for later handling
             } else {
+                // does not have children
                 switch (cnode->which) {
                     case LEFT_NODE:
                         if (cnode->parent->right)
@@ -305,10 +322,13 @@ MEMKIND_EXPORT void *wre_remove(wre_tree_t *tree, const void *data)
             }
         } else if (!cnode->right) { // else if does not contain right
             if (cnode->left) {
+                // only has left child
                 replacer = cnode->left;   //  take left - leaf node
                 balanced_node = replacer; //  left is leaf => is balanced
                 cnode->left = NULL;       //  prepare cnode for later handling
             } else {
+                // DEAD CODE (if contains left AND not contains left)
+                assert(false);
                 switch (cnode->which) {
                     case LEFT_NODE:
                         if (cnode->parent->right)
@@ -352,6 +372,7 @@ MEMKIND_EXPORT void *wre_remove(wre_tree_t *tree, const void *data)
                     replacer->parent->left = replacer->right;
                     break;
                 case RIGHT_NODE:
+                    // incorrect case (metadata): replacer->parent->right == replacer, cnode == replacer->parent FIXME
                     replacer->parent->right = replacer->right;
                     cnode->right =
                         replacer->right; // prepare for later: avoid cycles
@@ -365,10 +386,15 @@ MEMKIND_EXPORT void *wre_remove(wre_tree_t *tree, const void *data)
                 replacer->right->parent = replacer->parent;
                 replacer->right->which = replacer->which;
             } // else : no right,
+
             balanced_node = replacer->right
                 ? replacer->right
-                : (replacer->parent->right ? replacer->parent->right
-                                           : replacer->parent);
+                : (replacer->parent->right
+                    ? replacer->parent->right
+                    // take parent, but handle corner case: replacer->parent == cnode
+                    : ( replacer->parent->left
+                        ? replacer->parent->left
+                        : replacer->parent));
         }
         // at this point, replacer is completely detached
         if (replacer) {
@@ -399,6 +425,21 @@ MEMKIND_EXPORT void *wre_remove(wre_tree_t *tree, const void *data)
         if (balanced_node) { // not true only when removing root node
             update_node_subtree_metadata(balanced_node);
             balance_upwards(tree, balanced_node);
+        } else {
+            // root node removed, substituted with right
+            // when root node was removed, what nodes should be balanced?
+            if (replacer) {
+                // replacer was found, two scenarios:
+                // 1. Only left node was present: left node was chosen,
+                //      only one node in tree (balanced).
+                // 2. Right node was present and
+                if (replacer->left) {
+                    update_node_subtree_metadata(replacer->left);
+                    balance_upwards(tree, balanced_node);
+
+                }
+                update_node_subtree_metadata(replacer);
+            }
         }
         node_destroy(cnode);
         tree->size--;
@@ -501,4 +542,13 @@ MEMKIND_EXPORT void *wre_find_weighted(wre_tree_t *tree, double ratio)
     }
 
     return ret;
+}
+
+MEMKIND_EXPORT void wre_clone(wre_tree_t **tree, wre_tree_t *src) {
+    wre_create(tree, src->is_lower);
+    if (src->rootNode) {
+        (*tree)->rootNode = node_create(ROOT_NODE);
+        *(*tree)->rootNode = *src->rootNode;
+        copy_recursive((*tree)->rootNode, src->rootNode);
+    }
 }

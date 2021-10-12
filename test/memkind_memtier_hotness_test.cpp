@@ -1017,6 +1017,7 @@ TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
     // SIMPLE TEST - use only one Matrix per type
     TestBufferA &ma = bufferA[0];
     TestBufferB &mb = bufferB[0]; // should do half the work of ma
+    TestBufferC &mc = bufferC[0]; // should do (ma_work+mb_work)/2
 
     //printf("\nAddr range of bufferA: %p - %p\n", (char*)ma.data, (char*)(ma.data) + ma.BUFF_SIZE);
     //printf("Addr range of bufferB: %p - %p\n", (char*)mb.data, (char*)(mb.data) + mb.BUFF_SIZE);
@@ -1029,6 +1030,7 @@ TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
     for (iterations=0; millis_elapsed < LIMIT_MILLIS; ++iterations) {
         ma.DoSomeWork();
         mb.DoSomeWork();
+        mc.DoSomeWork();
         end_point = std::chrono::steady_clock::now();
         std::chrono::duration<double> duration = end_point-start_point;
         millis_elapsed =
@@ -1037,16 +1039,19 @@ TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
     }
     double hotness_a=ma.GetHotness();
     double hotness_b=mb.GetHotness();
+    double hotness_c=mc.GetHotness();
     size_t touches_a = g_cbArgs[0]->counter;
     size_t touches_b = g_cbArgs[1]->counter;
+    size_t touches_c = g_cbArgs[2]->counter;
 
     double touch_ratio = ((double)touches_a)/touches_b;
 
     uint64_t asum = ma.CalculateSum();
     uint64_t bsum = mb.CalculateSum();
+    uint64_t csum = mc.CalculateSum();
     // use calcualted data - prevent all loops from being optimized out
-    printf("Total sums: A [%lu], B [%lu]\n", asum, bsum);
-    printf("Total touches: A [%lu], B [%lu]\n", touches_a, touches_b);
+    printf("Total sums: A [%lu], B [%lu], C [%lu]\n", asum, bsum, csum);
+    printf("Total touches: A [%lu], B [%lu], C [%lu]\n", touches_a, touches_b, touches_c);
 
     double ACCURACY = 0.6; // a little bit high... (bad, but seems code is ok)
     // check if sum ratio is as expected - a measure of work done
@@ -1061,9 +1066,12 @@ TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
     // check if address is known and hotness was calculated
     ASSERT_GT(hotness_a, 0);
     ASSERT_GT(hotness_b, 0);
+    ASSERT_GT(hotness_c, 0);
 
     // rough check
     ASSERT_GT(hotness_a, hotness_b);
+    ASSERT_GT(hotness_a, hotness_c);
+    ASSERT_GT(hotness_c, hotness_b);
 
     // check if hotness ratio is as expected
     double EXPECTED_HOTNESS_RATIO = 2;

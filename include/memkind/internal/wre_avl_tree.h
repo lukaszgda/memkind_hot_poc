@@ -30,6 +30,7 @@ typedef struct wre_tree {
 
 extern void wre_create(wre_tree_t **tree, is_lower compare);
 extern void wre_destroy(wre_tree_t *tree);
+extern void wre_clone(wre_tree_t **tree, wre_tree_t *src);
 // assumption: the structure holds MAX_INT64 nodes at most
 // this should be assured by the caller
 // TODO - possibly: provide error handling/extend the MAX_INT32 limitation
