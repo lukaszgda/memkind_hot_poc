@@ -278,6 +278,7 @@ int memtier_ctl_set(struct memtier_builder *builder, const char *name,
 #define PRINT_CRITNIB_NOT_FOUND_ON_REALLOC_WARNING 0
 
 #define PRINT_POLICY_LOG_STATISTICS_INFO 1
+#define CRASH_ON_BLOCK_NOT_FOUND 0
 #define PRINT_POLICY_BACKTRACE_INFO 0
 #define PRINT_POLICY_CREATE_MEMORY_INFO 1
 #define PRINT_POLICY_CONSTRUCT_MEMORY_INFO 0
@@ -285,6 +286,14 @@ int memtier_ctl_set(struct memtier_builder *builder, const char *name,
 
 // TODO use 0/1
 #define CHECK_ADDED_SIZE
+
+#define QUANTIFICATION_ENABLED 0
+
+#if QUANTIFICATION_ENABLED
+typedef int quantified_hotness_t;
+#else
+typedef double quantified_hotness_t;
+#endif
 
 #ifdef __cplusplus
 }

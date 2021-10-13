@@ -26,7 +26,10 @@
 #endif
 
 #if PRINT_POLICY_LOG_STATISTICS_INFO
-#include <stdatomic.h>
+#include "stdatomic.h" // TODO use built-in mechanism
+    static atomic_size_t g_memtier_free_called=0;
+    static atomic_size_t g_memtier_hotness_free_called=0;
+
     static atomic_size_t g_successful_adds=0;
     static atomic_size_t g_failed_adds=0;
     static atomic_size_t g_successful_adds_malloc=0;
@@ -372,7 +375,8 @@ memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
         case HOTNESS_NOT_FOUND:
             // type not registered yet, fallback to static ratio
             // TODO add static ratio handling in other places !!!
-            return memtier_policy_static_ratio_get_kind(memory, size, NULL);
+//             return memtier_policy_static_ratio_get_kind(memory, size, NULL);
+            dest_tier = memory->hot_tier_id;
             break; // unreachable
         case HOTNESS_HOT:
             dest_tier = memory->hot_tier_id;
@@ -1243,6 +1247,7 @@ MEMKIND_EXPORT void memtier_kind_free(memkind_t kind, void *ptr)
             return;
     }
 
+    g_memtier_free_called++;
     if (pol == MEMTIER_POLICY_DATA_HOTNESS) {
         // TODO offload to PEBS (ranking_queue) !!! Currently contains race conditions
 //         unregister_block(ptr);
@@ -1255,6 +1260,7 @@ MEMKIND_EXPORT void memtier_kind_free(memkind_t kind, void *ptr)
         };
         bool success = tachanka_ranking_event_push(&entry);
 #if PRINT_POLICY_LOG_STATISTICS_INFO
+        g_memtier_hotness_free_called++;
         if (success) {
             g_successful_adds++;
             g_successful_adds_free++;

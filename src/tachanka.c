@@ -146,7 +146,9 @@ void realloc_block(void *addr, void *new_addr, size_t size)
 #if PRINT_CRITNIB_NOT_FOUND_ON_REALLOC_WARNING
         log_info("WARNING: Tried realloc a non-allocated block at %p", addr);
 #endif
+#if CRASH_ON_BLOCK_NOT_FOUND
         assert(false && "dealloc non-allocated block!"); // TODO remove!
+#endif
         return;
     }
     struct tblock *bl = &tblocks[bln];
@@ -162,6 +164,7 @@ void realloc_block(void *addr, void *new_addr, size_t size)
     struct ttype *t = &ttypes[bl->type];
     SUB(t->total_size, bl->size);
     ADD(t->total_size, size);
+    // TODO the new block might have completely different hash/type ...
     critnib_insert(addr_to_block, bln);
 #ifdef CHECK_ADDED_SIZE
     g_total_critnib_size += size;
@@ -172,7 +175,12 @@ void register_block_in_ranking(void * addr, size_t size)
 {
     int bln = critnib_find_le(addr_to_block, (uint64_t)addr);
     if (bln == -1) {
-        assert(false && "only existing blocks can be registered!");
+#if PRINT_CRITNIB_NOT_FOUND_ON_UNREGISTER_BLOCK_WARNING
+        log_info("WARNING: Tried deallocating a non-allocated block at %p", addr);
+#endif
+#if CRASH_ON_BLOCK_NOT_FOUND
+        assert(false && "only existing blocks can be unregistered!");
+#endif
         return;
     }
     int type = tblocks[bln].type;
@@ -218,7 +226,9 @@ void unregister_block(void *addr)
 #if PRINT_CRITNIB_NOT_FOUND_ON_UNREGISTER_BLOCK_WARNING
         log_info("WARNING: Tried deallocating a non-allocated block at %p", addr);
 #endif
+#if CRASH_ON_BLOCK_NOT_FOUND
         assert(false && "dealloc non-allocated block!"); // TODO remove!
+#endif
         return;
     }
     struct tblock *bl = &tblocks[bln];
