@@ -285,9 +285,9 @@ private:
         ranking_create(&ranking, 0.9);
 
         for (size_t i=0; i<BLOCKS_SIZE; ++i) {
-            blocks[i].size=BLOCKS_SIZE-i;
+            blocks[i].num_allocs=BLOCKS_SIZE-i;
             blocks[i].f=i;
-            ranking_add(ranking, &blocks[i]);
+            ranking_add(ranking, blocks[i].f,  blocks[i].num_allocs);
         }
 
     }
@@ -298,6 +298,10 @@ private:
 };
 constexpr size_t RankingTest::BLOCKS_SIZE;
 
+double quantify_dequantify(double hotness) {
+    return exp(int(log(hotness)));
+}
+
 TEST_F(RankingTest, check_hotness_highest) {
     double RATIO_PMEM_ONLY=0;
     double thresh_highest =
@@ -306,12 +310,25 @@ TEST_F(RankingTest, check_hotness_highest) {
     double thresh_highest_pmem =
         ranking_calculate_hot_threshold_dram_pmem(ranking, 0);
     ASSERT_EQ(thresh_highest, thresh_highest_pmem); // double for equality
-    ASSERT_EQ(thresh_highest, BLOCKS_SIZE-1);
-    ASSERT_EQ(thresh_highest, 99);
-    for (size_t i=0; i<BLOCKS_SIZE-1; ++i) {
+#if QUANTIFICATION_ENABLED
+    ASSERT_EQ(thresh_highest, quantify_dequantify(BLOCKS_SIZE-1));
+    ASSERT_EQ(thresh_highest, quantify_dequantify(99));
+    double ACCURACY = 1e-6;
+    ASSERT_LE(abs(thresh_highest-54.598150033144236), ACCURACY);
+    for (volatile size_t i=0; i<55; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
     }
-    ASSERT_EQ(ranking_is_hot(ranking, &blocks[BLOCKS_SIZE-1]), true);
+    // last one is hot due to quantification
+    for (volatile size_t i=55; i<BLOCKS_SIZE; ++i) {
+        ASSERT_EQ(ranking_is_hot(ranking, &blocks[BLOCKS_SIZE-1]), true);
+    }
+#else
+    ASSERT_EQ(thresh_highest, BLOCKS_SIZE-1);
+    ASSERT_EQ(thresh_highest, 99);
+    for (volatile size_t i=0; i<BLOCKS_SIZE; ++i) {
+        ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
+    }
+#endif
 }
 
 TEST_F(RankingTest, check_hotness_lowest) {
@@ -324,7 +341,8 @@ TEST_F(RankingTest, check_hotness_lowest) {
             ranking, std::numeric_limits<double>::max());
     ASSERT_EQ(thresh_lowest, thresh_lowest_pmem); // double for equality
     ASSERT_EQ(thresh_lowest, 0);
-    for (size_t i=0; i<BLOCKS_SIZE; ++i) {
+    ASSERT_EQ(ranking_is_hot(ranking, &blocks[0]), false);
+    for (size_t i=1; i<BLOCKS_SIZE; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
     }
 }
@@ -347,20 +365,33 @@ TEST_F(RankingTest, check_hotness_50_50) {
     double thresh_equal_pmem =
         ranking_calculate_hot_threshold_dram_pmem(ranking, 1);
     ASSERT_EQ(thresh_equal, thresh_equal_pmem);
-    ASSERT_EQ(thresh_equal, 29);
-    for (size_t i=0; i<29; ++i) {
+#if QUANTIFICATION_ENABLED
+    double ACCURACY = 1e-9;
+    ASSERT_EQ(thresh_equal, quantify_dequantify(29));
+    ASSERT_LE(abs(20.085536923187668-quantify_dequantify(29)), ACCURACY);
+    for (size_t i=0; i<21; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
     }
-    for (size_t i=29; i<100; ++i) {
+    for (size_t i=21; i<100; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
     }
     ASSERT_EQ(BLOCKS_SIZE, 100u);
+#else
+    ASSERT_EQ(thresh_equal, 29);
+    for (size_t i=0; i<30; ++i) {
+        ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
+    }
+    for (size_t i=30; i<100; ++i) {
+        ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
+    }
+    ASSERT_EQ(BLOCKS_SIZE, 100u);
+#endif
 }
 
 TEST_F(RankingTest, check_hotness_50_50_removed) {
     const size_t SUBSIZE=10u;
     for (size_t i=SUBSIZE; i<BLOCKS_SIZE; ++i) {
-        ranking_remove(ranking, &blocks[i]);
+        ranking_remove(ranking, blocks[i].f, blocks[i].num_allocs);
     }
     double RATIO_EQUAL_TOTAL=0.5;
     double RATIO_EQUAL_PMEM=1;
@@ -372,16 +403,31 @@ TEST_F(RankingTest, check_hotness_50_50_removed) {
     // 100, 99, 98, 97, 96, 95, 94, 93, 92, 91
     // sum:
     // 100, 199, 297, 394, 490 <- this is the one we are looking for
-    ASSERT_EQ(thresh_equal, 4);
+#if QUANTIFICATION_ENABLED
+    double ACCURACY=1e-9;
+    ASSERT_EQ(thresh_equal, quantify_dequantify(4));
+    ASSERT_LE(abs(thresh_equal-quantify_dequantify(4)), ACCURACY);
     ASSERT_EQ(thresh_equal, thresh_equal_pmem);
-    for (size_t i=0; i<4; ++i) {
+    for (size_t i=0; i<3; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
     }
-    for (size_t i=4; i<10; ++i) {
+    for (size_t i=3; i<10; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
     }
     ASSERT_EQ(BLOCKS_SIZE, 100u);
     ASSERT_EQ(SUBSIZE, 10u);
+#else
+    ASSERT_EQ(thresh_equal, 4);
+    ASSERT_EQ(thresh_equal, thresh_equal_pmem);
+    for (size_t i=0; i<5; ++i) {
+        ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
+    }
+    for (size_t i=5; i<10; ++i) {
+        ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
+    }
+    ASSERT_EQ(BLOCKS_SIZE, 100u);
+    ASSERT_EQ(SUBSIZE, 10u);
+#endif
 }
 
 class RankingTestSameHotness: public ::testing::Test
@@ -396,9 +442,9 @@ private:
         ranking_create(&ranking, 0.9);
 
         for (size_t i=0; i<BLOCKS_SIZE; ++i) {
-            blocks[i].size=BLOCKS_SIZE-i;
+            blocks[i].num_allocs=BLOCKS_SIZE-i;
             blocks[i].f=i%50;
-            ranking_add(ranking, &blocks[i]);
+            ranking_add(ranking, blocks[i].f, blocks[i].num_allocs);
         }
 
     }
@@ -417,13 +463,33 @@ TEST_F(RankingTestSameHotness, check_hotness_highest) {
         ranking, RATIO_PMEM_ONLY_TOTAL);
     double thresh_highest_pmem = ranking_calculate_hot_threshold_dram_pmem(
         ranking, RATIO_PMEM_ONLY_PMEM);
+#if QUANTIFICATION_ENABLED
+    double ACCURACY=1e-9;
+    ASSERT_EQ(thresh_highest, quantify_dequantify((BLOCKS_SIZE-1)%50));
+    ASSERT_EQ(thresh_highest, quantify_dequantify(49));
+    ASSERT_LE(abs(quantify_dequantify(49)-20.085536923187668), ACCURACY);
+    ASSERT_EQ(thresh_highest, thresh_highest_pmem);
+    for (volatile size_t i=0; i<21; ++i) {
+        ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
+    }
+    for (volatile size_t i=21; i<50; ++i) {
+        ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
+    }
+    for (volatile size_t i=50; i<71; ++i) {
+        ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
+    }
+    for (volatile size_t i=71; i<BLOCKS_SIZE; ++i) {
+        ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
+    }
+#else
     ASSERT_EQ(thresh_highest, (BLOCKS_SIZE-1)%50);
     ASSERT_EQ(thresh_highest, 49);
     ASSERT_EQ(thresh_highest, thresh_highest_pmem);
-    for (size_t i=0; i<BLOCKS_SIZE-1; ++i) {
-        ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), i==49);
+    for (size_t i=0; i<BLOCKS_SIZE; ++i) {
+        ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
     }
-    ASSERT_EQ(ranking_is_hot(ranking, &blocks[BLOCKS_SIZE-1]), true);
+#endif
+//     ASSERT_EQ(ranking_is_hot(ranking, &blocks[BLOCKS_SIZE-1]), true);
 }
 
 TEST_F(RankingTestSameHotness, check_hotness_lowest) {
@@ -435,7 +501,7 @@ TEST_F(RankingTestSameHotness, check_hotness_lowest) {
     ASSERT_EQ(thresh_lowest, 0);
     ASSERT_EQ(thresh_lowest, thresh_lowest_pmem);
     for (size_t i=0; i<BLOCKS_SIZE; ++i) {
-        ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
+        ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), i%50 != 0);
     }
 }
 
@@ -455,27 +521,47 @@ TEST_F(RankingTestSameHotness, check_hotness_50_50) {
         ranking, RATIO_EQUAL_TOTAL);
     double thresh_equal_pmem = ranking_calculate_hot_threshold_dram_pmem(
         ranking, RATIO_EQUAL_PMEM);
-    ASSERT_EQ(thresh_equal, 19);
+#if QUANTIFICATION_ENABLED
+    double ACCURACY=1e-9;
+    ASSERT_EQ(thresh_equal, quantify_dequantify(19));
+    ASSERT_LE(abs(quantify_dequantify(19)-7.38905609893065), ACCURACY);
     ASSERT_EQ(thresh_equal, thresh_equal_pmem);
-    for (size_t i=0; i<19; ++i) {
+    for (volatile size_t i=0; i<8; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
     }
-    for (size_t i=19; i<50; ++i) {
+    for (volatile size_t i=8; i<50; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
     }
-    for (size_t i=50; i<69; ++i) {
+    for (volatile size_t i=50; i<58; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
     }
-    for (size_t i=69; i<100; ++i) {
+    for (volatile size_t i=58; i<100; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
     }
     ASSERT_EQ(BLOCKS_SIZE, 100u);
+#else
+    ASSERT_EQ(thresh_equal, 19);
+    ASSERT_EQ(thresh_equal, thresh_equal_pmem);
+    for (size_t i=0; i<20; ++i) {
+        ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
+    }
+    for (size_t i=20; i<50; ++i) {
+        ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
+    }
+    for (size_t i=50; i<70; ++i) {
+        ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
+    }
+    for (size_t i=70; i<100; ++i) {
+        ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
+    }
+    ASSERT_EQ(BLOCKS_SIZE, 100u);
+#endif
 }
 
 TEST_F(RankingTestSameHotness, check_hotness_50_50_removed) {
     const size_t SUBSIZE=10u;
     for (size_t i=SUBSIZE; i<BLOCKS_SIZE; ++i) {
-        ranking_remove(ranking, &blocks[i]);
+        ranking_remove(ranking, blocks[i].f, blocks[i].num_allocs);
     }
     double RATIO_EQUAL_TOTAL=0.5;
     double RATIO_EQUAL_PMEM=1;
@@ -487,16 +573,31 @@ TEST_F(RankingTestSameHotness, check_hotness_50_50_removed) {
     // 100, 99, 98, 97, 96, 95, 94, 93, 92, 91
     // sum:
     // 100, 199, 297, 394, 490 <- this is the one we are looking for
-    ASSERT_EQ(thresh_equal, 4);
+#if QUANTIFICATION_ENABLED
+    double ACCURACY=1e-9;
+    ASSERT_EQ(thresh_equal, quantify_dequantify(4));
+    ASSERT_LE(abs(quantify_dequantify(4)-2.718281828459045), ACCURACY);
     ASSERT_EQ(thresh_equal, thresh_equal_pmem);
-    for (size_t i=0; i<4; ++i) {
+    for (size_t i=0; i<3; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
     }
-    for (size_t i=4; i<10; ++i) {
+    for (size_t i=3; i<10; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
     }
     ASSERT_EQ(BLOCKS_SIZE, 100u);
     ASSERT_EQ(SUBSIZE, 10u);
+#else
+    ASSERT_EQ(thresh_equal, 4);
+    ASSERT_EQ(thresh_equal, thresh_equal_pmem);
+    for (size_t i=0; i<5; ++i) {
+        ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
+    }
+    for (size_t i=5; i<10; ++i) {
+        ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
+    }
+    ASSERT_EQ(BLOCKS_SIZE, 100u);
+    ASSERT_EQ(SUBSIZE, 10u);
+#endif
 }
 
 extern "C" {
@@ -920,7 +1021,7 @@ private:
 
         int res = memtier_builder_add_tier(m_builder, MEMKIND_DEFAULT, 1); // add dram kind
         ASSERT_EQ(0, res);
-        res = memtier_builder_add_tier(m_builder, MEMKIND_REGULAR, 8); // add pmem kind
+        res = memtier_builder_add_tier(m_builder, MEMKIND_REGULAR, 1); // add pmem kind
         ASSERT_EQ(0, res);
         m_tier_memory = memtier_builder_construct_memtier_memory(m_builder);
         ASSERT_NE(nullptr, m_tier_memory);
@@ -1015,8 +1116,10 @@ private:
 TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
 {
     // SIMPLE TEST - use only one Matrix per type
-    TestBufferA &ma = bufferA[0];
     TestBufferB &mb = bufferB[0]; // should do half the work of ma
+    TestBufferC &mc = bufferC[0]; // should do (ma_work+mb_work)/2
+    TestBufferA &ma = bufferA[0];
+//     TestBufferC &mc = bufferC[0]; // should do (ma_work+mb_work)/2
 
     //printf("\nAddr range of bufferA: %p - %p\n", (char*)ma.data, (char*)(ma.data) + ma.BUFF_SIZE);
     //printf("Addr range of bufferB: %p - %p\n", (char*)mb.data, (char*)(mb.data) + mb.BUFF_SIZE);
@@ -1029,6 +1132,7 @@ TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
     for (iterations=0; millis_elapsed < LIMIT_MILLIS; ++iterations) {
         ma.DoSomeWork();
         mb.DoSomeWork();
+        mc.DoSomeWork();
         end_point = std::chrono::steady_clock::now();
         std::chrono::duration<double> duration = end_point-start_point;
         millis_elapsed =
@@ -1037,16 +1141,19 @@ TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
     }
     double hotness_a=ma.GetHotness();
     double hotness_b=mb.GetHotness();
+    double hotness_c=mc.GetHotness();
     size_t touches_a = g_cbArgs[0]->counter;
     size_t touches_b = g_cbArgs[1]->counter;
+    size_t touches_c = g_cbArgs[2]->counter;
 
     double touch_ratio = ((double)touches_a)/touches_b;
 
     uint64_t asum = ma.CalculateSum();
     uint64_t bsum = mb.CalculateSum();
+    uint64_t csum = mc.CalculateSum();
     // use calcualted data - prevent all loops from being optimized out
-    printf("Total sums: A [%lu], B [%lu]\n", asum, bsum);
-    printf("Total touches: A [%lu], B [%lu]\n", touches_a, touches_b);
+    printf("Total sums: A [%lu], B [%lu], C [%lu]\n", asum, bsum, csum);
+    printf("Total touches: A [%lu], B [%lu], C [%lu]\n", touches_a, touches_b, touches_c);
 
     double ACCURACY = 0.6; // a little bit high... (bad, but seems code is ok)
     // check if sum ratio is as expected - a measure of work done
@@ -1061,9 +1168,12 @@ TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
     // check if address is known and hotness was calculated
     ASSERT_GT(hotness_a, 0);
     ASSERT_GT(hotness_b, 0);
+    ASSERT_GT(hotness_c, 0);
 
     // rough check
     ASSERT_GT(hotness_a, hotness_b);
+    ASSERT_GT(hotness_a, hotness_c);
+    ASSERT_GT(hotness_c, hotness_b);
 
     // check if hotness ratio is as expected
     double EXPECTED_HOTNESS_RATIO = 2;
@@ -1072,17 +1182,23 @@ TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
 
     Hotness_e a_type=ma.GetHotnessType();
     Hotness_e b_type=mb.GetHotnessType();
+    Hotness_e c_type=mc.GetHotnessType();
 
     ASSERT_EQ(a_type, HOTNESS_HOT);
     ASSERT_EQ(b_type, HOTNESS_COLD);
+    ASSERT_EQ(c_type, HOTNESS_COLD); // when exactly equal thresh
 
     memkind_t a_kind = ma.DetectKind();
     memkind_t b_kind = mb.DetectKind();
+    memkind_t c_kind = mb.DetectKind();
 
-    // check that both are on DRAM: initial allocation, hotness not known
-    // at the beginning
+    // first, unknown allocations
+    // check that all allocations were performed on DRAM
     ASSERT_EQ(a_kind, MEMKIND_DEFAULT);
     ASSERT_EQ(b_kind, MEMKIND_DEFAULT);
+    ASSERT_EQ(c_kind, MEMKIND_DEFAULT);
+    // TODO upgrade the test - this is not a good example, fallback to static
+    // is same as detected kinds
 }
 
 TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
@@ -1097,6 +1213,7 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
     TestBufferB &mb = bufferB[0]; // should do half the work of ma
     TestBufferC &mc = bufferC[0]; // should do (ma_work+mb_work)/2
     TestBufferA &ma = bufferA[0];
+//     TestBufferD &md = bufferD[0];
 
     for (volatile int iteration=0; iteration<2; ++iteration) {
         // reallocate data - constructor has different backtrace from Realloc
@@ -1117,8 +1234,7 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
                 memkind_t b_kind = mb.DetectKind();
                 memkind_t c_kind = mc.DetectKind();
 
-                // check that both are on DRAM: initial allocation, hotness not known
-                // at the beginning
+                // check that all are on DRAM: initial allocation
                 ASSERT_EQ(a_kind, MEMKIND_DEFAULT);
                 ASSERT_EQ(b_kind, MEMKIND_DEFAULT);
                 ASSERT_EQ(c_kind, MEMKIND_DEFAULT);
@@ -1189,9 +1305,12 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
 
                 Hotness_e a_type=ma.GetHotnessType();
                 Hotness_e b_type=mb.GetHotnessType();
+                Hotness_e c_type=mc.GetHotnessType();
 
                 ASSERT_EQ(a_type, HOTNESS_HOT);
                 ASSERT_EQ(b_type, HOTNESS_COLD);
+                // exactly at thresh - round to cold
+                ASSERT_EQ(c_type, HOTNESS_COLD);
                 break;
             }
             case 1: {
@@ -1205,14 +1324,19 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 Hotness_e a_type=ma.GetHotnessType();
                 Hotness_e b_type=mb.GetHotnessType();
+                Hotness_e c_type=mc.GetHotnessType();
                 ASSERT_EQ(a_type, HOTNESS_HOT);
                 ASSERT_EQ(b_type, HOTNESS_COLD);
+                // exactly at thresh - round to cold
+                ASSERT_EQ(c_type, HOTNESS_COLD);
 
 
                 memkind_t a_kind = ma.DetectKind();
                 memkind_t b_kind = mb.DetectKind();
+                memkind_t c_kind = mb.DetectKind();
                 ASSERT_EQ(a_kind, MEMKIND_DEFAULT); // DRAM
                 ASSERT_EQ(b_kind, MEMKIND_REGULAR); // PMEM
+                ASSERT_EQ(c_kind, MEMKIND_REGULAR); // PMEM
                 break;
             }
         }

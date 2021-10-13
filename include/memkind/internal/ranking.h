@@ -24,9 +24,7 @@ typedef struct ranking ranking_t;
 ///     - (1 - @p old_weight) is the weight of current frequency
 extern void ranking_create(ranking_t **ranking, double old_weight);
 extern void ranking_destroy(ranking_t *ranking);
-/// @p entry ownership stays with the caller
-/// @p entry should not be freed until it is removed from ranking
-extern void ranking_add(ranking_t *ranking, struct ttype *entry);
+extern void ranking_add(ranking_t *ranking, double hotness, size_t size);
 /// @p entry ownership stays with the caller
 /// @p entry should not be freed until it is removed from ranking
 /// @pre @p entry should already be added to ranking
@@ -35,10 +33,8 @@ extern void ranking_add(ranking_t *ranking, struct ttype *entry);
 /// @warning if correct timestamp is unknown (e.g. touched from
 /// malloc, not pebs), value "0" can be passed - timestamp will be ignored
 extern void ranking_touch(ranking_t *ranking, struct ttype *entry,
-                          uint64_t timestamp, uint64_t add_hotness);
-/// @p entry ownership stays with the caller
-/// @p entry should not be freed until it is removed from ranking
-extern void ranking_remove(ranking_t *ranking, const struct ttype *entry);
+                          uint64_t timestamp, double add_hotness);
+extern void ranking_remove(ranking_t *ranking, double hotness, size_t size);
 
 // --- extended API ---
 /// @brief atomically update values of @p entry_to_update with values from @p
@@ -48,8 +44,8 @@ extern void ranking_remove(ranking_t *ranking, const struct ttype *entry);
 ///     1) find and remove @p entry_to_update from ranking
 ///     2) memcpy updated_value to entry_to_update
 ///     3) add entry to update to ranking
-extern void ranking_update(ranking_t *ranking, struct ttype *entry_to_update,
-                           const struct ttype *updated_value);
+// extern void ranking_update(ranking_t *ranking, struct ttype *entry_to_update,
+//                            const struct ttype *updated_value);
 /// get last calculated hot threshold
 extern double ranking_get_hot_threshold(ranking_t *ranking);
 /// @p dram_pmem_ratio : dram/(dram+pmem)
@@ -75,3 +71,4 @@ extern bool ranking_is_hot(ranking_t *ranking, struct ttype *entry);
 extern void ranking_set_touch_callback(ranking_t *ranking,
                                        tachanka_touch_callback cb, void *arg,
                                        struct ttype *type);
+extern size_t ranking_calculate_total_size(ranking_t *ranking);

@@ -25,7 +25,10 @@ typedef enum Hotness {
 typedef void (*tachanka_touch_callback)(void*);
 
 void register_block(uint64_t hash, void *addr, size_t size);
+void register_block_in_ranking(void *addr, size_t size);
 void unregister_block(void *addr);
+/// @warn incorrect (outdated) address might be used
+void unregister_block_from_ranking(void *address);
 void realloc_block(void *addr, void *new_addr, size_t size);
 void *new_block(size_t size);
 void touch(void *addr, __u64 timestamp, int from_malloc);
@@ -45,7 +48,6 @@ bool tachanka_ranking_event_pop(EventEntry_t *event);
 
 struct ttype {
     uint64_t hash;
-    size_t size;
     int num_allocs; // TODO
     int total_size; // TODO
 
@@ -53,8 +55,8 @@ struct ttype {
     __u64 t1;   // start of current window
     __u64 t0;   // timestamp of last processed data
 
-    int n2;   // num of access in prev window
-    int n1;   // num of access in current window
+    double n2;   // add hotness in prev window
+    double n1;   // add hotness in current window
 
     tachanka_touch_callback touchCb;
     void *touchCbArg;
@@ -68,7 +70,7 @@ struct ttype {
 struct tblock
 {
     void *addr;
-    ssize_t size;
+    size_t size;
     int type;
     int nextfree; // can reuse one of other fields
 };

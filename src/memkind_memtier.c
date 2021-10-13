@@ -26,6 +26,10 @@
 #endif
 
 #if PRINT_POLICY_LOG_STATISTICS_INFO
+#include "stdatomic.h" // TODO use built-in mechanism
+    static atomic_size_t g_memtier_free_called=0;
+    static atomic_size_t g_memtier_hotness_free_called=0;
+
     static atomic_size_t g_successful_adds=0;
     static atomic_size_t g_failed_adds=0;
     static atomic_size_t g_successful_adds_malloc=0;
@@ -34,6 +38,8 @@
     static atomic_size_t g_failed_adds_realloc0=0;
     static atomic_size_t g_successful_adds_realloc1=0;
     static atomic_size_t g_failed_adds_realloc1=0;
+    static atomic_size_t g_successful_adds_realloc2=0;
+    static atomic_size_t g_failed_adds_realloc2=0;
     static atomic_size_t g_successful_adds_free=0;
     static atomic_size_t g_failed_adds_free=0;
 #endif
@@ -143,6 +149,7 @@ struct memtier_memory {
                                          // threshold
     float thres_degree; // % of threshold change in case of update
     int hot_tier_id;                     // ID of "hot" tier
+    int cold_tier_id;                     // ID of "cold" tier
 
     // memtier_memory operations
     memkind_t (*get_kind)(struct memtier_memory *memory, size_t size, uint64_t *data);
@@ -252,7 +259,8 @@ memtier_policy_dynamic_threshold_get_kind(struct memtier_memory *memory,
     return memory->cfg[i].kind;
 }
 
-static Hotness_e memtier_policy_data_hotness_calculate_hotness_type(uint64_t hash)
+/// @p size for debugging purposes
+static Hotness_e memtier_policy_data_hotness_calculate_hotness_type(uint64_t hash, size_t size)
 {
     // TODO this requires more data
     // Currently, "ranking" and "tachanka" are de-facto singletons
@@ -263,6 +271,7 @@ static Hotness_e memtier_policy_data_hotness_calculate_hotness_type(uint64_t has
 #if PRINT_POLICY_LOG_STATISTICS_INFO
     static atomic_uint_fast16_t counter=0;
     static atomic_uint_fast64_t hotness_counter[3]= { 0 };
+    static atomic_uint_fast64_t hotness_alloc_counter[3]= { 0 };
     const uint64_t interval=1000;
     if (++counter > interval) {
         struct timespec t;
@@ -274,8 +283,10 @@ static Hotness_e memtier_policy_data_hotness_calculate_hotness_type(uint64_t has
 
         double hotness_thresh = tachanka_get_hot_thresh();
         log_info("critnib: hotness thresh: %.16f, counters [hot, cold, unknown]: %lu %lu %lu, "
+            "allocated [dram, pmem, unknown]: %lu %lu %lu\n"
             "[seconds, nanoseconds]: [%ld, %ld]\nsuccess/fail: %lu, %lu",
             hotness_thresh, hotness_counter[0], hotness_counter[1], hotness_counter[2],
+            hotness_alloc_counter[0], hotness_alloc_counter[1], hotness_alloc_counter[2],
             t.tv_sec, t.tv_nsec, g_successful_adds, g_failed_adds);
 
         log_info("critnib: success/fail: malloc [%lu/%lu], realloc0 [%lu/%lu], "
@@ -305,6 +316,7 @@ static Hotness_e memtier_policy_data_hotness_calculate_hotness_type(uint64_t has
     }
 
     ++hotness_counter[hotness];
+    hotness_alloc_counter[hotness] += size;
 #endif // PRINT_POLICY_LOG_STATISTICS_INFO
 
     return hotness;
@@ -351,19 +363,20 @@ memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
 //     int dest_tier = memtier_policy_data_hotness_is_hot(*data) ?
 //         memory->hot_tier_id : 1 - memory->hot_tier_id;
 // memtier_policy_static_ratio_get_kind();
-    Hotness_e hotness = memtier_policy_data_hotness_calculate_hotness_type(*data);
+    Hotness_e hotness = memtier_policy_data_hotness_calculate_hotness_type(*data, size);
     //char buf[128];
     //if (write(1, buf, sprintf(buf, "hash %016zx size %zd is %s\n", *data, size,
     //               memtier_policy_data_hotness_is_hot(*data) ? "♨": "❄")));
 
     switch (hotness) {
         case HOTNESS_COLD:
-            dest_tier = 1 - memory->hot_tier_id;
+            dest_tier = memory->cold_tier_id;
             break;
         case HOTNESS_NOT_FOUND:
             // type not registered yet, fallback to static ratio
             // TODO add static ratio handling in other places !!!
-            return memtier_policy_static_ratio_get_kind(memory, size, NULL);
+//             return memtier_policy_static_ratio_get_kind(memory, size, NULL);
+            dest_tier = memory->hot_tier_id;
             break; // unreachable
         case HOTNESS_HOT:
             dest_tier = memory->hot_tier_id;
@@ -452,6 +465,8 @@ static void print_memtier_memory(struct memtier_memory *memory)
     log_info("Threshold counter setting value %u",
              memory->thres_init_check_cnt);
     log_info("Threshold counter current value %u", memory->thres_check_cnt);
+    log_info("Hot tier ID %d", memory->hot_tier_id);
+    log_info("Cold tier ID %d", memory->cold_tier_id);
 }
 
 static void print_builder(struct memtier_builder *builder)
@@ -810,19 +825,10 @@ builder_hot_create_memory(struct memtier_builder *builder)
         memory->cfg[i].kind = builder->cfg[i].kind;
         memory->cfg[i].kind_ratio =
             builder->cfg[i].kind_ratio / ratio_sum;
-    // TODO - why this is commented out?
-//         memory->cfg[i].kind_ratio =
-//             builder->cfg[0].kind_ratio / builder->cfg[i].kind_ratio;
         if (memory->cfg[i].kind == MEMKIND_DEFAULT) {
             memory->hot_tier_id = i; // the usage of this variable might cause some confusion...
+            memory->cold_tier_id = 1-i;
         }
-    }
-
-    // TODO requires cleanup
-    memory->cfg[0].kind = builder->cfg[0].kind;
-//     memory->cfg[0].kind_ratio = 1.0;
-    if (memory->cfg[0].kind == MEMKIND_DEFAULT) {
-        memory->hot_tier_id = 0;
     }
 
     if (memory->hot_tier_id == -1) {
@@ -1099,7 +1105,9 @@ MEMKIND_EXPORT void *memtier_realloc(struct memtier_memory *memory, void *ptr,
 MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
                                           size_t size)
 {
+    size_t old_size = 0u;
     if (size == 0 && ptr != NULL) {
+        old_size = jemk_malloc_usable_size(ptr);
 #ifdef MEMKIND_DECORATION_ENABLED
         if (memtier_kind_free_pre)
             memtier_kind_free_pre(&ptr);
@@ -1111,6 +1119,7 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
                 .type = EVENT_DESTROY_REMOVE,
                 .data.destroyRemoveData = {
                 .address = ptr,
+                .size = old_size,
                 }
             };
 
@@ -1127,23 +1136,45 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
             (void)success;
 #endif
         }
-        decrement_alloc_size(kind->partition, jemk_malloc_usable_size(ptr));
+        decrement_alloc_size(kind->partition, old_size);
         memkind_free(kind, ptr);
         return NULL;
     } else if (ptr == NULL) {
+            EventEntry_t entry = {
+                .type = EVENT_CREATE_ADD,
+                .data.createAddData = {
+                    .address = ptr,
+                    .size = size,
+                }
+            };
+
+            bool success = tachanka_ranking_event_push(&entry);
+#if PRINT_POLICY_LOG_STATISTICS_INFO
+            if (success) {
+                g_successful_adds++;
+                g_successful_adds_realloc2++;
+            } else {
+                g_failed_adds++;
+                g_failed_adds_realloc2++;
+            }
+#else
+        (void)success;
+#endif
         return memtier_kind_malloc(kind, size);
     }
-    decrement_alloc_size(kind->partition, jemk_malloc_usable_size(ptr));
+    decrement_alloc_size(kind->partition, old_size);
 
     void *n_ptr = memkind_realloc(kind, ptr, size);
     if (pol == MEMTIER_POLICY_DATA_HOTNESS) {
-        // TODO offload to separate thread
+        // TODO this case is incorrect - we should have a different type and a new hash...
+//         size_t old_size = jemk_malloc_usable_size(ptr);
         EventEntry_t entry = {
             .type = EVENT_REALLOC,
             .data.reallocData = {
                 .addressOld = ptr,
                 .addressNew = n_ptr,
-                .size = size,
+//                 .sizeOld = old_size,
+                .sizeNew = size,
             }
         };
         bool success = tachanka_ranking_event_push(&entry);
@@ -1216,6 +1247,7 @@ MEMKIND_EXPORT void memtier_kind_free(memkind_t kind, void *ptr)
             return;
     }
 
+    g_memtier_free_called++;
     if (pol == MEMTIER_POLICY_DATA_HOTNESS) {
         // TODO offload to PEBS (ranking_queue) !!! Currently contains race conditions
 //         unregister_block(ptr);
@@ -1228,6 +1260,7 @@ MEMKIND_EXPORT void memtier_kind_free(memkind_t kind, void *ptr)
         };
         bool success = tachanka_ranking_event_push(&entry);
 #if PRINT_POLICY_LOG_STATISTICS_INFO
+        g_memtier_hotness_free_called++;
         if (success) {
             g_successful_adds++;
             g_successful_adds_free++;

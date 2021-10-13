@@ -257,8 +257,8 @@ int memtier_ctl_set(struct memtier_builder *builder, const char *name,
 #define HOTNESS_MEASURE_WINDOW 1000000000ULL
 // time window is 1s
 // #define OLD_TIME_WINDOW_HOTNESS_WEIGHT 0.999
-// #define OLD_TIME_WINDOW_HOTNESS_WEIGHT 0.4 // should not stay like this... only for tests and POC
-#define OLD_TIME_WINDOW_HOTNESS_WEIGHT  0.9 // should not stay like this... only for tests and POC
+#define OLD_TIME_WINDOW_HOTNESS_WEIGHT 0.4 // should not stay like this... only for tests and POC
+// #define OLD_TIME_WINDOW_HOTNESS_WEIGHT  0.9 // should not stay like this... only for tests and POC
 #define RANKING_BUFFER_SIZE_ELEMENTS    1000000 // TODO make tests, add error handling and come up with some sensible value
 
 // logging
@@ -269,7 +269,7 @@ int memtier_ctl_set(struct memtier_builder *builder, const char *name,
 #define PRINT_PEBS_STATS_ON_COUNTER_OVERFLOW_INFO 0
 #define PRINT_PEBS_NEW_DATA_INFO 0
 #define PRINT_PEBS_TOUCH_INFO 0
-#define PRINT_PEBS_SAMPLES_NUM_INFO 0
+#define PRINT_PEBS_SAMPLES_NUM_INFO 1
 
 #define PRINT_CRITNIB_NEW_BLOCK_REGISTERED_INFO 0
 #define PRINT_CRITNIB_TOUCH_INFO 0
@@ -278,11 +278,23 @@ int memtier_ctl_set(struct memtier_builder *builder, const char *name,
 #define PRINT_CRITNIB_NOT_FOUND_ON_UNREGISTER_BLOCK_WARNING 0
 #define PRINT_CRITNIB_NOT_FOUND_ON_REALLOC_WARNING 0
 
-#define PRINT_POLICY_LOG_STATISTICS_INFO 0
+#define PRINT_POLICY_LOG_STATISTICS_INFO 1
+#define CRASH_ON_BLOCK_NOT_FOUND 0
 #define PRINT_POLICY_BACKTRACE_INFO 0
-#define PRINT_POLICY_CREATE_MEMORY_INFO 0
+#define PRINT_POLICY_CREATE_MEMORY_INFO 1
 #define PRINT_POLICY_CONSTRUCT_MEMORY_INFO 0
 #define PRINT_POLICY_DELETE_MEMORY_INFO 0
+
+// TODO use 0/1
+#define CHECK_ADDED_SIZE
+
+#define QUANTIFICATION_ENABLED 0
+
+#if QUANTIFICATION_ENABLED
+typedef int quantified_hotness_t;
+#else
+typedef double quantified_hotness_t;
+#endif
 
 #ifdef __cplusplus
 }

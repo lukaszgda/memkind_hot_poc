@@ -4,6 +4,12 @@
 #include "memkind/internal/memkind_private.h"
 #include "stdint.h"
 
+#define DEBUG_PRINTFS // TODO move/remove
+
+#ifdef DEBUG_PRINTFS
+#include "stdatomic.h"
+#endif
+
 #define max(X, Y) (((X) > (Y)) ? (X) : (Y))
 
 //---private functions
@@ -128,8 +134,9 @@ static void fix_rotate_left(wre_tree_t *tree, wre_node_t *node)
     int64_t left_nodes = right_node->left ? right_node->left->height + 1 : 0;
     int64_t right_nodes = right_node->right ? right_node->right->height + 1 : 0;
     int64_t diff = right_nodes - left_nodes;
-//     assert((diff == 0) || (diff == -1); TODO decide if this should stay
+//     assert((diff == 0) || (diff == -1)); // TODO decide if this should stay
     assert(diff >= -2);
+    assert(diff >= -1);
     if (diff < 0 )
         rotate_right(tree, right_node);
     rotate_left(tree, node);
@@ -142,8 +149,9 @@ static void fix_rotate_right(wre_tree_t *tree, wre_node_t *node)
     int64_t left_nodes = left_node->left ? left_node->left->height + 1 : 0;
     int64_t right_nodes = left_node->right ? left_node->right->height + 1 : 0;
     int64_t diff = right_nodes - left_nodes;
-//     assert((diff == 0) || (diff == 1)); TODO decide if this should stay
+//     assert((diff == 0) || (diff == 1)); // TODO decide if this should stay
     assert(diff <= 2);
+    assert(diff <= 1);
     if (diff > 0)
         rotate_left(tree, left_node);
     rotate_right(tree, node);
@@ -212,6 +220,21 @@ static void node_destroy(wre_node_t *node)
     jemk_free(node);
 }
 
+static void copy_recursive(wre_node_t *dest, wre_node_t *src) {
+    if (src->right) {
+        dest->right = node_create(RIGHT_NODE);
+        *dest->right = *src->right;
+        dest->right->parent = dest;
+        copy_recursive(dest->right, src->right);
+    }
+    if (src->left) {
+        dest->left = node_create(RIGHT_NODE);
+        *dest->left = *src->left;
+        dest->left->parent = dest;
+        copy_recursive(dest->left, src->left);
+    }
+}
+
 //---public functions
 
 MEMKIND_EXPORT void wre_create(wre_tree_t **tree, is_lower compare)
@@ -269,10 +292,12 @@ MEMKIND_EXPORT void *wre_remove(wre_tree_t *tree, const void *data)
         wre_node_t *balanced_node = NULL;
         if (!cnode->left) { // if does not contain left
             if (cnode->right) {
+                // only has right child
                 replacer = cnode->right;  //  take right - leaf node
                 balanced_node = replacer; //  right is leaf => is balanced
                 cnode->right = NULL;      //  prepare cnode for later handling
             } else {
+                // does not have children
                 switch (cnode->which) {
                     case LEFT_NODE:
                         if (cnode->parent->right)
@@ -297,10 +322,13 @@ MEMKIND_EXPORT void *wre_remove(wre_tree_t *tree, const void *data)
             }
         } else if (!cnode->right) { // else if does not contain right
             if (cnode->left) {
+                // only has left child
                 replacer = cnode->left;   //  take left - leaf node
                 balanced_node = replacer; //  left is leaf => is balanced
                 cnode->left = NULL;       //  prepare cnode for later handling
             } else {
+                // DEAD CODE (if contains left AND not contains left)
+                assert(false);
                 switch (cnode->which) {
                     case LEFT_NODE:
                         if (cnode->parent->right)
@@ -344,6 +372,7 @@ MEMKIND_EXPORT void *wre_remove(wre_tree_t *tree, const void *data)
                     replacer->parent->left = replacer->right;
                     break;
                 case RIGHT_NODE:
+                    // incorrect case (metadata): replacer->parent->right == replacer, cnode == replacer->parent FIXME
                     replacer->parent->right = replacer->right;
                     cnode->right =
                         replacer->right; // prepare for later: avoid cycles
@@ -357,10 +386,15 @@ MEMKIND_EXPORT void *wre_remove(wre_tree_t *tree, const void *data)
                 replacer->right->parent = replacer->parent;
                 replacer->right->which = replacer->which;
             } // else : no right,
+
             balanced_node = replacer->right
                 ? replacer->right
-                : (replacer->parent->right ? replacer->parent->right
-                                           : replacer->parent);
+                : (replacer->parent->right
+                    ? replacer->parent->right
+                    // take parent, but handle corner case: replacer->parent == cnode
+                    : ( replacer->parent->left
+                        ? replacer->parent->left
+                        : replacer->parent));
         }
         // at this point, replacer is completely detached
         if (replacer) {
@@ -391,6 +425,21 @@ MEMKIND_EXPORT void *wre_remove(wre_tree_t *tree, const void *data)
         if (balanced_node) { // not true only when removing root node
             update_node_subtree_metadata(balanced_node);
             balance_upwards(tree, balanced_node);
+        } else {
+            // root node removed, substituted with right
+            // when root node was removed, what nodes should be balanced?
+            if (replacer) {
+                // replacer was found, two scenarios:
+                // 1. Only left node was present: left node was chosen,
+                //      only one node in tree (balanced).
+                // 2. Right node was present and
+                if (replacer->left) {
+                    update_node_subtree_metadata(replacer->left);
+                    balance_upwards(tree, balanced_node);
+
+                }
+                update_node_subtree_metadata(replacer);
+            }
         }
         node_destroy(cnode);
         tree->size--;
@@ -413,11 +462,16 @@ typedef struct AggregatedHotness {
     double hotness;
 } AggregatedHotness_t;
 // EOF REMOVE
+
 MEMKIND_EXPORT void *wre_find_weighted(wre_tree_t *tree, double ratio)
 {
     void *ret = NULL;
     wre_node_t *best_node = tree->rootNode;
     wre_node_t *cnode = tree->rootNode;
+#ifdef DEBUG_PRINTFS
+    size_t left_subtrees=0u;
+    size_t right_subtrees=0u;
+#endif
     while (cnode) {
         if (cnode->subtreeWeight == 0) {
             // reached a leaf node, which has 0 weight
@@ -450,6 +504,10 @@ MEMKIND_EXPORT void *wre_find_weighted(wre_tree_t *tree, double ratio)
                 //                 printf("wre: descend left [%.16f]\n",
                 //                 ((AggregatedHotness_t*)cnode->data)->hotness);
                 //                 // TODO remove
+#ifdef DEBUG_PRINTFS
+                right_subtrees++;
+#endif
+
             } else if (ratio > nratio_right) {
                 // right is best - descend into right branch
                 cnode = cnode->right;
@@ -457,6 +515,9 @@ MEMKIND_EXPORT void *wre_find_weighted(wre_tree_t *tree, double ratio)
                 //                 printf("wre: descend right [%.16f]\n",
                 //                 ((AggregatedHotness_t*)cnode->data)->hotness);
                 //                 // TODO remove
+#ifdef DEBUG_PRINTFS
+                left_subtrees++;
+#endif
             } else {
                 // cnode is best node
                 best_node = cnode;
@@ -467,7 +528,27 @@ MEMKIND_EXPORT void *wre_find_weighted(wre_tree_t *tree, double ratio)
             }
         }
     }
-    if (best_node)
+    if (best_node) {
         ret = best_node->data;
+#ifdef DEBUG_PRINTFS
+        static atomic_size_t counter=0;
+        counter++;
+        const size_t interval = 1000;
+        if (counter>interval) {
+            printf("wre found, subtrees to left: %lu, subtrees to right %lu\n", left_subtrees, right_subtrees);
+            counter=0;
+        }
+#endif
+    }
+
     return ret;
+}
+
+MEMKIND_EXPORT void wre_clone(wre_tree_t **tree, wre_tree_t *src) {
+    wre_create(tree, src->is_lower);
+    if (src->rootNode) {
+        (*tree)->rootNode = node_create(ROOT_NODE);
+        *(*tree)->rootNode = *src->rootNode;
+        copy_recursive((*tree)->rootNode, src->rootNode);
+    }
 }

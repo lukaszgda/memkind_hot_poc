@@ -40,9 +40,19 @@ static bigary ba_ttypes, ba_tblocks;
 #define ADD(var,x) __sync_fetch_and_add(&(var), (x))
 #define SUB(var,x) __sync_fetch_and_sub(&(var), (x))
 
+#define CHECK_ADDED_SIZE
+
+#ifdef CHECK_ADDED_SIZE
+static size_t g_total_critnib_size=0u;
+static size_t g_total_ranking_size=0u;
+#endif
+
 void register_block(uint64_t hash, void *addr, size_t size)
 {
     struct ttype *t;
+#ifdef CHECK_ADDED_SIZE
+    assert(g_total_ranking_size == g_total_critnib_size);
+#endif
 
     //printf("hash: %lu\n", hash);
 
@@ -57,9 +67,10 @@ void register_block(uint64_t hash, void *addr, size_t size)
             exit(-1);
         }
         t->hash = hash;
-        t->size = size;
+        t->total_size = 0; // will be incremented later
         t->timestamp_state = TIMESTAMP_NOT_SET;
         if (critnib_insert(hash_to_type, nt) == EEXIST) {
+            // TODO FREE nt !!!
             nt = critnib_get(hash_to_type, hash); // raced with another thread
             if (nt == -1) {
                 log_fatal("Alloc type disappeared?!?");
@@ -121,20 +132,31 @@ void register_block(uint64_t hash, void *addr, size_t size)
 #endif
 
     critnib_insert(addr_to_block, fb);
+#ifdef CHECK_ADDED_SIZE
+    g_total_critnib_size += size;
+#endif
 }
 
 void realloc_block(void *addr, void *new_addr, size_t size)
 {
     int bln = critnib_remove(addr_to_block, (intptr_t)addr);
+
     if (bln == -1)
     {
 #if PRINT_CRITNIB_NOT_FOUND_ON_REALLOC_WARNING
         log_info("WARNING: Tried realloc a non-allocated block at %p", addr);
 #endif
+#if CRASH_ON_BLOCK_NOT_FOUND
         assert(false && "dealloc non-allocated block!"); // TODO remove!
+#endif
         return;
     }
     struct tblock *bl = &tblocks[bln];
+#ifdef CHECK_ADDED_SIZE
+    assert(g_total_critnib_size >= bl->size);
+    g_total_critnib_size -= bl->size;
+    assert(g_total_ranking_size == g_total_critnib_size);
+#endif
 
 #if PRINT_CRITNIB_REALLOC_INFO
     log_info("realloc %p -> %p (block %d, type %d)", addr, new_addr, bln, bl->type);
@@ -144,7 +166,58 @@ void realloc_block(void *addr, void *new_addr, size_t size)
     struct ttype *t = &ttypes[bl->type];
     SUB(t->total_size, bl->size);
     ADD(t->total_size, size);
+    // TODO the new block might have completely different hash/type ...
     critnib_insert(addr_to_block, bln);
+#ifdef CHECK_ADDED_SIZE
+    g_total_critnib_size += size;
+#endif
+}
+
+void register_block_in_ranking(void * addr, size_t size)
+{
+    int bln = critnib_find_le(addr_to_block, (uint64_t)addr);
+    if (bln == -1) {
+#if PRINT_CRITNIB_NOT_FOUND_ON_UNREGISTER_BLOCK_WARNING
+        log_info("WARNING: Tried deallocating a non-allocated block at %p", addr);
+#endif
+#if CRASH_ON_BLOCK_NOT_FOUND
+        assert(false && "only existing blocks can be unregistered!");
+#endif
+        return;
+    }
+    int type = tblocks[bln].type;
+    assert(type != -1);
+#ifdef CHECK_ADDED_SIZE
+    volatile size_t pre_real_ranking_size = ranking_calculate_total_size(ranking);
+#endif
+    ranking_add(ranking, ttypes[type].f, size);
+#ifdef CHECK_ADDED_SIZE
+    g_total_ranking_size += size;
+    assert(g_total_ranking_size == g_total_critnib_size);
+    volatile size_t real_ranking_size = ranking_calculate_total_size(ranking);
+    assert(g_total_ranking_size == real_ranking_size);
+    assert(pre_real_ranking_size + size == real_ranking_size);
+//     wre_destroy(temp_cpy);
+#endif
+}
+
+void unregister_block_from_ranking(void * addr)
+{
+#ifdef CHECK_ADDED_SIZE
+    assert(g_total_ranking_size == g_total_critnib_size);
+#endif
+    int bln = critnib_find_le(addr_to_block, (uint64_t)addr);
+    if (bln == -1) {
+        assert(false && "only existing blocks can be unregistered!");
+        return;
+    }
+    int type = tblocks[bln].type;
+    assert(type != -1);
+    ranking_remove(ranking, ttypes[type].f, tblocks[bln].size);
+#ifdef CHECK_ADDED_SIZE
+    assert(g_total_ranking_size >= tblocks[bln].size);
+    g_total_ranking_size -= tblocks[bln].size;
+#endif
 }
 
 void unregister_block(void *addr)
@@ -155,13 +228,21 @@ void unregister_block(void *addr)
 #if PRINT_CRITNIB_NOT_FOUND_ON_UNREGISTER_BLOCK_WARNING
         log_info("WARNING: Tried deallocating a non-allocated block at %p", addr);
 #endif
+#if CRASH_ON_BLOCK_NOT_FOUND
         assert(false && "dealloc non-allocated block!"); // TODO remove!
+#endif
         return;
     }
     struct tblock *bl = &tblocks[bln];
     struct ttype *t = &ttypes[bl->type];
     SUB(t->num_allocs, 1);
     SUB(t->total_size, bl->size);
+#ifdef CHECK_ADDED_SIZE
+    assert(g_total_critnib_size >= bl->size);
+    g_total_critnib_size -= bl->size;
+    assert(g_total_ranking_size == g_total_critnib_size);
+    assert(g_total_ranking_size == ranking_calculate_total_size(ranking));
+#endif
     bl->addr = 0;
     bl->size = 0;
     __atomic_exchange(&freeblock, &bln, &bl->nextfree, __ATOMIC_ACQ_REL);
@@ -202,17 +283,30 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
     return ret;
 }
 
+/// @warning NOT THREAD SAFE
+/// This function operates on block that should not be freed/modifed
+/// in the meantime
 void touch(void *addr, __u64 timestamp, int from_malloc)
 {
+#ifdef CHECK_ADDED_SIZE
+    assert(g_total_ranking_size == ranking_calculate_total_size(ranking));
+#endif
     int bln = critnib_find_le(addr_to_block, (uint64_t)addr);
-    if (bln == -1)
+    if (bln == -1) {
+#if PRINT_CRITNIB_NOT_FOUND_ON_TOUCH_WARNING
+        log_info("WARNING: Addr %p not in known tachanka range  %p - %p", (char*)addr,
+            (char*)bl->addr, (char*)(bl->addr + bl->size));
+#endif
+        assert(from_malloc == 0);
         return;
+    }
     struct tblock *bl = &tblocks[bln];
     if ((char*)addr >= (char*)(bl->addr + bl->size)) {
 #if PRINT_CRITNIB_NOT_FOUND_ON_TOUCH_WARNING
         log_info("WARNING: Addr %p not in known tachanka range  %p - %p", (char*)addr,
             (char*)bl->addr, (char*)(bl->addr + bl->size));
 #endif
+        assert(from_malloc == 0);
         return;
     }
 
@@ -223,16 +317,25 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
 //     {
 //         printf("tachanka touch for known area!\n");
 //     }
+    assert(bl->type >= 0);
+//     assert(bl->type > 0); TODO check if this is the case in our scenario
     struct ttype *t = &ttypes[bl->type];
     // TODO - is this thread safeness needed? or best effort will be enough?
     //__sync_fetch_and_add(&t->accesses, 1);
 
-    int hotness =1 ;
-    if (from_malloc) {
-        ranking_add(ranking, t); // first of all, add
-//         hotness=INIT_MALLOC_HOTNESS; TODO this does not work, for now
-    } else {
-        ranking_touch(ranking, t, timestamp, hotness);
+//     int hotness =1 ;
+    size_t total_size = t->total_size;
+    if (total_size>0) {
+        if (from_malloc) {
+            assert(from_malloc == 1); // other case should not occur
+            // TODO clean this up, this is (should be?) dead code
+            assert(false); // interface changed, this should never be called
+//             ranking_add(ranking, bl); // first of all, add
+    //         hotness=INIT_MALLOC_HOTNESS; TODO this does not work, for now
+        } else {
+            double hotness = 1e16/total_size ;
+            ranking_touch(ranking, t, timestamp, hotness);
+        }
     }
 
 #if PRINT_CRITNIB_TOUCH_INFO
@@ -258,11 +361,20 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
     // current solution: assert(FALSE)
     // future solution: ignore?
 //     printf("touches tachanka, timestamp: [%llu]\n", timestamp);
+#ifdef CHECK_ADDED_SIZE
+    assert(g_total_ranking_size == ranking_calculate_total_size(ranking));
+#endif
 }
 
 static bool initialized=false;
 void tachanka_init(double old_window_hotness_weight, size_t event_queue_size)
 {
+#ifdef CHECK_ADDED_SIZE
+    // re-initalize global variables
+    g_total_critnib_size=0u;
+    g_total_ranking_size=0u;
+#endif
+
     bigary_init(&ba_tblocks, BIGARY_DRAM, 0);
 //     bigary_init(&ba_tblocks, -1, MAP_ANONYMOUS | MAP_PRIVATE, 0);
     tblocks = ba_tblocks.area;
@@ -308,7 +420,7 @@ static double _hotness;
 
 static int size_hotness(int nt)
 {
-    if (ttypes[nt].size == _size) {
+    if (ttypes[nt].total_size == _size) {
         _hotness = ttypes[nt].f;
         return 1;
     }
