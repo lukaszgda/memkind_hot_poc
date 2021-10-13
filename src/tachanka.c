@@ -177,11 +177,17 @@ void register_block_in_ranking(void * addr, size_t size)
     }
     int type = tblocks[bln].type;
     assert(type != -1);
+#ifdef CHECK_ADDED_SIZE
+    volatile size_t pre_real_ranking_size = ranking_calculate_total_size(ranking);
+#endif
     ranking_add(ranking, ttypes[type].f, size);
 #ifdef CHECK_ADDED_SIZE
     g_total_ranking_size += size;
     assert(g_total_ranking_size == g_total_critnib_size);
-    assert(g_total_ranking_size == ranking_calculate_total_size(ranking));
+    volatile size_t real_ranking_size = ranking_calculate_total_size(ranking);
+    assert(g_total_ranking_size == real_ranking_size);
+    assert(pre_real_ranking_size + size == real_ranking_size);
+//     wre_destroy(temp_cpy);
 #endif
 }
 
@@ -351,6 +357,12 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
 static bool initialized=false;
 void tachanka_init(double old_window_hotness_weight, size_t event_queue_size)
 {
+#ifdef CHECK_ADDED_SIZE
+    // re-initalize global variables
+    g_total_critnib_size=0u;
+    g_total_ranking_size=0u;
+#endif
+
     bigary_init(&ba_tblocks, BIGARY_DRAM, 0);
 //     bigary_init(&ba_tblocks, -1, MAP_ANONYMOUS | MAP_PRIVATE, 0);
     tblocks = ba_tblocks.area;
