@@ -285,7 +285,7 @@ int memtier_ctl_set(struct memtier_builder *builder, const char *name,
 #define PRINT_POLICY_CONSTRUCT_MEMORY_INFO 0
 #define PRINT_POLICY_DELETE_MEMORY_INFO 0
 
-#define CHECK_ADDED_SIZE 1
+#define CHECK_ADDED_SIZE 0
 
 #define QUANTIFICATION_ENABLED 0
 
