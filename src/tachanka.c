@@ -40,9 +40,7 @@ static bigary ba_ttypes, ba_tblocks;
 #define ADD(var,x) __sync_fetch_and_add(&(var), (x))
 #define SUB(var,x) __sync_fetch_and_sub(&(var), (x))
 
-#define CHECK_ADDED_SIZE
-
-#ifdef CHECK_ADDED_SIZE
+#if CHECK_ADDED_SIZE
 static size_t g_total_critnib_size=0u;
 static size_t g_total_ranking_size=0u;
 #endif
@@ -50,7 +48,7 @@ static size_t g_total_ranking_size=0u;
 void register_block(uint64_t hash, void *addr, size_t size)
 {
     struct ttype *t;
-#ifdef CHECK_ADDED_SIZE
+#if CHECK_ADDED_SIZE
     assert(g_total_ranking_size == g_total_critnib_size);
 #endif
 
@@ -132,7 +130,7 @@ void register_block(uint64_t hash, void *addr, size_t size)
 #endif
 
     critnib_insert(addr_to_block, fb);
-#ifdef CHECK_ADDED_SIZE
+#if CHECK_ADDED_SIZE
     g_total_critnib_size += size;
 #endif
 }
@@ -152,7 +150,7 @@ void realloc_block(void *addr, void *new_addr, size_t size)
         return;
     }
     struct tblock *bl = &tblocks[bln];
-#ifdef CHECK_ADDED_SIZE
+#if CHECK_ADDED_SIZE
     assert(g_total_critnib_size >= bl->size);
     g_total_critnib_size -= bl->size;
     assert(g_total_ranking_size == g_total_critnib_size);
@@ -168,7 +166,7 @@ void realloc_block(void *addr, void *new_addr, size_t size)
     ADD(t->total_size, size);
     // TODO the new block might have completely different hash/type ...
     critnib_insert(addr_to_block, bln);
-#ifdef CHECK_ADDED_SIZE
+#if CHECK_ADDED_SIZE
     g_total_critnib_size += size;
 #endif
 }
@@ -187,11 +185,11 @@ void register_block_in_ranking(void * addr, size_t size)
     }
     int type = tblocks[bln].type;
     assert(type != -1);
-#ifdef CHECK_ADDED_SIZE
+#if CHECK_ADDED_SIZE
     volatile size_t pre_real_ranking_size = ranking_calculate_total_size(ranking);
 #endif
     ranking_add(ranking, ttypes[type].f, size);
-#ifdef CHECK_ADDED_SIZE
+#if CHECK_ADDED_SIZE
     g_total_ranking_size += size;
     assert(g_total_ranking_size == g_total_critnib_size);
     volatile size_t real_ranking_size = ranking_calculate_total_size(ranking);
@@ -203,7 +201,7 @@ void register_block_in_ranking(void * addr, size_t size)
 
 void unregister_block_from_ranking(void * addr)
 {
-#ifdef CHECK_ADDED_SIZE
+#if CHECK_ADDED_SIZE
     assert(g_total_ranking_size == g_total_critnib_size);
 #endif
     int bln = critnib_find_le(addr_to_block, (uint64_t)addr);
@@ -214,7 +212,7 @@ void unregister_block_from_ranking(void * addr)
     int type = tblocks[bln].type;
     assert(type != -1);
     ranking_remove(ranking, ttypes[type].f, tblocks[bln].size);
-#ifdef CHECK_ADDED_SIZE
+#if CHECK_ADDED_SIZE
     assert(g_total_ranking_size >= tblocks[bln].size);
     g_total_ranking_size -= tblocks[bln].size;
 #endif
@@ -237,7 +235,7 @@ void unregister_block(void *addr)
     struct ttype *t = &ttypes[bl->type];
     SUB(t->num_allocs, 1);
     SUB(t->total_size, bl->size);
-#ifdef CHECK_ADDED_SIZE
+#if CHECK_ADDED_SIZE
     assert(g_total_critnib_size >= bl->size);
     g_total_critnib_size -= bl->size;
     assert(g_total_ranking_size == g_total_critnib_size);
@@ -288,7 +286,7 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
 /// in the meantime
 void touch(void *addr, __u64 timestamp, int from_malloc)
 {
-#ifdef CHECK_ADDED_SIZE
+#if CHECK_ADDED_SIZE
     assert(g_total_ranking_size == ranking_calculate_total_size(ranking));
 #endif
     int bln = critnib_find_le(addr_to_block, (uint64_t)addr);
@@ -361,7 +359,7 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
     // current solution: assert(FALSE)
     // future solution: ignore?
 //     printf("touches tachanka, timestamp: [%llu]\n", timestamp);
-#ifdef CHECK_ADDED_SIZE
+#if CHECK_ADDED_SIZE
     assert(g_total_ranking_size == ranking_calculate_total_size(ranking));
 #endif
 }
@@ -369,7 +367,7 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
 static bool initialized=false;
 void tachanka_init(double old_window_hotness_weight, size_t event_queue_size)
 {
-#ifdef CHECK_ADDED_SIZE
+#if CHECK_ADDED_SIZE
     // re-initalize global variables
     g_total_critnib_size=0u;
     g_total_ranking_size=0u;

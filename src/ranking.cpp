@@ -283,8 +283,9 @@ double
 ranking_calculate_hot_threshold_dram_total_internal(ranking_t *ranking,
                                                     double dram_pmem_ratio)
 {
-#ifdef CHECK_ADDED_SIZE
-    (void)ranking_calculate_total_size(ranking); // only for asserts
+#if CHECK_ADDED_SIZE
+    // only for asserts
+    size_t temp_size = ranking_calculate_total_size(ranking);
     wre_tree_t *temp_cpy;
     wre_clone(&temp_cpy, ranking->entries);
 #endif
@@ -299,8 +300,10 @@ ranking_calculate_hot_threshold_dram_total_internal(ranking_t *ranking,
     // TODO remove this!!!
     //     printf("wre: threshold_dram_total_internal\n");
     // EOF TODO
-#ifdef CHECK_ADDED_SIZE
-    (void)ranking_calculate_total_size(ranking); // only for asserts
+#if CHECK_ADDED_SIZE
+    // only for asserts
+    size_t after_size = ranking_calculate_total_size(ranking);
+    assert(temp_size == after_size);
     wre_destroy(temp_cpy);
 #endif
 
@@ -348,15 +351,21 @@ void ranking_add_internal(ranking_t *ranking, double hotness, size_t size)
     AggregatedHotness temp;
     // only hotness matters for lookup // TODO: rrudnick ????
     temp.quantifiedHotness = ranking_quantify_hotness(hotness);
-#ifdef CHECK_ADDED_SIZE
-    (void)ranking_calculate_total_size(ranking); // only for asserts
+#if CHECK_ADDED_SIZE
+    // only for asserts
+    size_t temp_size = ranking_calculate_total_size(ranking);
     wre_tree_t *temp_cpy;
     wre_clone(&temp_cpy, ranking->entries);
 #endif
     AggregatedHotness_t *value =
         (AggregatedHotness_t *)wre_remove(ranking->entries, &temp);
-#ifdef CHECK_ADDED_SIZE
-    (void)ranking_calculate_total_size(ranking); // only for asserts
+#if CHECK_ADDED_SIZE
+    // only for asserts
+    size_t after_size = ranking_calculate_total_size(ranking);
+    if (value)
+        assert(temp_size == after_size+value->size);
+    else
+        assert(temp_size == after_size);
     wre_destroy(temp_cpy);
 #endif
     if (value) {
@@ -372,8 +381,10 @@ void ranking_add_internal(ranking_t *ranking, double hotness, size_t size)
         wre_put(ranking->entries, value, value->size);
     else
         jemk_free(value);
-#ifdef CHECK_ADDED_SIZE
-    (void)ranking_calculate_total_size(ranking); // only for asserts
+#if CHECK_ADDED_SIZE
+    // only for asserts
+    size_t after_after_size = ranking_calculate_total_size(ranking);
+    assert(temp_size + size == after_after_size);
 #endif
 }
 
@@ -388,15 +399,21 @@ static size_t ranking_remove_internal_relaxed(ranking_t *ranking, const struct t
     AggregatedHotness temp;
     // only hotness matters for lookup
     temp.quantifiedHotness = ranking_quantify_hotness(entry->f);
-#ifdef CHECK_ADDED_SIZE
-    (void)ranking_calculate_total_size(ranking); // only for asserts
+#if CHECK_ADDED_SIZE
+    // only for asserts
+    size_t temp_size = ranking_calculate_total_size(ranking);
     wre_tree_t *temp_cpy;
     wre_clone(&temp_cpy, ranking->entries);
 #endif
     AggregatedHotness_t *removed =
         (AggregatedHotness_t *)wre_remove(ranking->entries, &temp);
-#ifdef CHECK_ADDED_SIZE
-    (void)ranking_calculate_total_size(ranking); // only for asserts
+#if CHECK_ADDED_SIZE
+    // only for asserts
+    size_t after_size = ranking_calculate_total_size(ranking);
+    if (removed)
+        assert(temp_size == after_size + removed->size);
+    else
+        assert(temp_size == after_size);
     wre_destroy(temp_cpy);
 #endif
     // needs to put back as much as was removed,
@@ -415,15 +432,17 @@ static size_t ranking_remove_internal_relaxed(ranking_t *ranking, const struct t
             jemk_free(removed);
         else {
             wre_put(ranking->entries, removed, removed->size);
-#ifdef CHECK_ADDED_SIZE
-            (void)ranking_calculate_total_size(ranking); // only for asserts
+#if CHECK_ADDED_SIZE
+            // only for asserts
+            size_t after_after_size = ranking_calculate_total_size(ranking);
+            assert(after_after_size == after_size + removed->size);
 #endif
         }
     } else {
         assert(entry->total_size == 0);
         ret = 0; // defensive programming - nothing found, nothing removed
     }
-#ifdef CHECK_ADDED_SIZE
+#if CHECK_ADDED_SIZE
     (void)ranking_calculate_total_size(ranking); // only for asserts
 #endif
 
@@ -437,15 +456,21 @@ void ranking_remove_internal(ranking_t *ranking, double hotness, size_t size)
     AggregatedHotness temp;
     // only hotness matters for lookup
     temp.quantifiedHotness = ranking_quantify_hotness(hotness);
-#ifdef CHECK_ADDED_SIZE
-    (void)ranking_calculate_total_size(ranking); // only for asserts
+#if CHECK_ADDED_SIZE
+    // only for asserts
+    size_t temp_size = ranking_calculate_total_size(ranking);
     wre_tree_t *temp_cpy;
     wre_clone(&temp_cpy, ranking->entries);
 #endif
     AggregatedHotness_t *removed =
         (AggregatedHotness_t *)wre_remove(ranking->entries, &temp);
-#ifdef CHECK_ADDED_SIZE
-    (void)ranking_calculate_total_size(ranking); // only for asserts
+#if CHECK_ADDED_SIZE
+    // only for asserts
+    size_t after_size = ranking_calculate_total_size(ranking);
+    if (removed)
+        assert(after_size + removed->size == temp_size);
+    else
+        assert(after_size == temp_size);
     wre_destroy(temp_cpy);
 #endif
     if (removed) {
@@ -467,8 +492,10 @@ void ranking_remove_internal(ranking_t *ranking, double hotness, size_t size)
         assert(false && "attempt to remove non-existent data!");
 #endif
     }
-#ifdef CHECK_ADDED_SIZE
-    (void)ranking_calculate_total_size(ranking); // only for asserts
+#if CHECK_ADDED_SIZE
+    // only for asserts
+    size_t after_after_size = ranking_calculate_total_size(ranking);
+    assert(after_after_size + size == temp_size);
 #endif
 }
 
@@ -484,22 +511,30 @@ void ranking_remove_internal(ranking_t *ranking, double hotness, size_t size)
 static void ranking_touch_internal(ranking_t *ranking, struct ttype *entry,
                                    uint64_t timestamp, double add_hotness)
 {
-#ifdef CHECK_ADDED_SIZE
-    (void)ranking_calculate_total_size(ranking); // only for asserts
+#if CHECK_ADDED_SIZE
+    // only for asserts
+    size_t temp0_size = ranking_calculate_total_size(ranking);
 #endif
     size_t removed = ranking_remove_internal_relaxed(ranking, entry);
-#ifdef CHECK_ADDED_SIZE
-    (void)ranking_calculate_total_size(ranking); // only for asserts
+#if CHECK_ADDED_SIZE
+    // only for asserts
+    size_t temp1_size = ranking_calculate_total_size(ranking);
+    assert(temp1_size + removed == temp0_size);
 #endif
     // touch true entry
     ranking_touch_entry_internal(ranking, entry, timestamp, add_hotness);
-#ifdef CHECK_ADDED_SIZE
-    (void)ranking_calculate_total_size(ranking); // only for asserts
+#if CHECK_ADDED_SIZE
+    // only for asserts
+    size_t temp2_size = ranking_calculate_total_size(ranking);
+    assert(temp2_size == temp1_size);
 #endif
     // add data back to ranking - as much as was removed
     ranking_add_internal(ranking, entry->f, removed);
-#ifdef CHECK_ADDED_SIZE
-    (void)ranking_calculate_total_size(ranking); // only for asserts
+#if CHECK_ADDED_SIZE
+    // only for asserts
+    size_t temp3_size = ranking_calculate_total_size(ranking);
+    assert(temp3_size == temp0_size);
+    assert(temp3_size == temp2_size+removed);
 #endif
 }
 
