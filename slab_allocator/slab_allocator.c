@@ -93,7 +93,10 @@ static freelist_node_meta_t *slab_alloc_create_meta_(slab_alloc_t *alloc) {
     bigary_alloc(&alloc->mappedMemory, (free_idx + 1) * alloc->elementSize);
     // TODO add error handling gracefully instead of die!!!
     // TODO make sure that alignment is correct
-    void *ret = ((uint8_t*)alloc->mappedMemory.area) + meta_offset;
+    void *ret_ = ((uint8_t*)alloc->mappedMemory.area) + meta_offset;
+    freelist_node_meta_t *ret = ret_;
+    ret->allocator=alloc;
+    ret->next=NULL;
 
     return ret;
 }
@@ -102,10 +105,6 @@ static freelist_node_meta_t *slab_alloc_create_meta_(slab_alloc_t *alloc) {
 
 int slab_alloc_init(slab_alloc_t *alloc, size_t element_size, size_t max_elements) {
 //     alloc.globFreelist;
-    int ret = pthread_mutex_init(&alloc->globFreelist.mutex, NULL);
-    alloc->globFreelist.freelist = NULL;
-    if (ret != 0)
-        return ret;
     // TODO remove "die" from bigary_alloc and handle init
     // errors in a gentle way
     alloc->elementSize = sizeof(freelist_node_meta_t)+element_size;
@@ -113,7 +112,18 @@ int slab_alloc_init(slab_alloc_t *alloc, size_t element_size, size_t max_element
     bigary_init(&alloc->mappedMemory, BIGARY_DRAM, max_elements_size);
     alloc->used=0u;
 
+    int ret = pthread_mutex_init(&alloc->globFreelist.mutex, NULL);
+    alloc->globFreelist.freelist = NULL;
+    if (ret != 0)
+        return ret;
+
     return ret;
+}
+
+void slab_alloc_destroy(slab_alloc_t *alloc) {
+    int ret = pthread_mutex_destroy(&alloc->globFreelist.mutex);
+    bigary_destroy(&alloc->mappedMemory);
+    assert(ret == 0 && "mutex destruction failed");
 }
 
 void *slab_alloc_malloc(slab_alloc_t *alloc) {
@@ -131,12 +141,6 @@ void slab_alloc_free(void *addr) {
     slab_alloc_glob_freelist_push_(addr);
 }
 
-void slab_alloc_destroy(slab_alloc_t *alloc) {
-    // TODO
-    bigary_destroy(&alloc->mappedMemory);
-    int ret = pthread_mutex_destroy(&alloc->globFreelist.mutex);
-    assert(ret == 0 && "mutex destruction failed");
-}
 
 
 #define struct_bar(size) typedef struct bar##size { char boo[(size)]; } bar##size
@@ -148,6 +152,8 @@ void slab_alloc_destroy(slab_alloc_t *alloc) {
         int ret = slab_alloc_init(&temp, size, nof_elements); \
         assert(ret == 0 && "mutex creation failed!"); \
         slab_alloc_destroy(&temp); \
+        ret = slab_alloc_init(&temp, size, nof_elements); \
+        assert(ret == 0 && "mutex creation failed!"); \
         bar##size *elements[nof_elements]; \
         for (int i=0; i<nof_elements; ++i) { \
             elements[i] = slab_alloc_malloc(&temp); \
@@ -156,11 +162,11 @@ void slab_alloc_destroy(slab_alloc_t *alloc) {
         } \
         for (int i=0; i<nof_elements; ++i) { \
             for (int j=0; j<size; j++) \
-                assert(elements[i]->boo[j] == ((unsigned)(i))%255); \
+                assert(elements[i]->boo[j] == (char)((unsigned)(i))%255); \
         } \
         assert(temp.used == nof_elements); \
         for (int i=0; i<nof_elements; ++i) { \
-            slab_alloc_free(&temp); \
+            slab_alloc_free(elements[i]); \
         } \
         assert(temp.used == nof_elements); \
         for (int i=0; i<nof_elements; ++i) { \
@@ -170,19 +176,68 @@ void slab_alloc_destroy(slab_alloc_t *alloc) {
         } \
         for (int i=0; i<nof_elements; ++i) { \
             for (int j=0; j<size; j++) \
-                assert(elements[i]->boo[j] == ((unsigned)(i+15))%255); \
+                assert(elements[i]->boo[j] == (char)((unsigned)(i+15))%255); \
         } \
         assert(temp.used == nof_elements); \
         for (int i=0; i<nof_elements; ++i) { \
-            slab_alloc_free(&temp); \
+            slab_alloc_free(elements[i]); \
         } \
         assert(temp.used == nof_elements); \
         slab_alloc_destroy(&temp); \
     } while (0)
 
+static void test_slab_alloc_static3(void) {
+    struct_bar(3);
+    size_t NOF_ELEMENTS=1024;
+    size_t SIZE=3;
+    slab_alloc_t temp;
+    int ret = slab_alloc_init(&temp, SIZE, NOF_ELEMENTS);
+    assert(ret == 0 && "slab alloc init failed!");
+    slab_alloc_destroy(&temp);
+    ret = slab_alloc_init(&temp, SIZE, NOF_ELEMENTS);
+    assert(ret == 0 && "slab alloc init failed!");
+    bar3 *elements[NOF_ELEMENTS];
+    for (int i=0; i<NOF_ELEMENTS; ++i) {
+        elements[i] = slab_alloc_malloc(&temp);
+        assert(elements[i] && "slab returned NULL!");
+        memset(elements[i], i, SIZE);
+    }
+    for (int i=0; i<NOF_ELEMENTS; ++i) {
+        for (int j=0; j<SIZE; j++)
+            assert(elements[i]->boo[j] == (char)((unsigned)(i))%255);
+    }
+    assert(temp.used == NOF_ELEMENTS);
+    for (int i=0; i<NOF_ELEMENTS; ++i) {
+        slab_alloc_free(elements[i]);
+    }
+    assert(temp.used == NOF_ELEMENTS);
+    for (int i=0; i<NOF_ELEMENTS; ++i) {
+        elements[i] = slab_alloc_malloc(&temp);
+        assert(elements[i] && "slab returned NULL!");
+        memset(elements[i], i+15, SIZE);
+    }
+    for (int i=0; i<NOF_ELEMENTS; ++i) {
+        for (int j=0; j<SIZE; j++)
+            assert(elements[i]->boo[j] == (char)((unsigned)(i+15))%255);
+    }
+    assert(temp.used == NOF_ELEMENTS);
+    for (int i=0; i<NOF_ELEMENTS; ++i) {
+        slab_alloc_free(elements[i]);
+    }
+    assert(temp.used == NOF_ELEMENTS);
+    slab_alloc_destroy(&temp);
+}
 
 void test(void) {
 //     slab_alloc_t
+    // TODO remove
+    pthread_mutex_t mut;
+    int ret = pthread_mutex_init(&mut, NULL);
+    assert(ret == 0 && "mutex creation failed!");
+    ret = pthread_mutex_destroy(&mut);
+    assert(ret == 0 && "mutex destruction failed!");
+
+    test_slab_alloc_static3();
     test_slab_alloc(1, 1000000);
     test_slab_alloc(2, 1000000);
     test_slab_alloc(4, 1000000);
