@@ -267,7 +267,7 @@ void
 critnib_delete(struct critnib *c)
 {
 	util_mutex_destroy(&c->mutex);
-	bigary_free(&c->ba_critnib);
+	bigary_destroy(&c->ba_critnib);
 }
 
 /*

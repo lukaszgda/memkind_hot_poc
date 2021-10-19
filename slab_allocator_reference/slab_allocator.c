@@ -1,3 +1,5 @@
+#include "slab_allocator.h"
+
 #include "bigary.h"
 #include "pthread.h"
 #include "assert.h"
@@ -8,47 +10,17 @@
 
 #include "stdatomic.h"
 
-#define USE_LOCKLESS
 
 // -------- typedefs ----------------------------------------------------------
 
-/// metadata
-#ifdef USE_LOCKLESS
-typedef _Atomic(struct freelist_node_meta*) freelist_node_thread_safe_meta_ptr;
-#else
-typedef struct freelist_node_meta* freelist_node_thread_safe_meta_ptr;
-#endif
-
-typedef struct freelist_node_meta {
-    // pointer required to know how to free and which free lists to put it on
-    struct slab_alloc *allocator;
-//     size_t size; not stored - all allocations have the same size
-    struct freelist_node_meta *next;
-} freelist_node_meta_t;
-
-typedef struct glob_free_list {
-    freelist_node_thread_safe_meta_ptr freelist;
-    pthread_mutex_t mutex;
-} glob_free_list_t;
-
-typedef struct slab_alloc {
-    // TODO make thread local
-    glob_free_list_t globFreelist;
-    bigary mappedMemory;
-    size_t elementSize;
-    // TODO stdatomic would poses issues to c++,
-    // a wrapper might be necessary
-    atomic_size_t used;
-} slab_alloc_t;
-
 // -------- static functions --------------------------------------------------
 
-freelist_node_meta_t *slab_alloc_addr_to_node_meta_(void *addr) {
+static freelist_node_meta_t *slab_alloc_addr_to_node_meta_(void *addr) {
     assert(addr);
     return (freelist_node_meta_t*)(((uint8_t*)addr)-sizeof(freelist_node_meta_t));
 }
 
-void *slab_alloc_node_meta_to_addr_(freelist_node_meta_t *meta) {
+static void *slab_alloc_node_meta_to_addr_(freelist_node_meta_t *meta) {
     assert(meta);
     return (void*)(((uint8_t*)meta)+sizeof(freelist_node_meta_t));
 }
@@ -60,7 +32,7 @@ static void slab_alloc_glob_freelist_push_(void *addr) {
     slab_alloc_t *alloc = meta->allocator;
     do {
         meta->next = alloc->globFreelist.freelist;
-    } while (!atomic_compare_exchange_weak(&alloc->globFreelist.freelist, &meta->next, meta));
+    } while (false == atomic_compare_exchange_weak(&alloc->globFreelist.freelist, &meta->next, meta));
 }
 
 static void *slab_alloc_glob_freelist_pop_(slab_alloc_t *alloc) {
@@ -69,7 +41,7 @@ static void *slab_alloc_glob_freelist_pop_(slab_alloc_t *alloc) {
         meta = alloc->globFreelist.freelist;
         if (!meta)
             break;
-    } while (!atomic_compare_exchange_weak(&alloc->globFreelist.freelist, &meta, meta->next));
+    } while (false == atomic_compare_exchange_weak(&alloc->globFreelist.freelist, &meta, meta->next));
 
     return meta ? slab_alloc_node_meta_to_addr_(meta) : NULL;
 }
@@ -116,9 +88,8 @@ static freelist_node_meta_t *slab_alloc_create_meta_(slab_alloc_t *alloc) {
     size_t free_idx = slab_alloc_fetch_increment_used_(alloc);
     size_t meta_offset = alloc->elementSize*free_idx;
 
+    // TODO handle failure gracefully instead of die - in biary_alloc
     bigary_alloc(&alloc->mappedMemory, (free_idx + 1) * alloc->elementSize);
-    // TODO add error handling gracefully instead of die!!!
-    // TODO make sure that alignment is correct
     void *ret_ = ((uint8_t*)alloc->mappedMemory.area) + meta_offset;
     freelist_node_meta_t *ret = ret_;
     ret->allocator=alloc;
@@ -130,9 +101,7 @@ static freelist_node_meta_t *slab_alloc_create_meta_(slab_alloc_t *alloc) {
 // -------- public functions --------------------------------------------------
 
 int slab_alloc_init(slab_alloc_t *alloc, size_t element_size, size_t max_elements) {
-//     alloc.globFreelist;
-    // TODO remove "die" from bigary_alloc and handle init
-    // errors in a gentle way
+    // TODO handle failure gracefully instead of die - in biary_alloc
     alloc->elementSize = sizeof(freelist_node_meta_t)+element_size;
     size_t max_elements_size = max_elements * alloc->elementSize;
     bigary_init(&alloc->mappedMemory, BIGARY_DRAM, max_elements_size);
@@ -167,10 +136,9 @@ void slab_alloc_free(void *addr) {
     slab_alloc_glob_freelist_push_(addr);
 }
 
-
+// -------- tests -------------------------------------------------------------
 
 #define struct_bar(size) typedef struct bar##size { char boo[(size)]; } bar##size
-// TODO add modification of allocated memory
 #define test_slab_alloc(size, nof_elements) \
     do { \
         struct_bar(size); \

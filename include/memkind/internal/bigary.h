@@ -5,6 +5,10 @@
 
 #define BIGARY_DRAM -1, MAP_ANONYMOUS|MAP_PRIVATE
 
+#ifdef __cplusplus
+#define restrict __restrict__
+#endif
+
 struct bigary
 {
     void *area;
@@ -16,6 +20,6 @@ struct bigary
 };
 typedef struct bigary bigary;
 
-void bigary_init(bigary *restrict ba, int fd, int flags, size_t max);
-void bigary_alloc(bigary *restrict ba, size_t top);
-void bigary_free(bigary *restrict ba);
+extern void bigary_init(bigary *restrict ba, int fd, int flags, size_t max);
+extern void bigary_alloc(bigary *restrict ba, size_t top);
+extern void bigary_destroy(bigary *restrict ba);
