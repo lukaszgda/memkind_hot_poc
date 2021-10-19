@@ -208,7 +208,7 @@ void ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry,
         }
 
         if (entry->timestamp_state == TIMESTAMP_INIT_DONE) {
-            if ((entry->t0 - entry->t1) > HOTNESS_MEASURE_WINDOW) {
+            if ((entry->t0 - entry->t1) > hotness_measure_window) {
                 // move to next measurement window
                 float f2 = ((float)entry->n2) / (entry->t1 - entry->t2);
                 float f1 = ((float)entry->n1) / (entry->t0 - entry->t1);
@@ -225,7 +225,7 @@ void ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry,
         } else {
             // TODO init not done
             //             printf("wre: hotness awaiting window\n");
-            if ((entry->t0 - entry->t2) > HOTNESS_MEASURE_WINDOW) {
+            if ((entry->t0 - entry->t2) > hotness_measure_window) {
                 // TODO - classify hotness
                 entry->timestamp_state = TIMESTAMP_INIT_DONE;
                 ;

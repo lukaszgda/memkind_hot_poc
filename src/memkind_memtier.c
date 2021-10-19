@@ -104,6 +104,12 @@
 #define THRESHOLD_CHECK_CNT 20
 #define THRESHOLD_STEP      1024
 
+//PEBS
+double old_time_window_hotness_weight;
+double pebs_freq_hz;
+double sample_frequency;
+unsigned long long hotness_measure_window;
+
 // Macro to get number of thresholds from parent object
 #define THRESHOLD_NUM(obj) ((obj->cfg_size) - 1)
 
@@ -799,14 +805,120 @@ failure:
     return NULL;
 }
 
+/*
+ * parse_double -- parses string and returns a double
+ */
+static int parse_double(const char *str, double *dest)
+{
+    char *endptr;
+    int olderrno = errno;
+    errno = 0;
+    double val_ul = strtod(str, &endptr);
+
+    if (endptr == str || errno != 0) {
+        errno = olderrno;
+        return -1;
+    }
+
+    errno = olderrno;
+    *dest = val_ul;
+    return 0;
+}
+
+/*
+ * parse_ull -- parses string and returns an unsigned long long
+ */
+static int parse_ull(const char *str, unsigned long long *dest)
+{
+    if (str[0] == '-') {
+        return -1;
+    }
+
+    char *endptr;
+    int olderrno = errno;
+    errno = 0;
+    unsigned long long val_ul = strtoull(str, &endptr, 0);
+
+    if (endptr == str || errno != 0) {
+        errno = olderrno;
+        return -1;
+    }
+
+    errno = olderrno;
+    *dest = val_ul;
+    return 0;
+}
+
 extern pthread_t pebs_thread;
 
 static struct memtier_memory *
 builder_hot_create_memory(struct memtier_builder *builder)
 {
-    int i;
+    int i, ret;
+    old_time_window_hotness_weight =
+        0.4; // should not stay like this... only for tests and POC
+    // smaller value -> more frequent sampling
+    // 10000 = around 100 samples on *my machine* / sec in matmul test
+    sample_frequency = 10000;
+    pebs_freq_hz = 5.0;
+    // hotness calculation
+    hotness_measure_window = 1000000000; // time window is 1s
+    char *env_var = memkind_get_env("HOTNESS_MEASURE_WINDOW");
+    if (env_var) {
+        ret = parse_ull(env_var, &hotness_measure_window);
+        if (ret) {
+            log_fatal("Wrong value of HOTNESS_MEASURE_WINDOW: %s", env_var);
+            abort();
+        }
+    }
+    env_var = memkind_get_env("SAMPLE_FREQUENCY");
+    if (env_var) {
+        if (env_var[0] == '-') {
+            log_fatal("SAMPLE_FREQUENCY can't be a negative number: %s",
+                      env_var);
+            abort();
+        }
+        ret = parse_double(env_var, &sample_frequency);
+        if (ret) {
+            log_fatal("Wrong value of SAMPLE_FREQUENCY: %s", env_var);
+            abort();
+        }
+    }
+    env_var = memkind_get_env("PEBS_FREQ_HZ");
+    if (env_var) {
+        if (env_var[0] == '-') {
+            log_fatal("PEBS_FREQ_HZ can't be a negative number: %s", env_var);
+            abort();
+        }
+        ret = parse_double(env_var, &pebs_freq_hz);
+        if (ret || pebs_freq_hz == 0) {
+            log_fatal("Wrong value of PEBS_FREQ_HZ: %s", env_var);
+            abort();
+        }
+    }
+    env_var = memkind_get_env("OLD_TIME_WINDOW_HOTNESS_WEIGHT");
+    if (env_var) {
+        if (env_var[0] == '-') {
+            log_fatal(
+                "OLD_TIME_WINDOW_HOTNESS_WEIGHT can't be a negative number: %s",
+                env_var);
+            abort();
+        }
+        ret = parse_double(env_var, &old_time_window_hotness_weight);
+        if (ret) {
+            log_fatal("Wrong value of OLD_TIME_WINDOW_HOTNESS_WEIGHT: %s",
+                      env_var);
+            abort();
+        }
+    }
+    log_info("sample_frequency = %.1f", sample_frequency);
+    log_info("pebs_freq_hz = %.1f", pebs_freq_hz);
+    log_info("hotness_measure_window = %llu", hotness_measure_window);
+    log_info("old_time_window_hotness_weight = %.1f",
+             old_time_window_hotness_weight);
+
     // TODO use some properties? hotness weight should be configurable
-    tachanka_init(OLD_TIME_WINDOW_HOTNESS_WEIGHT, RANKING_BUFFER_SIZE_ELEMENTS);
+    tachanka_init(old_time_window_hotness_weight, RANKING_BUFFER_SIZE_ELEMENTS);
     pebs_init(getpid());
 
     struct memtier_memory *memory =
@@ -839,7 +951,7 @@ builder_hot_create_memory(struct memtier_builder *builder)
 
 #if PRINT_POLICY_CREATE_MEMORY_INFO
     struct timespec t;
-    int ret = clock_gettime(CLOCK_MONOTONIC, &t);
+    ret = clock_gettime(CLOCK_MONOTONIC, &t);
     if (ret != 0) {
         log_fatal("Create Memory: ASSERT CREATE FAILURE!\n");
     }
@@ -1105,41 +1217,40 @@ MEMKIND_EXPORT void *memtier_realloc(struct memtier_memory *memory, void *ptr,
 MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
                                           size_t size)
 {
-    size_t old_size = 0u;
     if (size == 0 && ptr != NULL) {
-        old_size = jemk_malloc_usable_size(ptr);
 #ifdef MEMKIND_DECORATION_ENABLED
         if (memtier_kind_free_pre)
             memtier_kind_free_pre(&ptr);
 #endif
-
-        if (pol == MEMTIER_POLICY_DATA_HOTNESS) {
-//             unregister_block(ptr);
-            EventEntry_t entry = {
-                .type = EVENT_DESTROY_REMOVE,
-                .data.destroyRemoveData = {
-                .address = ptr,
-                .size = old_size,
-                }
-            };
-
-            bool success = tachanka_ranking_event_push(&entry);
-#if PRINT_POLICY_LOG_STATISTICS_INFO
-            if (success) {
-                g_successful_adds++;
-                g_successful_adds_realloc0++;
-            } else {
-                g_failed_adds++;
-                g_failed_adds_realloc0++;
+    size_t old_size = jemk_malloc_usable_size(ptr);
+    if (pol == MEMTIER_POLICY_DATA_HOTNESS) {
+//      unregister_block(ptr);
+        EventEntry_t entry = {
+            .type = EVENT_DESTROY_REMOVE,
+            .data.destroyRemoveData = {
+            .address = ptr,
+            .size = old_size,
             }
+        };
+
+        bool success = tachanka_ranking_event_push(&entry);
+#if PRINT_POLICY_LOG_STATISTICS_INFO
+        if (success) {
+            g_successful_adds++;
+            g_successful_adds_realloc0++;
+        } else {
+            g_failed_adds++;
+            g_failed_adds_realloc0++;
+        }
 #else
-            (void)success;
+        (void)success;
 #endif
         }
         decrement_alloc_size(kind->partition, old_size);
         memkind_free(kind, ptr);
         return NULL;
     } else if (ptr == NULL) {
+        if (pol == MEMTIER_POLICY_DATA_HOTNESS) {
             EventEntry_t entry = {
                 .type = EVENT_CREATE_ADD,
                 .data.createAddData = {
@@ -1160,9 +1271,10 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
 #else
         (void)success;
 #endif
+        }
         return memtier_kind_malloc(kind, size);
     }
-    decrement_alloc_size(kind->partition, old_size);
+    decrement_alloc_size(kind->partition, jemk_malloc_usable_size(ptr));
 
     void *n_ptr = memkind_realloc(kind, ptr, size);
     if (pol == MEMTIER_POLICY_DATA_HOTNESS) {
