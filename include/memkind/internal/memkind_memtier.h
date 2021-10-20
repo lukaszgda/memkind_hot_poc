@@ -279,7 +279,7 @@ extern double old_time_window_hotness_weight;
 #define PRINT_POLICY_CONSTRUCT_MEMORY_INFO 0
 #define PRINT_POLICY_DELETE_MEMORY_INFO 0
 
-#define CHECK_ADDED_SIZE 0
+#define CHECK_ADDED_SIZE 1
 
 #define QUANTIFICATION_ENABLED 0
 
