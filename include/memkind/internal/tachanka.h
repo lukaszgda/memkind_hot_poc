@@ -71,8 +71,7 @@ struct tblock
 {
     void *addr;
     size_t size;
-    int type;
-    int nextfree; // can reuse one of other fields
+    struct ttype *type;
 };
 
 #ifdef __cplusplus

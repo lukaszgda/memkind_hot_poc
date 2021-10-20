@@ -6,7 +6,7 @@
 #include <memkind/internal/tachanka.h>
 #include <memkind/internal/ranking.h>
 #include <memkind/internal/lockless_srmw_queue.h>
-#include <memkind/internal/bigary.h>
+#include <memkind/internal/slab_allocator.h>
 
 #include <pthread.h>
 #include <stdint.h>
@@ -17,26 +17,19 @@
 #include <stdatomic.h>
 #include <assert.h>
 
-
 // DEBUG
 #ifndef MEMKIND_EXPORT
 #define MEMKIND_EXPORT __attribute__((visibility("default")))
 #endif
 
-struct ttype *ttypes;
-struct tblock *tblocks;
-
-static int ntypes = 0;
-static int nblocks = 0;
-static int freeblock = -1;
+static slab_alloc_t g_tblockAlloc;
+static slab_alloc_t g_ttypeAlloc;
 
 // TODO (possibly) move elsewhere - make sure multiple rankings are supported!
 static ranking_t *ranking;
 static lq_buffer_t ranking_event_buff;
 static _Atomic double g_dramToTotalMemRatio=1.0;
 /*static*/ critnib *hash_to_type, *addr_to_block;
-static bigary ba_ttypes, ba_tblocks;
-
 #define ADD(var,x) __sync_fetch_and_add(&(var), (x))
 #define SUB(var,x) __sync_fetch_and_sub(&(var), (x))
 
@@ -56,14 +49,7 @@ void register_block(uint64_t hash, void *addr, size_t size)
 
     int nt = critnib_get(hash_to_type, hash);
     if (nt == -1) {
-        nt = __sync_fetch_and_add(&ntypes, 1);
-        t = &ttypes[nt];
-        bigary_alloc(&ba_ttypes, nt*sizeof(struct ttype));
-        if (nt >= MAXTYPES)
-        {
-            log_fatal("Too many distinct alloc types");
-            exit(-1);
-        }
+        t = slab_alloc_malloc(&g_ttypeAlloc);
         t->hash = hash;
         t->total_size = 0; // will be incremented later
         t->timestamp_state = TIMESTAMP_NOT_SET;
@@ -74,7 +60,7 @@ void register_block(uint64_t hash, void *addr, size_t size)
                 log_fatal("Alloc type disappeared?!?");
                 exit(-1);
             }
-            t = &ttypes[nt];
+            t = &ttypes[nt]; // TODO
         }
         t->n1=0u;
         t->n2=0u;
@@ -86,50 +72,23 @@ void register_block(uint64_t hash, void *addr, size_t size)
         log_info("new type created, total types: %lu", counter);
 #endif
     } else {
-        t = &ttypes[nt];
+        t = &ttypes[nt]; // TODO
     }
 
     t->num_allocs++;
     t->total_size+= size;
 
-    int fb, nf;
-    do {
-        fb = freeblock;
-        // WARNING HACK AHEAD
-        // background: non-initialized blocks have nextfree == 0
-        // issue: when uninitialized block is taken, nextfree is incorrect (0)
-        // this leads to reuse of block 0,
-        // which produces serious errors in execution
-        // initialization would probably be welcome, but is non-trivial:
-        // separate initialized size should be stored here,
-        // we cannot rely solely on bigary_alloc
-        if (fb <= 0) {
-            fb = __sync_fetch_and_add(&nblocks, 1);
-            bigary_alloc(&ba_tblocks, (fb+1)*sizeof(struct tblock));
-            if (fb >= MAXBLOCKS) {
-                log_fatal("Too many allocated blocks");
-                exit(-1);
-            }
-            break;
-        }
-        nf = tblocks[fb].nextfree;
-    } while (!__atomic_compare_exchange_n(&freeblock, &fb, nf, 1, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE));
-
-    struct tblock *bl = &tblocks[fb];
-    if (fb >= MAXBLOCKS) {
-        log_fatal("Too many allocated blocks");
-        exit(-1);
-    }
+    struct tblock *bl = slab_alloc_malloc(&g_tblockAlloc);
 
     bl->addr = addr;
     bl->size = size;
     bl->type = nt;
 
 #if PRINT_CRITNIB_NEW_BLOCK_REGISTERED_INFO
-    log_info("New block %d registered: addr %p size %lu type %d", fb, (void*)addr, size, nt);
+    log_info("New block %p registered: addr %p size %lu type %d", bl, (void*)addr, size, nt);
 #endif
 
-    critnib_insert(addr_to_block, fb);
+    critnib_insert(addr_to_block, fb); // TODO
 #if CHECK_ADDED_SIZE
     g_total_critnib_size += size;
 #endif
@@ -149,7 +108,7 @@ void realloc_block(void *addr, void *new_addr, size_t size)
 #endif
         return;
     }
-    struct tblock *bl = &tblocks[bln];
+    struct tblock *bl = &tblocks[bln]; // TODO
 #if CHECK_ADDED_SIZE
     assert(g_total_critnib_size >= bl->size);
     g_total_critnib_size -= bl->size;
@@ -161,7 +120,7 @@ void realloc_block(void *addr, void *new_addr, size_t size)
 #endif
 
     bl->addr = new_addr;
-    struct ttype *t = &ttypes[bl->type];
+    struct ttype *t = bl->type; // TODO
     SUB(t->total_size, bl->size);
     ADD(t->total_size, size);
     // TODO the new block might have completely different hash/type ...
@@ -183,7 +142,7 @@ void register_block_in_ranking(void * addr, size_t size)
 #endif
         return;
     }
-    int type = tblocks[bln].type;
+    int type = tblocks[bln].type; // TODO
     assert(type != -1);
 #if CHECK_ADDED_SIZE
     volatile size_t pre_real_ranking_size = ranking_calculate_total_size(ranking);
@@ -231,8 +190,8 @@ void unregister_block(void *addr)
 #endif
         return;
     }
-    struct tblock *bl = &tblocks[bln];
-    struct ttype *t = &ttypes[bl->type];
+    struct tblock *bl = &tblocks[bln]; // TODO
+    struct ttype *t = bl->type;
     SUB(t->num_allocs, 1);
     SUB(t->total_size, bl->size);
 #if CHECK_ADDED_SIZE
@@ -243,13 +202,14 @@ void unregister_block(void *addr)
 #endif
     bl->addr = 0;
     bl->size = 0;
-    __atomic_exchange(&freeblock, &bln, &bl->nextfree, __ATOMIC_ACQ_REL);
+    slab_alloc_free(bl);
 }
 
 MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type(const void *addr)
 {
     int bln = critnib_find_le(addr_to_block, (uintptr_t)addr);
 
+    // TODO
     if (bln < 0 || addr >= tblocks[bln].addr + tblocks[bln].size)
         return HOTNESS_NOT_FOUND;
     struct ttype *t = &ttypes[tblocks[bln].type];
@@ -271,7 +231,7 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
     Hotness_e ret = HOTNESS_NOT_FOUND;
     int nt = critnib_get(hash_to_type, hash);
     if (nt != -1) {
-        struct ttype *t = &ttypes[nt];
+        struct ttype *t = &ttypes[nt]; // TODO
         if (ranking_is_hot(ranking, t))
             ret = HOTNESS_HOT;
         else
@@ -298,7 +258,7 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
         assert(from_malloc == 0);
         return;
     }
-    struct tblock *bl = &tblocks[bln];
+    struct tblock *bl = &tblocks[bln]; // TODO
     if ((char*)addr >= (char*)(bl->addr + bl->size)) {
 #if PRINT_CRITNIB_NOT_FOUND_ON_TOUCH_WARNING
         log_info("WARNING: Addr %p not in known tachanka range  %p - %p", (char*)addr,
@@ -317,7 +277,7 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
 //     }
     assert(bl->type >= 0);
 //     assert(bl->type > 0); TODO check if this is the case in our scenario
-    struct ttype *t = &ttypes[bl->type];
+    struct ttype *t = bl->type;
     // TODO - is this thread safeness needed? or best effort will be enough?
     //__sync_fetch_and_add(&t->accesses, 1);
 
@@ -373,16 +333,12 @@ void tachanka_init(double old_window_hotness_weight, size_t event_queue_size)
     g_total_ranking_size=0u;
 #endif
 
-    bigary_init(&ba_tblocks, BIGARY_DRAM, 0);
-//     bigary_init(&ba_tblocks, -1, MAP_ANONYMOUS | MAP_PRIVATE, 0);
-    tblocks = ba_tblocks.area;
-
-    bigary_init(&ba_ttypes, BIGARY_DRAM, 0);
-//     bigary_init(&ba_ttypes, -1, MAP_ANONYMOUS | MAP_PRIVATE, 0); // TODO NOT 0 !!!
-    ttypes = ba_ttypes.area;
+    slab_alloc_init(&g_tblockAlloc, sizeof(struct tblock), 0);
+    slab_alloc_init(&g_ttypeAlloc, sizeof(struct ttype), 0);
 
     read_maps();
 
+    // TODO
     addr_to_block = critnib_new((uint64_t*)tblocks, sizeof(tblocks[0]) / sizeof(uint64_t));
     hash_to_type = critnib_new((uint64_t*)ttypes, sizeof(ttypes[0]) / sizeof(uint64_t));
 
@@ -409,6 +365,8 @@ void tachanka_update_threshold(void)
 
 void tachanka_destroy(void)
 {
+    slab_alloc_destroy(&g_tblockAlloc);
+    slab_alloc_destroy(&g_typeAlloc);
     ranking_destroy(ranking);
     ranking_event_destroy(&ranking_event_buff);
 }
