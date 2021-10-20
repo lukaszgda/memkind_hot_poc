@@ -1359,7 +1359,9 @@ MEMKIND_EXPORT void memtier_kind_free(memkind_t kind, void *ptr)
             return;
     }
 
+#if PRINT_POLICY_LOG_STATISTICS_INFO
     g_memtier_free_called++;
+#endif
     if (pol == MEMTIER_POLICY_DATA_HOTNESS) {
         // TODO offload to PEBS (ranking_queue) !!! Currently contains race conditions
 //         unregister_block(ptr);
