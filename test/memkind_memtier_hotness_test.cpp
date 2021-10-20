@@ -4,6 +4,7 @@
 #include <memkind/internal/memkind_memtier.h>
 #include <memkind/internal/tachanka.h>
 #include <memkind/internal/slab_allocator.h>
+#include <memkind/internal/wre_avl_tree_internal.h>
 
 #include <random>
 #include <thread>

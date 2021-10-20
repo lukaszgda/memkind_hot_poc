@@ -6,7 +6,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#include "bigary.h"
+#include "memkind/internal/bigary.h"
 
 #define BIGARY_DEFAULT_MAX (16 * 1024 * 1048576ULL)
 #define BIGARY_PAGESIZE 2097152
