@@ -7,8 +7,8 @@
 #include <unistd.h>
 
 #include "memkind/internal/bigary.h"
-
-#define BIGARY_DEFAULT_MAX (16 * 1024 * 1048576ULL)
+// default max: 16 GB
+#define BIGARY_DEFAULT_MAX (16 * 1024 * 1024 * 1024ULL)
 #define BIGARY_PAGESIZE 2097152
 
 static void die(const char *fmt, ...)
@@ -18,7 +18,7 @@ static void die(const char *fmt, ...)
     va_start(args, fmt);
     int len = vsnprintf(buf, sizeof(buf), fmt, args);
     va_end(args);
-    if (write(2, buf, len));
+    if (write(STDERR_FILENO, buf, len));
     exit(1);
 }
 
