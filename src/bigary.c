@@ -18,6 +18,7 @@ static void die(const char *fmt, ...)
     va_start(args, fmt);
     int len = vsnprintf(buf, sizeof(buf), fmt, args);
     va_end(args);
+    // TODO refactor/remove this exit function
     if (write(STDERR_FILENO, buf, len));
     exit(1);
 }
