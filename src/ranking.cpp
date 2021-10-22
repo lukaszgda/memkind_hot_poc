@@ -3,11 +3,13 @@ extern "C" {
 #include "memkind/internal/wre_avl_tree.h"
 }
 
+#include "memkind/internal/slab_allocator.h"
+
+#include <jemalloc/jemalloc.h>
 #include <algorithm>
 #include <atomic>
 #include <cassert>
 #include <cstring>
-#include <jemalloc/jemalloc.h>
 #include <limits>
 #include <mutex>
 #include <vector>
@@ -63,16 +65,12 @@ thread_local int recursion_counter::counter=0;
 #define RANKING_LOCK_GUARD(ranking) (void)(ranking)->mutex
 #endif
 
-// approach:
-//  1) STL and inefficient data structures
-//  2) tests
-//  3) optimisation: AVL trees with additional cached data in nodes
-
 using namespace std;
 
 struct ranking {
     std::atomic<double> hotThreshold;
     wre_tree_t *entries;
+    slab_alloc_t aggHotAlloc;
     std::mutex mutex;
     double oldWeight;
     double newWeight;
@@ -133,33 +131,6 @@ static quantified_hotness_t ranking_quantify_hotness(double hotness);
 static double ranking_dequantify_hotness(quantified_hotness_t quantified_hotness);
 
 //--------private function implementation---------
-
-static size_t wre_calculate_subtree_size(wre_node_t *node) {
-    size_t ret=0;
-    if (node) {
-        ret += wre_calculate_subtree_size(node->left);
-        ret += wre_calculate_subtree_size(node->right);
-        ret += node->ownWeight;
-        assert(ret == node->subtreeWeight);
-        size_t max_subheight=0;
-        int max_subheight_left=0;
-        int max_subheight_right=0;
-        if (node->left) {
-            assert(node->left->which == LEFT_NODE);
-            max_subheight_left = node->left->height + 1;
-            assert(node->left->parent == node);
-        }
-        if (node->right) {
-            assert(node->right->which == RIGHT_NODE);
-            max_subheight_right = node->right->height + 1;
-            assert(node->right->parent == node);
-        }
-        max_subheight = max(max_subheight_left, max_subheight_right);
-        assert(max_subheight == node->height);
-        assert(abs(max_subheight_left-max_subheight_right) < 2);
-    }
-    return ret;
-}
 
 static quantified_hotness_t ranking_quantify_hotness(double hotness)
 {
@@ -261,9 +232,12 @@ void ranking_create_internal(ranking_t **ranking, double old_weight)
     // placement new for mutex
     // mutex is already inside a structure, so alignment should be ok
     (void)new ((void *)(&(*ranking)->mutex)) std::mutex();
+    int ret =
+        slab_alloc_init(&(*ranking)->aggHotAlloc, sizeof(AggregatedHotness_t), 0);
     (*ranking)->hotThreshold = 0.;
     (*ranking)->oldWeight = old_weight;
     (*ranking)->newWeight = 1 - old_weight;
+    assert(ret == 0 && "slab allocator initialization failed!");
 }
 
 void ranking_destroy_internal(ranking_t *ranking)
@@ -271,6 +245,7 @@ void ranking_destroy_internal(ranking_t *ranking)
     // explicit destructor call for mutex
     // which was created with placement new
     ranking->mutex.~mutex();
+    slab_alloc_destroy(&ranking->aggHotAlloc);
     jemk_free(ranking);
 }
 
@@ -285,7 +260,7 @@ ranking_calculate_hot_threshold_dram_total_internal(ranking_t *ranking,
 {
 #if CHECK_ADDED_SIZE
     // only for asserts
-    size_t temp_size = ranking_calculate_total_size(ranking);
+    size_t temp_size = wre_calculate_total_size(ranking->entries);
     wre_tree_t *temp_cpy;
     wre_clone(&temp_cpy, ranking->entries);
 #endif
@@ -302,7 +277,7 @@ ranking_calculate_hot_threshold_dram_total_internal(ranking_t *ranking,
     // EOF TODO
 #if CHECK_ADDED_SIZE
     // only for asserts
-    size_t after_size = ranking_calculate_total_size(ranking);
+    size_t after_size = wre_calculate_total_size(ranking->entries);
     assert(temp_size == after_size);
     wre_destroy(temp_cpy);
 #endif
@@ -353,7 +328,7 @@ void ranking_add_internal(ranking_t *ranking, double hotness, size_t size)
     temp.quantifiedHotness = ranking_quantify_hotness(hotness);
 #if CHECK_ADDED_SIZE
     // only for asserts
-    size_t temp_size = ranking_calculate_total_size(ranking);
+    size_t temp_size = wre_calculate_total_size(ranking->entries);
     wre_tree_t *temp_cpy;
     wre_clone(&temp_cpy, ranking->entries);
 #endif
@@ -361,7 +336,7 @@ void ranking_add_internal(ranking_t *ranking, double hotness, size_t size)
         (AggregatedHotness_t *)wre_remove(ranking->entries, &temp);
 #if CHECK_ADDED_SIZE
     // only for asserts
-    size_t after_size = ranking_calculate_total_size(ranking);
+    size_t after_size = wre_calculate_total_size(ranking->entries);
     if (value)
         assert(temp_size == after_size+value->size);
     else
@@ -372,7 +347,8 @@ void ranking_add_internal(ranking_t *ranking, double hotness, size_t size)
         // value with the same hotness is already there, should be aggregated
         value->size += size;
     } else {
-        value = (AggregatedHotness_t *)jemk_malloc(sizeof(AggregatedHotness_t));
+//         value = (AggregatedHotness_t *)jemk_malloc(sizeof(AggregatedHotness_t));
+        value = (AggregatedHotness_t *)slab_alloc_malloc(&ranking->aggHotAlloc);
         value->quantifiedHotness = ranking_quantify_hotness(hotness);
         value->size = size;
         //         printf("wre: hotness not found, adds\n");
@@ -380,10 +356,10 @@ void ranking_add_internal(ranking_t *ranking, double hotness, size_t size)
     if (value->size > 0)
         wre_put(ranking->entries, value, value->size);
     else
-        jemk_free(value);
+        slab_alloc_free(value);
 #if CHECK_ADDED_SIZE
     // only for asserts
-    size_t after_after_size = ranking_calculate_total_size(ranking);
+    size_t after_after_size = wre_calculate_total_size(ranking->entries);
     assert(temp_size + size == after_after_size);
 #endif
 }
@@ -401,7 +377,7 @@ static size_t ranking_remove_internal_relaxed(ranking_t *ranking, const struct t
     temp.quantifiedHotness = ranking_quantify_hotness(entry->f);
 #if CHECK_ADDED_SIZE
     // only for asserts
-    size_t temp_size = ranking_calculate_total_size(ranking);
+    size_t temp_size = wre_calculate_total_size(ranking->entries);
     wre_tree_t *temp_cpy;
     wre_clone(&temp_cpy, ranking->entries);
 #endif
@@ -409,7 +385,7 @@ static size_t ranking_remove_internal_relaxed(ranking_t *ranking, const struct t
         (AggregatedHotness_t *)wre_remove(ranking->entries, &temp);
 #if CHECK_ADDED_SIZE
     // only for asserts
-    size_t after_size = ranking_calculate_total_size(ranking);
+    size_t after_size = wre_calculate_total_size(ranking->entries);
     if (removed)
         assert(temp_size == after_size + removed->size);
     else
@@ -429,12 +405,12 @@ static size_t ranking_remove_internal_relaxed(ranking_t *ranking, const struct t
             removed->size -= block_size;
         }
         if (removed->size == 0)
-            jemk_free(removed);
+            slab_alloc_free(removed);
         else {
             wre_put(ranking->entries, removed, removed->size);
 #if CHECK_ADDED_SIZE
             // only for asserts
-            size_t after_after_size = ranking_calculate_total_size(ranking);
+            size_t after_after_size = wre_calculate_total_size(ranking->entries);
             assert(after_after_size == after_size + removed->size);
 #endif
         }
@@ -443,7 +419,7 @@ static size_t ranking_remove_internal_relaxed(ranking_t *ranking, const struct t
         ret = 0; // defensive programming - nothing found, nothing removed
     }
 #if CHECK_ADDED_SIZE
-    (void)ranking_calculate_total_size(ranking); // only for asserts
+    (void)wre_calculate_total_size(ranking->entries); // only for asserts
 #endif
 
     return ret;
@@ -458,7 +434,7 @@ void ranking_remove_internal(ranking_t *ranking, double hotness, size_t size)
     temp.quantifiedHotness = ranking_quantify_hotness(hotness);
 #if CHECK_ADDED_SIZE
     // only for asserts
-    size_t temp_size = ranking_calculate_total_size(ranking);
+    size_t temp_size = wre_calculate_total_size(ranking->entries);
     wre_tree_t *temp_cpy;
     wre_clone(&temp_cpy, ranking->entries);
 #endif
@@ -466,7 +442,7 @@ void ranking_remove_internal(ranking_t *ranking, double hotness, size_t size)
         (AggregatedHotness_t *)wre_remove(ranking->entries, &temp);
 #if CHECK_ADDED_SIZE
     // only for asserts
-    size_t after_size = ranking_calculate_total_size(ranking);
+    size_t after_size = wre_calculate_total_size(ranking->entries);
     if (removed)
         assert(after_size + removed->size == temp_size);
     else
@@ -483,7 +459,7 @@ void ranking_remove_internal(ranking_t *ranking, double hotness, size_t size)
         }
         removed->size -= size;
         if (removed->size == 0)
-            jemk_free(removed);
+            slab_alloc_free(removed);
         else
             wre_put(ranking->entries, removed, removed->size);
     } else {
@@ -494,7 +470,7 @@ void ranking_remove_internal(ranking_t *ranking, double hotness, size_t size)
     }
 #if CHECK_ADDED_SIZE
     // only for asserts
-    size_t after_after_size = ranking_calculate_total_size(ranking);
+    size_t after_after_size = wre_calculate_total_size(ranking->entries);
     assert(after_after_size + size == temp_size);
 #endif
 }
@@ -513,26 +489,26 @@ static void ranking_touch_internal(ranking_t *ranking, struct ttype *entry,
 {
 #if CHECK_ADDED_SIZE
     // only for asserts
-    size_t temp0_size = ranking_calculate_total_size(ranking);
+    size_t temp0_size = wre_calculate_total_size(ranking->entries);
 #endif
     size_t removed = ranking_remove_internal_relaxed(ranking, entry);
 #if CHECK_ADDED_SIZE
     // only for asserts
-    size_t temp1_size = ranking_calculate_total_size(ranking);
+    size_t temp1_size = wre_calculate_total_size(ranking->entries);
     assert(temp1_size + removed == temp0_size);
 #endif
     // touch true entry
     ranking_touch_entry_internal(ranking, entry, timestamp, add_hotness);
 #if CHECK_ADDED_SIZE
     // only for asserts
-    size_t temp2_size = ranking_calculate_total_size(ranking);
+    size_t temp2_size = wre_calculate_total_size(ranking->entries);
     assert(temp2_size == temp1_size);
 #endif
     // add data back to ranking - as much as was removed
     ranking_add_internal(ranking, entry->f, removed);
 #if CHECK_ADDED_SIZE
     // only for asserts
-    size_t temp3_size = ranking_calculate_total_size(ranking);
+    size_t temp3_size = wre_calculate_total_size(ranking->entries);
     assert(temp3_size == temp0_size);
     assert(temp3_size == temp2_size+removed);
 #endif
@@ -630,9 +606,4 @@ MEMKIND_EXPORT void ranking_set_touch_callback(ranking_t *ranking,
     RANKING_LOCK_GUARD(ranking);
     type->touchCb = cb;
     type->touchCbArg = arg;
-}
-
-MEMKIND_EXPORT size_t ranking_calculate_total_size(ranking_t *ranking) {
-    // traverse tree using DFS and aggregate all sizes
-    return wre_calculate_subtree_size(ranking->entries->rootNode);
 }

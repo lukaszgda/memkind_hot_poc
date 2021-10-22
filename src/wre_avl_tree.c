@@ -2,7 +2,10 @@
 #include "assert.h"
 #include "jemalloc/jemalloc.h"
 #include "memkind/internal/memkind_private.h"
+#include "memkind/internal/slab_allocator.h"
+#include "memkind/internal/wre_avl_tree_internal.h"
 #include "stdint.h"
+#include "string.h"
 
 #define DEBUG_PRINTFS // TODO move/remove
 
@@ -162,11 +165,11 @@ static wre_node_t *find_node(wre_tree_t *tree, const void *data)
     wre_node_t *cnode = tree->rootNode; // double pointer - ptr modified
     while (cnode) {
         // descend further
-        if (tree->is_lower(cnode->data, data)) {
+        if (tree->is_lower_check(cnode->data, data)) {
             cnode = cnode->right; // search right branch
         } else {
             // check equality: if none is lower, they are the same
-            if (!tree->is_lower(data, cnode->data))
+            if (!tree->is_lower_check(data, cnode->data))
                 break; // node found, can exit
             // new data is lower: search right branch
             cnode = cnode->left; // search left branch
@@ -205,11 +208,11 @@ static void balance_upwards(wre_tree_t *tree, wre_node_t *node)
 }
 
 /// @brief Allocates and creates a node that is not attached to any structure
-static wre_node_t *node_create(which_node_e which)
+static wre_node_t *node_create(slab_alloc_t *alloc, which_node_e which)
 {
-    wre_node_t *ret = (wre_node_t *)jemk_calloc(1, sizeof(wre_node_t));
+    wre_node_t *ret = (wre_node_t *)slab_alloc_malloc(alloc);
     if (ret) {
-        // only non-zero fields need to be set
+        memset(ret, 0, sizeof(wre_node_t));
         ret->which = which;
     }
     return ret;
@@ -217,22 +220,49 @@ static wre_node_t *node_create(which_node_e which)
 
 static void node_destroy(wre_node_t *node)
 {
-    jemk_free(node);
+    slab_alloc_free(node);
 }
 
-static void copy_recursive(wre_node_t *dest, wre_node_t *src) {
+static void copy_recursive(slab_alloc_t *alloc, wre_node_t *dest, wre_node_t *src) {
     if (src->right) {
-        dest->right = node_create(RIGHT_NODE);
+        dest->right = node_create(alloc, RIGHT_NODE);
         *dest->right = *src->right;
         dest->right->parent = dest;
-        copy_recursive(dest->right, src->right);
+        copy_recursive(alloc, dest->right, src->right);
     }
     if (src->left) {
-        dest->left = node_create(RIGHT_NODE);
+        dest->left = node_create(alloc, RIGHT_NODE);
         *dest->left = *src->left;
         dest->left->parent = dest;
-        copy_recursive(dest->left, src->left);
+        copy_recursive(alloc, dest->left, src->left);
     }
+}
+
+static size_t wre_calculate_subtree_size(wre_node_t *node) {
+    size_t ret=0;
+    if (node) {
+        ret += wre_calculate_subtree_size(node->left);
+        ret += wre_calculate_subtree_size(node->right);
+        ret += node->ownWeight;
+        assert(ret == node->subtreeWeight);
+        size_t max_subheight=0;
+        int max_subheight_left=0;
+        int max_subheight_right=0;
+        if (node->left) {
+            assert(node->left->which == LEFT_NODE);
+            max_subheight_left = node->left->height + 1;
+            assert(node->left->parent == node);
+        }
+        if (node->right) {
+            assert(node->right->which == RIGHT_NODE);
+            max_subheight_right = node->right->height + 1;
+            assert(node->right->parent == node);
+        }
+        max_subheight = max(max_subheight_left, max_subheight_right);
+        assert(max_subheight == node->height);
+        assert(abs(max_subheight_left-max_subheight_right) < 2);
+    }
+    return ret;
 }
 
 //---public functions
@@ -240,12 +270,15 @@ static void copy_recursive(wre_node_t *dest, wre_node_t *src) {
 MEMKIND_EXPORT void wre_create(wre_tree_t **tree, is_lower compare)
 {
     *tree = (wre_tree_t *)jemk_malloc(sizeof(wre_tree_t));
-    (*tree)->is_lower = compare;
+    (*tree)->is_lower_check = compare;
     (*tree)->rootNode = NULL;
+    int ret = slab_alloc_init(&(*tree)->nodeAlloc, sizeof(wre_node_t), 0);
+    assert(ret == 0 && "slab_alloc_init failed");
 }
 
 MEMKIND_EXPORT void wre_destroy(wre_tree_t *tree)
 {
+    slab_alloc_destroy(&tree->nodeAlloc);
     jemk_free(tree);
 }
 
@@ -259,7 +292,7 @@ MEMKIND_EXPORT void wre_put(wre_tree_t *tree, void *data, size_t weight)
     while (*cnode != NULL) {
         // descend further
         parent = *cnode;
-        if (tree->is_lower((*cnode)->data, data)) {
+        if (tree->is_lower_check((*cnode)->data, data)) {
             // new data is higher-equal: should be attached to right node
             cnode = &(*cnode)->right;
             which = RIGHT_NODE;
@@ -270,7 +303,7 @@ MEMKIND_EXPORT void wre_put(wre_tree_t *tree, void *data, size_t weight)
         }
     }
     // cnode is null - we should allocate a new node
-    *cnode = node_create(which); // assignment to ** already attaches child
+    *cnode = node_create(&tree->nodeAlloc, which); // assignment to ** already attaches child
     (*cnode)->parent = parent;   // set parent
     (*cnode)->subtreeWeight = weight;
     (*cnode)->ownWeight = weight;
@@ -545,10 +578,15 @@ MEMKIND_EXPORT void *wre_find_weighted(wre_tree_t *tree, double ratio)
 }
 
 MEMKIND_EXPORT void wre_clone(wre_tree_t **tree, wre_tree_t *src) {
-    wre_create(tree, src->is_lower);
+    wre_create(tree, src->is_lower_check);
     if (src->rootNode) {
-        (*tree)->rootNode = node_create(ROOT_NODE);
+        (*tree)->rootNode = node_create(&(*tree)->nodeAlloc, ROOT_NODE);
         *(*tree)->rootNode = *src->rootNode;
-        copy_recursive((*tree)->rootNode, src->rootNode);
+        copy_recursive(&(*tree)->nodeAlloc, (*tree)->rootNode, src->rootNode);
     }
+}
+
+MEMKIND_EXPORT size_t wre_calculate_total_size(wre_tree_t *tree) {
+    // traverse tree using DFS and aggregate all sizes
+    return wre_calculate_subtree_size(tree->rootNode);
 }
