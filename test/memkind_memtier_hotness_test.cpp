@@ -5,6 +5,7 @@
 #include <memkind/internal/tachanka.h>
 #include <memkind/internal/slab_allocator.h>
 #include <memkind/internal/wre_avl_tree_internal.h>
+#include <memkind/internal/ranking_fixer.h>
 
 #include <random>
 #include <thread>
@@ -1873,4 +1874,63 @@ TEST(SlabAlloc, Alignment) {
     test_slab_alloc_alignment(8, 814322);
     test_slab_alloc_alignment(7, 291146);
     test_slab_alloc_alignment(7, 291);
+}
+
+#define assert_close(a, b) do { \
+const double ACCURACY=1e-9; /* arbitrary value */ \
+    double diff = a-b; \
+    double abs_diff = diff >= 0 ? diff : -diff; \
+    ASSERT_LE(abs_diff, ACCURACY); \
+} while(0)
+
+TEST(RankingFixer, Basic) {
+    ranking_info info;
+    ranking_fixer_init_ranking_info(&info, 0.7, 1);
+    double fixed_thresh;
+    // corner cases:
+    // ALL PMEM
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 1);
+    assert_close(fixed_thresh, 0);
+    // ALL DRAM
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0);
+    assert_close(fixed_thresh, 1);
+    // already correct
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0.7);
+    assert_close(fixed_thresh, 0.7);
+    // 50%
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0.85);
+    assert_close(fixed_thresh, 0.35);
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0.35);
+    assert_close(fixed_thresh, 0.85);
+    // 30%
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0.8);
+    assert_close(fixed_thresh, 2./3.*0.7);
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 2./3.*0.7);
+    assert_close(fixed_thresh, 0.8);
+}
+
+TEST(RankingFixer, Gain) {
+    ranking_info info;
+    ranking_fixer_init_ranking_info(&info, 0.7, 2);
+    double fixed_thresh;
+    // corner cases:
+    // ALL PMEM
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 1);
+    assert_close(fixed_thresh, -0.7);
+    // ALL DRAM
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0);
+    assert_close(fixed_thresh, 1.3);
+    // already correct
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0.7);
+    assert_close(fixed_thresh, 0.7);
+    // 50%
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0.85);
+    assert_close(fixed_thresh, 0);
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0.35);
+    assert_close(fixed_thresh, 1);
+    // 1/3
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0.8);
+    assert_close(fixed_thresh, 1./3.*0.7);
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 2./3.*0.7);
+    assert_close(fixed_thresh, 0.9);
 }

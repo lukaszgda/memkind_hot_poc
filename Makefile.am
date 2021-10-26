@@ -39,6 +39,7 @@ libmemkind_la_SOURCES = src/hbwmalloc.c \
                         src/lockless_srmw_queue.c \
                         src/ranking_queue.c \
                         src/slab_allocator.c \
+                        src/ranking_fixer.c \
                         # end
 
 
