@@ -282,6 +282,7 @@ extern double old_time_window_hotness_weight;
 #define CHECK_ADDED_SIZE 0
 
 #define QUANTIFICATION_ENABLED 0
+#define RANKING_FIXER_ENABLED 1
 
 #if QUANTIFICATION_ENABLED
 typedef int quantified_hotness_t;

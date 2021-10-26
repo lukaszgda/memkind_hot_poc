@@ -404,7 +404,10 @@ MEMKIND_EXPORT void tachanka_set_dram_total_ratio(double ratio)
 
 void tachanka_update_threshold(void)
 {
-    ranking_calculate_hot_threshold_dram_total(ranking, g_dramToTotalMemRatio);
+    // TODO POPULATE!!!
+    double dramTotalUsedRatio=0.5; // FIXME placeholder
+    ranking_calculate_hot_threshold_dram_total(
+        ranking, g_dramToTotalMemRatio, dramTotalUsedRatio);
 }
 
 void tachanka_destroy(void)

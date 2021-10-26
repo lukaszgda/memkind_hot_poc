@@ -4,6 +4,7 @@ extern "C" {
 }
 
 #include "memkind/internal/slab_allocator.h"
+#include "memkind/internal/ranking_fixer.h"
 
 #include <jemalloc/jemalloc.h>
 #include <algorithm>
@@ -108,11 +109,11 @@ static void
 ranking_remove_internal(ranking_t *ranking, double hotness, size_t size);
 static double ranking_get_hot_threshold_internal(ranking_t *ranking);
 static double
-ranking_calculate_hot_threshold_dram_total_internal(ranking_t *ranking,
-                                                    double dram_pmem_ratio);
+ranking_calculate_hot_threshold_dram_total_internal(
+    ranking_t *ranking, double dram_total_ratio, double dram_total_used_ratio);
 static double
-ranking_calculate_hot_threshold_dram_pmem_internal(ranking_t *ranking,
-                                                   double dram_pmem_ratio);
+ranking_calculate_hot_threshold_dram_pmem_internal(
+    ranking_t *ranking, double dram_pmem_ratio, double dram_pmem_used_ratio);
 static bool ranking_is_hot_internal(ranking_t *ranking, struct ttype *entry);
 // static void ranking_update_internal(ranking_t *ranking,
 //                                     struct ttype *entry_to_update,
@@ -255,8 +256,8 @@ double ranking_get_hot_threshold_internal(ranking_t *ranking)
 }
 
 double
-ranking_calculate_hot_threshold_dram_total_internal(ranking_t *ranking,
-                                                    double dram_pmem_ratio)
+ranking_calculate_hot_threshold_dram_total_internal(
+    ranking_t *ranking, double dram_total_ratio, double dram_total_used_ratio)
 {
 #if CHECK_ADDED_SIZE
     // only for asserts
@@ -265,9 +266,17 @@ ranking_calculate_hot_threshold_dram_total_internal(ranking_t *ranking,
     wre_clone(&temp_cpy, ranking->entries);
 #endif
 
+#if RANKING_FIXER_ENABLED
+    // TODO add tests for this one?
+    ranking_info info;
+    ranking_fixer_init_ranking_info(&info, dram_total_ratio, 1);
+    dram_total_ratio =
+        ranking_fixer_calculate_fixed_thresh(&info, dram_total_used_ratio);
+#endif
+
     ranking->hotThreshold = 0;
     AggregatedHotness_t *agg_hot = (AggregatedHotness_t *)wre_find_weighted(
-        ranking->entries, dram_pmem_ratio);
+        ranking->entries, dram_total_ratio);
     if (agg_hot) {
         ranking->hotThreshold =
             ranking_dequantify_hotness(agg_hot->quantifiedHotness);
@@ -286,15 +295,13 @@ ranking_calculate_hot_threshold_dram_total_internal(ranking_t *ranking,
 }
 
 double
-ranking_calculate_hot_threshold_dram_pmem_internal(ranking_t *ranking,
-                                                   double dram_pmem_ratio)
+ranking_calculate_hot_threshold_dram_pmem_internal(
+    ranking_t *ranking, double dram_pmem_ratio, double dram_pmem_used_ratio)
 {
-    // TODO remove this!!!
-    //     printf("wre: threshold_dram_pmem_internal\n");
-    // EOF TODO
-
     double ratio = dram_pmem_ratio / (1 + dram_pmem_ratio);
-    return ranking_calculate_hot_threshold_dram_total_internal(ranking, ratio);
+    double ratio_used = dram_pmem_ratio / (1 + dram_pmem_ratio);
+    return ranking_calculate_hot_threshold_dram_total_internal(
+        ranking, ratio, ratio_used);
 }
 
 // void ranking_add_internal(ranking_t *ranking, const struct tblock *block)
@@ -535,22 +542,24 @@ MEMKIND_EXPORT double ranking_get_hot_threshold(ranking_t *ranking)
 
 MEMKIND_EXPORT double
 ranking_calculate_hot_threshold_dram_total(ranking_t *ranking,
-                                           double dram_pmem_ratio)
+                                           double dram_total_ratio,
+                                           double dram_total_used_ratio)
 {
 //     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
     RANKING_LOCK_GUARD(ranking);
-    return ranking_calculate_hot_threshold_dram_total_internal(ranking,
-                                                               dram_pmem_ratio);
+    return ranking_calculate_hot_threshold_dram_total_internal(
+        ranking, dram_total_ratio, dram_total_used_ratio);
 }
 
 MEMKIND_EXPORT double
 ranking_calculate_hot_threshold_dram_pmem(ranking_t *ranking,
-                                          double dram_pmem_ratio)
+                                          double dram_pmem_ratio,
+                                          double dram_pmem_used_ratio)
 {
 //     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
     RANKING_LOCK_GUARD(ranking);
-    return ranking_calculate_hot_threshold_dram_pmem_internal(ranking,
-                                                              dram_pmem_ratio);
+    return ranking_calculate_hot_threshold_dram_pmem_internal(
+        ranking, dram_pmem_ratio, dram_pmem_used_ratio);
 }
 
 // MEMKIND_EXPORT void ranking_add(ranking_t *ranking, struct tblock *block)
