@@ -33,7 +33,8 @@ static int freeblock = -1;
 // TODO (possibly) move elsewhere - make sure multiple rankings are supported!
 static ranking_t *ranking;
 static lq_buffer_t ranking_event_buff;
-static _Atomic double g_dramToTotalMemRatio=1.0;
+static _Atomic double g_dramToTotalDesiredRatio=1.0;
+static _Atomic double g_dramToTotalActualRatio=1.0;
 /*static*/ critnib *hash_to_type, *addr_to_block;
 static bigary ba_ttypes, ba_tblocks;
 
@@ -44,6 +45,13 @@ static bigary ba_ttypes, ba_tblocks;
 static size_t g_total_critnib_size=0u;
 static size_t g_total_ranking_size=0u;
 #endif
+
+static void check_dram_total_ratio(double ratio) {
+    if (ratio < 0 || ratio > 1) {
+        log_fatal("Incorrect ratio [%f], exiting", ratio);
+        exit(-1);
+    }
+}
 
 void register_block(uint64_t hash, void *addr, size_t size)
 {
@@ -392,22 +400,21 @@ void tachanka_init(double old_window_hotness_weight, size_t event_queue_size)
     initialized = true;
 }
 
-MEMKIND_EXPORT void tachanka_set_dram_total_ratio(double ratio)
+MEMKIND_EXPORT void tachanka_set_dram_total_ratio(double desired, double actual)
 {
-    if (ratio < 0 || ratio > 1) {
-        log_fatal("Incorrect ratio [%f], exiting", ratio);
-        exit(-1);
-    }
-
-    g_dramToTotalMemRatio = ratio;
+    check_dram_total_ratio(desired);
+    check_dram_total_ratio(actual);
+    g_dramToTotalDesiredRatio = desired;
+    g_dramToTotalActualRatio = actual;
 }
 
 void tachanka_update_threshold(void)
 {
     // TODO POPULATE!!!
     double dramTotalUsedRatio=0.5; // FIXME placeholder
+    // where can I take it from ? memkind_memtier! it supports tracking memory for static ratio policy
     ranking_calculate_hot_threshold_dram_total(
-        ranking, g_dramToTotalMemRatio, dramTotalUsedRatio);
+        ranking, g_dramToTotalDesiredRatio, dramTotalUsedRatio);
 }
 
 void tachanka_destroy(void)

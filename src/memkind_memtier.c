@@ -166,9 +166,18 @@ struct memtier_memory {
 
 #define THREAD_BUCKETS  (256U)
 #define FLUSH_THRESHOLD (51200)
+#define MEMKIND_TOTAL_IDX (MEMKIND_MAX_KIND)
 
 static MEMKIND_ATOMIC long long t_alloc_size[MEMKIND_MAX_KIND][THREAD_BUCKETS];
-static MEMKIND_ATOMIC size_t g_alloc_size[MEMKIND_MAX_KIND];
+// MEMKIND_MAX_KIND+1 for MEMKIND_TOTAL_IDX
+static MEMKIND_ATOMIC size_t g_alloc_size[MEMKIND_MAX_KIND+1];
+
+// FIXME multiple memory builders might exist, but each one of them might
+// have different hot tier ID; right now, we permit creating multiple memories,
+// but we keep one, global hotTierId, g_hotTotalDesiredRatio
+// and statistics (t_alloc_size and g_alloc_size)!
+static size_t g_hotTierId=0;
+static double g_hotTotalDesiredRatio=0;
 
 /* Declare weak symbols for allocator decorators */
 extern void memtier_kind_malloc_post(struct memkind *, size_t, void **)
@@ -208,9 +217,24 @@ static inline void increment_alloc_size(unsigned kind_id, size_t size)
     unsigned bucket_id = t_hash_64();
     if ((memkind_atomic_increment(t_alloc_size[kind_id][bucket_id], size) +
          size) > FLUSH_THRESHOLD) {
+        // why do we exactly keep separate per-thread buckets?
+        // TODO add explanation
         size_t size_f =
             memkind_atomic_get_and_zeroing(t_alloc_size[kind_id][bucket_id]);
         memkind_atomic_increment(g_alloc_size[kind_id], size_f);
+        size_t total_size = size + memkind_atomic_increment(
+            g_alloc_size[MEMKIND_TOTAL_IDX], size_f);
+
+        double hot_tier_size = g_alloc_size[g_hotTierId];
+        if (hot_tier_size>total_size)
+            // handle race condition gracefully, without repetitions
+            // and mutexes; this code should not have visible, negative effect
+            // TODO make sure it's ok!
+            total_size = hot_tier_size;
+        double dram_total_actual_ratio=hot_tier_size/total_size;
+
+        tachanka_set_dram_total_ratio(
+            g_hotTotalDesiredRatio, dram_total_actual_ratio);
     }
 }
 
@@ -947,8 +971,11 @@ builder_hot_create_memory(struct memtier_builder *builder)
         log_fatal("No tier suitable for HOT memory defined.");
         exit(-1);
     }
-    double dram_total_ratio=memory->cfg[memory->hot_tier_id].kind_ratio;
-
+    double hot_total_ratio=memory->cfg[memory->hot_tier_id].kind_ratio;
+    // FIXME multiple memories,
+    // but only single g_hotTierId and g_hotTotalDesiredRatio!
+    g_hotTotalDesiredRatio = hot_total_ratio;
+    g_hotTierId = memory->hot_tier_id;
 #if PRINT_POLICY_CREATE_MEMORY_INFO
     struct timespec t;
     ret = clock_gettime(CLOCK_MONOTONIC, &t);
@@ -957,10 +984,10 @@ builder_hot_create_memory(struct memtier_builder *builder)
     }
 
     log_info("creates memory [ratio %f], timespec [seconds, nanoseconds]: [%ld, %ld]",
-        dram_total_ratio, t.tv_sec, t.tv_nsec);
+        hot_total_ratio, t.tv_sec, t.tv_nsec);
 #endif
 
-    tachanka_set_dram_total_ratio(dram_total_ratio);
+    tachanka_set_dram_total_ratio(hot_total_ratio, hot_total_ratio);
     return memory;
 }
 
