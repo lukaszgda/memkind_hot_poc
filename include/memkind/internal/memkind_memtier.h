@@ -228,6 +228,9 @@ int memtier_ctl_set(struct memtier_builder *builder, const char *name,
                     const void *val);
 
 
+double memtier_kind_get_actual_hot_to_total_allocated_ratio(void);
+double memtier_kind_get_actual_hot_to_total_desired_ratio(void);
+
 // DEBUG
 // float get_obj_hotness(int size);
 

@@ -176,8 +176,10 @@ static MEMKIND_ATOMIC size_t g_alloc_size[MEMKIND_MAX_KIND+1];
 // have different hot tier ID; right now, we permit creating multiple memories,
 // but we keep one, global hotTierId, g_hotTotalDesiredRatio
 // and statistics (t_alloc_size and g_alloc_size)!
-static size_t g_hotTierId=0;
-static double g_hotTotalDesiredRatio=0;
+static MEMKIND_ATOMIC size_t g_totalTiers=0; // TODO use it for stats acquisition
+static MEMKIND_ATOMIC size_t g_hotTierId=0;
+static MEMKIND_ATOMIC double g_hotTotalDesiredRatio=0;
+static MEMKIND_ATOMIC double g_hotTotalActualRatio=0;
 
 /* Declare weak symbols for allocator decorators */
 extern void memtier_kind_malloc_post(struct memkind *, size_t, void **)
@@ -231,10 +233,10 @@ static inline void increment_alloc_size(unsigned kind_id, size_t size)
             // and mutexes; this code should not have visible, negative effect
             // TODO make sure it's ok!
             total_size = hot_tier_size;
-        double dram_total_actual_ratio=hot_tier_size/total_size;
+        g_hotTotalActualRatio=hot_tier_size/total_size;
 
         tachanka_set_dram_total_ratio(
-            g_hotTotalDesiredRatio, dram_total_actual_ratio);
+            g_hotTotalDesiredRatio, g_hotTotalActualRatio);
     }
 }
 
@@ -976,6 +978,7 @@ builder_hot_create_memory(struct memtier_builder *builder)
     // but only single g_hotTierId and g_hotTotalDesiredRatio!
     g_hotTotalDesiredRatio = hot_total_ratio;
     g_hotTierId = memory->hot_tier_id;
+    g_totalTiers = memory->cfg_size;
 #if PRINT_POLICY_CREATE_MEMORY_INFO
     struct timespec t;
     ret = clock_gettime(CLOCK_MONOTONIC, &t);
@@ -1432,4 +1435,14 @@ MEMKIND_EXPORT size_t memtier_kind_allocated_size(memkind_t kind)
     size_ret =
         memkind_atomic_increment(g_alloc_size[kind->partition], size_all);
     return (size_ret + size_all);
+}
+
+MEMKIND_EXPORT double
+memtier_kind_get_actual_hot_to_total_allocated_ratio(void) {
+    return g_hotTotalActualRatio;
+}
+
+MEMKIND_EXPORT double
+memtier_kind_get_actual_hot_to_total_desired_ratio(void) {
+    return g_hotTotalDesiredRatio;
 }

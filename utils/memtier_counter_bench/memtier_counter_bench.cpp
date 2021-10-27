@@ -12,6 +12,8 @@
 #include <stdint.h>
 #include <thread>
 #include <vector>
+#include <atomic>
+#include <iomanip>
 
 class counter_bench_alloc;
 
@@ -23,29 +25,56 @@ struct BenchArgs {
     size_t iter_no;
 };
 
+struct RunRet {
+    RunRet(double average_time, double average_dram_to_total_ratio) :
+        averageTime(average_time),
+        averageDramToTotalRatio(average_dram_to_total_ratio) {}
+    double averageTime;
+    double averageDramToTotalRatio;
+    std::vector<double> singleRatios;
+};
+
 class counter_bench_alloc
 {
 public:
-    double run(BenchArgs& arguments) const
+    RunRet run(BenchArgs& arguments) const
     {
         std::chrono::time_point<std::chrono::system_clock> start, end;
         start = std::chrono::system_clock::now();
 
+        // calculated as promiles in size_t in order to
+        // support atomic increments (at the price of accuracy)
+        std::atomic<size_t> average_ratio_promile(0);
+
+        std::vector<double> single_ratios;
+        single_ratios.reserve(arguments.run_no);
+
         if (arguments.thread_no == 1) {
             for (size_t r = 0; r < arguments.run_no; ++r) {
-                single_run(arguments);
+                double single_run_ratio = single_run(arguments);
+                single_ratios.push_back(single_run_ratio);
+                average_ratio_promile +=
+                    static_cast<size_t>(single_run_ratio*1000);
             }
         } else {
             std::vector<std::thread> vthread(arguments.thread_no);
             for (size_t r = 0; r < arguments.run_no; ++r) {
                 for (size_t k = 0; k < arguments.thread_no; ++k) {
-                    vthread[k] = std::thread([&]() { single_run(arguments); });
+                    vthread[k] = std::thread([&]() {
+                        average_ratio_promile
+                            += static_cast<size_t>(single_run(arguments)*1000);
+                    });
                 }
                 for (auto &t : vthread) {
                     t.join();
                 }
             }
         }
+        double average_ratio =
+            static_cast<double>(average_ratio_promile)
+                /1000. /* promile to fraction */
+                /arguments.run_no
+                /arguments.thread_no;
         end = std::chrono::system_clock::now();
         std::chrono::duration<double> duration = end-start;
         auto millis_elapsed =
@@ -54,8 +83,15 @@ public:
 
         auto time_per_op =
             ((double)millis_elapsed) / arguments.iter_no;
-        return time_per_op / (arguments.run_no * arguments.thread_no);
+
+        RunRet ret(
+            time_per_op / (arguments.run_no * arguments.thread_no),
+            average_ratio);
+        ret.singleRatios = single_ratios;
+
+        return ret;
     }
+
     virtual ~counter_bench_alloc() = default;
 
 protected:
@@ -64,17 +100,21 @@ protected:
     virtual void bench_free(void *) const = 0;
 
 private:
-    void single_run(BenchArgs& arguments) const
+    /// @return average hot to total ratio
+    double single_run(BenchArgs& arguments) const
     {
         std::vector<void *> v;
         v.reserve(arguments.iter_no);
         for (size_t i = 0; i < arguments.iter_no; i++) {
             v.emplace_back(bench_alloc(m_size));
         }
+        double ratio = memtier_kind_get_actual_hot_to_total_allocated_ratio();
         for (size_t i = 0; i < arguments.iter_no; i++) {
             bench_free(v[i]);
         }
         v.clear();
+
+        return ratio;
     }
 };
 
@@ -232,8 +272,25 @@ int main(int argc, char *argv[])
         .iter_no = 10000000 };
 
     argp_parse(&argp, argc, argv, 0, 0, &arguments);
-    double time_per_op =
+    RunRet run_ret =
         arguments.bench->run(arguments);
+    double time_per_op = run_ret.averageTime;
+    double actual_ratio = run_ret.averageDramToTotalRatio;
     std::cout << "Mean milliseconds per operation:" << time_per_op << std::endl;
+
+    for (auto &d : run_ret.singleRatios) {
+        // FIXME the ratio history is weird and incorrect!!!!
+        // there MUST be an error in how the allocated memory is tracked
+        std::cout
+            << "Single run ratio:  "
+            << std::fixed << std::setprecision(6) << d << std::endl;
+    }
+    std::cout
+        << "actual|desired DRAM/TOTAL ratio: "
+        << std::fixed << std::setprecision(6) << actual_ratio
+        << " | "
+        << memtier_kind_get_actual_hot_to_total_desired_ratio()
+        << std::endl;
+
     return 0;
 }
