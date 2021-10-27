@@ -309,9 +309,9 @@ TEST_F(RankingTest, check_hotness_highest) {
     double RATIO_PMEM_ONLY=0;
     double thresh_highest =
         ranking_calculate_hot_threshold_dram_total(
-            ranking, RATIO_PMEM_ONLY);
+            ranking, RATIO_PMEM_ONLY, RATIO_PMEM_ONLY);
     double thresh_highest_pmem =
-        ranking_calculate_hot_threshold_dram_pmem(ranking, 0);
+        ranking_calculate_hot_threshold_dram_pmem(ranking, 0, 0);
     ASSERT_EQ(thresh_highest, thresh_highest_pmem); // double for equality
 #if QUANTIFICATION_ENABLED
     ASSERT_EQ(thresh_highest, quantify_dequantify(BLOCKS_SIZE-1));
@@ -338,10 +338,12 @@ TEST_F(RankingTest, check_hotness_lowest) {
     double RATIO_DRAM_ONLY=1;
     double thresh_lowest =
         ranking_calculate_hot_threshold_dram_total(
-            ranking, RATIO_DRAM_ONLY);
+            ranking, RATIO_DRAM_ONLY, RATIO_DRAM_ONLY);
     double thresh_lowest_pmem =
         ranking_calculate_hot_threshold_dram_pmem(
-            ranking, std::numeric_limits<double>::max());
+            ranking,
+            std::numeric_limits<double>::max(),
+            std::numeric_limits<double>::max());
     ASSERT_EQ(thresh_lowest, thresh_lowest_pmem); // double for equality
     ASSERT_EQ(thresh_lowest, 0);
     ASSERT_EQ(ranking_is_hot(ranking, &blocks[0]), false);
@@ -364,9 +366,9 @@ TEST_F(RankingTest, check_hotness_50_50) {
     size_t n = floor((-1+sqrt(delta))/2);
     ASSERT_EQ(n, 70u); // calculated by hand
     double thresh_equal =
-        ranking_calculate_hot_threshold_dram_total(ranking, RATIO_EQUAL);
+        ranking_calculate_hot_threshold_dram_total(ranking, RATIO_EQUAL, RATIO_EQUAL);
     double thresh_equal_pmem =
-        ranking_calculate_hot_threshold_dram_pmem(ranking, 1);
+        ranking_calculate_hot_threshold_dram_pmem(ranking, 1, 1);
     ASSERT_EQ(thresh_equal, thresh_equal_pmem);
 #if QUANTIFICATION_ENABLED
     double ACCURACY = 1e-9;
@@ -399,9 +401,9 @@ TEST_F(RankingTest, check_hotness_50_50_removed) {
     double RATIO_EQUAL_TOTAL=0.5;
     double RATIO_EQUAL_PMEM=1;
     double thresh_equal = ranking_calculate_hot_threshold_dram_total(
-        ranking, RATIO_EQUAL_TOTAL);
+        ranking, RATIO_EQUAL_TOTAL, RATIO_EQUAL_TOTAL);
     double thresh_equal_pmem = ranking_calculate_hot_threshold_dram_pmem(
-        ranking, RATIO_EQUAL_PMEM);
+        ranking, RATIO_EQUAL_PMEM, RATIO_EQUAL_PMEM);
     // hand calculations:
     // 100, 99, 98, 97, 96, 95, 94, 93, 92, 91
     // sum:
@@ -463,9 +465,9 @@ TEST_F(RankingTestSameHotness, check_hotness_highest) {
     double RATIO_PMEM_ONLY_TOTAL=0;
     double RATIO_PMEM_ONLY_PMEM=0;
     double thresh_highest = ranking_calculate_hot_threshold_dram_total(
-        ranking, RATIO_PMEM_ONLY_TOTAL);
+        ranking, RATIO_PMEM_ONLY_TOTAL, RATIO_PMEM_ONLY_TOTAL);
     double thresh_highest_pmem = ranking_calculate_hot_threshold_dram_pmem(
-        ranking, RATIO_PMEM_ONLY_PMEM);
+        ranking, RATIO_PMEM_ONLY_PMEM, RATIO_PMEM_ONLY_PMEM);
 #if QUANTIFICATION_ENABLED
     double ACCURACY=1e-9;
     ASSERT_EQ(thresh_highest, quantify_dequantify((BLOCKS_SIZE-1)%50));
@@ -498,9 +500,11 @@ TEST_F(RankingTestSameHotness, check_hotness_highest) {
 TEST_F(RankingTestSameHotness, check_hotness_lowest) {
     double RATIO_DRAM_ONLY=1;
     double thresh_lowest = ranking_calculate_hot_threshold_dram_total(
-        ranking, RATIO_DRAM_ONLY);
+        ranking, RATIO_DRAM_ONLY, RATIO_DRAM_ONLY);
     double thresh_lowest_pmem = ranking_calculate_hot_threshold_dram_pmem(
-        ranking, std::numeric_limits<double>::max());
+        ranking,
+        std::numeric_limits<double>::max(),
+        std::numeric_limits<double>::max());
     ASSERT_EQ(thresh_lowest, 0);
     ASSERT_EQ(thresh_lowest, thresh_lowest_pmem);
     for (size_t i=0; i<BLOCKS_SIZE; ++i) {
@@ -521,9 +525,9 @@ TEST_F(RankingTestSameHotness, check_hotness_50_50) {
     // n_50^2-76*n_50+2525 = 0
     // delta = 76^2-4*2525 = 5776-10000
     double thresh_equal = ranking_calculate_hot_threshold_dram_total(
-        ranking, RATIO_EQUAL_TOTAL);
+        ranking, RATIO_EQUAL_TOTAL, RATIO_EQUAL_TOTAL);
     double thresh_equal_pmem = ranking_calculate_hot_threshold_dram_pmem(
-        ranking, RATIO_EQUAL_PMEM);
+        ranking, RATIO_EQUAL_PMEM, RATIO_EQUAL_PMEM);
 #if QUANTIFICATION_ENABLED
     double ACCURACY=1e-9;
     ASSERT_EQ(thresh_equal, quantify_dequantify(19));
@@ -569,9 +573,9 @@ TEST_F(RankingTestSameHotness, check_hotness_50_50_removed) {
     double RATIO_EQUAL_TOTAL=0.5;
     double RATIO_EQUAL_PMEM=1;
     double thresh_equal = ranking_calculate_hot_threshold_dram_total(
-        ranking, RATIO_EQUAL_TOTAL);
+        ranking, RATIO_EQUAL_TOTAL, RATIO_EQUAL_TOTAL);
     double thresh_equal_pmem = ranking_calculate_hot_threshold_dram_pmem(
-        ranking, RATIO_EQUAL_PMEM);
+        ranking, RATIO_EQUAL_PMEM, RATIO_EQUAL_PMEM);
     // hand calculations:
     // 100, 99, 98, 97, 96, 95, 94, 93, 92, 91
     // sum:

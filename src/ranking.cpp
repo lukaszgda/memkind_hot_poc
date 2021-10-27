@@ -269,6 +269,7 @@ ranking_calculate_hot_threshold_dram_total_internal(
 #if RANKING_FIXER_ENABLED
     // TODO add tests for this one?
     ranking_info info;
+    // TODO add gain as configurable variable
     ranking_fixer_init_ranking_info(&info, dram_total_ratio, 1);
     dram_total_ratio =
         ranking_fixer_calculate_fixed_thresh(&info, dram_total_used_ratio);
