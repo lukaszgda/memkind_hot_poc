@@ -214,6 +214,19 @@ static inline unsigned t_hash_64(void)
     return (x ^ (x >> 31)) & (THREAD_BUCKETS - 1);
 }
 
+static void update_actual_ratios(size_t total_size) {
+    double hot_tier_size = g_alloc_size[g_hotTierId];
+        if (hot_tier_size>total_size)
+            // handle race condition gracefully, without repetitions
+            // and mutexes; this code should not have visible, negative effect
+            // TODO make sure it's ok!
+            total_size = hot_tier_size;
+        g_hotTotalActualRatio=hot_tier_size/total_size;
+
+        tachanka_set_dram_total_ratio(
+            g_hotTotalDesiredRatio, g_hotTotalActualRatio);
+}
+
 static inline void increment_alloc_size(unsigned kind_id, size_t size)
 {
     unsigned bucket_id = t_hash_64();
@@ -226,17 +239,7 @@ static inline void increment_alloc_size(unsigned kind_id, size_t size)
         memkind_atomic_increment(g_alloc_size[kind_id], size_f);
         size_t total_size = size + memkind_atomic_increment(
             g_alloc_size[MEMKIND_TOTAL_IDX], size_f);
-
-        double hot_tier_size = g_alloc_size[g_hotTierId];
-        if (hot_tier_size>total_size)
-            // handle race condition gracefully, without repetitions
-            // and mutexes; this code should not have visible, negative effect
-            // TODO make sure it's ok!
-            total_size = hot_tier_size;
-        g_hotTotalActualRatio=hot_tier_size/total_size;
-
-        tachanka_set_dram_total_ratio(
-            g_hotTotalDesiredRatio, g_hotTotalActualRatio);
+        update_actual_ratios(total_size);
     }
 }
 
@@ -248,6 +251,9 @@ static inline void decrement_alloc_size(unsigned kind_id, size_t size)
         long long size_f =
             memkind_atomic_get_and_zeroing(t_alloc_size[kind_id][bucket_id]);
         memkind_atomic_increment(g_alloc_size[kind_id], size_f);
+        size_t total_size = size + memkind_atomic_increment(
+            g_alloc_size[MEMKIND_TOTAL_IDX], size_f);
+        update_actual_ratios(total_size);
     }
 }
 
