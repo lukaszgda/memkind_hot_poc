@@ -241,6 +241,7 @@ static int parse_opt(int key, char *arg, struct argp_state *state)
             break;
         case 'r':
             args->run_no = std::strtol(arg, nullptr, 10);
+            break;
         case 'i':
             args->iter_no = std::strtol(arg, nullptr, 10);
             break;
