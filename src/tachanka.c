@@ -16,7 +16,7 @@
 #include <errno.h>
 #include <stdatomic.h>
 #include <assert.h>
-
+#include "unistd.h"
 
 // DEBUG
 #ifndef MEMKIND_EXPORT
@@ -184,10 +184,10 @@ void register_block_in_ranking(void * addr, size_t size)
     int bln = critnib_find_le(addr_to_block, (uint64_t)addr);
     if (bln == -1) {
 #if PRINT_CRITNIB_NOT_FOUND_ON_UNREGISTER_BLOCK_WARNING
-        log_info("WARNING: Tried deallocating a non-allocated block at %p", addr);
+        log_info("WARNING: Tried searching for a non-allocated block at %p", addr);
 #endif
 #if CRASH_ON_BLOCK_NOT_FOUND
-        assert(false && "only existing blocks can be unregistered!");
+        assert(false && "only existing blocks can be registered in ranking!");
 #endif
         return;
     }
@@ -214,7 +214,12 @@ void unregister_block_from_ranking(void * addr)
 #endif
     int bln = critnib_find_le(addr_to_block, (uint64_t)addr);
     if (bln == -1) {
+#if PRINT_CRITNIB_NOT_FOUND_ON_UNREGISTER_BLOCK_WARNING
+        log_info("WARNING: Tried deallocating a non-allocated block at %p", addr);
+#endif
+#if CRASH_ON_BLOCK_NOT_FOUND
         assert(false && "only existing blocks can be unregistered!");
+#endif
         return;
     }
     int type = tblocks[bln].type;
@@ -470,11 +475,65 @@ MEMKIND_EXPORT int tachanka_set_touch_callback(void *addr, tachanka_touch_callba
 
 MEMKIND_EXPORT bool tachanka_ranking_event_push(EventEntry_t *event)
 {
+#if OFFLOAD_RANKING_OPS_TO_BACKGROUD_THREAD
     if (initialized == false) {
         log_fatal("push onto non-initialized queue");
         exit(-1);
     }
-    return ranking_event_push(&ranking_event_buff, event);
+    bool ret = ranking_event_push(&ranking_event_buff, event);
+#if ASSURE_RANKING_DELIVERY
+    while (!ret) {
+        usleep(1000);
+        ret = ranking_event_push(&ranking_event_buff, event);
+    }
+#endif
+#else // EXECUTE SYNCRONOUSLY
+    bool ret = true;
+    // TODO looks like a good place for refactor - code duplicated with pebs.c
+    switch (event->type) {
+        case EVENT_CREATE_ADD: {
+            EventDataCreateAdd *data = &event->data.createAddData;
+            register_block(data->hash, data->address, data->size);
+            register_block_in_ranking(data->address, data->size);
+            break;
+        }
+        case EVENT_DESTROY_REMOVE: {
+            EventDataDestroyRemove *data = &event->data.destroyRemoveData;
+            // REMOVE THE BLOCK FROM RANKING!!!
+            // TODO remove all the exclamation marks and clean up once this is done
+            unregister_block_from_ranking(data->address);
+            unregister_block(data->address);
+            break;
+        }
+        case EVENT_REALLOC: {
+            EventDataRealloc *data = &event->data.reallocData;
+            unregister_block_from_ranking(data->addressOld);
+            unregister_block(data->addressOld);
+//                     realloc_block(data->addressOld, data->addressNew, data->sizeNew);
+            register_block(0u /* FIXME hash should not be zero !!! */, data->addressNew, data->sizeNew);
+            register_block_in_ranking(data->addressNew, data->sizeNew);
+            break;
+        }
+        case EVENT_SET_TOUCH_CALLBACK: {
+            EventDataSetTouchCallback *data = &event->data.touchCallbackData;
+            tachanka_set_touch_callback(data->address,
+                                        data->callback,
+                                        data->callbackArg);
+            break;
+        }
+        case EVENT_TOUCH: {
+            EventDataTouch *data = &event->data.touchData;
+            touch(data->address, data->timestamp, 0 /*called from malloc*/);
+            break;
+        }
+        default: {
+            log_fatal("PEBS: event queue - case not implemented!");
+            exit(-1);
+        }
+    }
+
+#endif
+    return ret;
 }
 
 MEMKIND_EXPORT bool tachanka_ranking_event_pop(EventEntry_t *event)

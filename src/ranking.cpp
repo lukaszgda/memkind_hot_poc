@@ -29,6 +29,10 @@ extern struct ttype *ttypes;
 // #define THREAD_SAFE
 // #define THREAD_CHECKER
 
+// IF YOU MODIFY FIXER_GAIN AND DO NOT OBSERVE ThE EXPECTED RESULTS,
+// MAKE SURE FIXER IS ENABLED!
+#define FIXER_GAIN 2
+
 #ifdef THREAD_SAFE
 #ifdef THREAD_CHECKER
 
@@ -270,9 +274,13 @@ ranking_calculate_hot_threshold_dram_total_internal(
     // TODO add tests for this one?
     ranking_info info;
     // TODO add gain as configurable variable
-    ranking_fixer_init_ranking_info(&info, dram_total_ratio, 1);
-    dram_total_ratio =
+    ranking_fixer_init_ranking_info(&info, dram_total_ratio, FIXER_GAIN);
+    double fixed_dram_total_ratio =
         ranking_fixer_calculate_fixed_thresh(&info, dram_total_used_ratio);
+    log_info("fixer: ratio fixed [%f to %f]",
+             dram_total_ratio, fixed_dram_total_ratio);
+    dram_total_ratio = fixed_dram_total_ratio;
+
 #endif
 
     ranking->hotThreshold = 0;

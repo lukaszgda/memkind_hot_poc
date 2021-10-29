@@ -95,7 +95,7 @@ public:
     virtual ~counter_bench_alloc() = default;
 
 protected:
-    const size_t m_size = 512;
+    const size_t m_sizes[10] = { 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024};
     virtual void *bench_alloc(size_t) const = 0;
     virtual void bench_free(void *) const = 0;
 
@@ -106,7 +106,7 @@ private:
         std::vector<void *> v;
         v.reserve(arguments.iter_no);
         for (size_t i = 0; i < arguments.iter_no; i++) {
-            v.emplace_back(bench_alloc(m_size));
+            v.emplace_back(bench_alloc(m_sizes[i%10]));
         }
         double ratio = memtier_kind_get_actual_hot_to_total_allocated_ratio();
         for (size_t i = 0; i < arguments.iter_no; i++) {

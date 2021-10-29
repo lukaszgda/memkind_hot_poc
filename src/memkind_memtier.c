@@ -310,7 +310,8 @@ static Hotness_e memtier_policy_data_hotness_calculate_hotness_type(uint64_t has
     static atomic_uint_fast16_t counter=0;
     static atomic_uint_fast64_t hotness_counter[3]= { 0 };
     static atomic_uint_fast64_t hotness_alloc_counter[3]= { 0 };
-    const uint64_t interval=1000;
+//     const uint64_t interval=1000;
+    const uint64_t interval=0; // TODO revert
     if (++counter > interval) {
         struct timespec t;
         int ret = clock_gettime(CLOCK_MONOTONIC, &t);
