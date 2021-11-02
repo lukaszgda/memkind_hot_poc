@@ -284,8 +284,25 @@ ranking_calculate_hot_threshold_dram_total_internal(
 #endif
 
     ranking->hotThreshold = 0;
+#if INTERPOLATED_THRESH
+    wre_interpolated_result_t ret = wre_find_weighted_interpolated(
+            ranking->entries, dram_total_ratio);
+    AggregatedHotness_t agg_hot_={0};
+    AggregatedHotness_t *agg_hot = NULL;
+
+    if (ret.left) {
+        double hotness_left = ((AggregatedHotness_t*)ret.left)->quantifiedHotness;
+        double hotness_right =
+            ret.right ? ((AggregatedHotness_t*)ret.right)->quantifiedHotness : hotness_left+1; // TODO add coeff
+//         agg_hot_.size = 0u; // irrelevant
+        agg_hot_.quantifiedHotness = hotness_left + (hotness_right-hotness_left)*ret.percentage,
+
+        agg_hot = &agg_hot_;
+    }
+#else
     AggregatedHotness_t *agg_hot = (AggregatedHotness_t *)wre_find_weighted(
         ranking->entries, dram_total_ratio);
+#endif
     if (agg_hot) {
         ranking->hotThreshold =
             ranking_dequantify_hotness(agg_hot->quantifiedHotness);
