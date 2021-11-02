@@ -4,8 +4,18 @@
 #include "memkind/internal/memkind_private.h"
 #include "memkind/internal/slab_allocator.h"
 #include "memkind/internal/wre_avl_tree_internal.h"
+#include "memkind/internal/memkind_log.h"
+#include "memkind/internal/memkind_memtier.h"
 #include "stdint.h"
 #include "string.h"
+
+// TODO REMOVE
+#include "stdio.h"
+typedef struct AggregatedHotness {
+    size_t size;
+    double hotness;
+} AggregatedHotness_t;
+// EOF REMOVE
 
 #define DEBUG_PRINTFS // TODO move/remove
 
@@ -474,6 +484,7 @@ MEMKIND_EXPORT void *wre_remove(wre_tree_t *tree, const void *data)
                 update_node_subtree_metadata(replacer);
             }
         }
+
         node_destroy(cnode);
         tree->size--;
     }
@@ -488,13 +499,6 @@ MEMKIND_EXPORT void *wre_find(wre_tree_t *tree, const void *data)
         ret = cnode->data;
     return ret;
 }
-// TODO REMOVE
-#include "stdio.h"
-typedef struct AggregatedHotness {
-    size_t size;
-    double hotness;
-} AggregatedHotness_t;
-// EOF REMOVE
 
 MEMKIND_EXPORT void *wre_find_weighted(wre_tree_t *tree, double ratio)
 {

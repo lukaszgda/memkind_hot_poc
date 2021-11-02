@@ -71,4 +71,5 @@ extern bool ranking_is_hot(ranking_t *ranking, struct ttype *entry);
 extern void ranking_set_touch_callback(ranking_t *ranking,
                                        tachanka_touch_callback cb, void *arg,
                                        struct ttype *type);
-extern size_t ranking_calculate_total_size(ranking_t *ranking);
+
+size_t ranking_calculate_total_size(ranking_t *ranking);
