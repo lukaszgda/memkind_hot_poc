@@ -435,6 +435,7 @@ memtier_policy_data_hotness_post_alloc(uint64_t hash, void *addr, size_t size)
     } else {
         g_failed_adds++;
         g_failed_adds_malloc++;
+        log_info("!!!!! g_failed_adds_malloc++");
     }
 #else
     (void)success;
@@ -1207,8 +1208,12 @@ MEMKIND_EXPORT void *memtier_realloc(struct memtier_memory *memory, void *ptr,
         struct memkind *kind = memkind_detect_kind(ptr);
         ptr = memtier_kind_realloc(kind, ptr, size);
         memory->update_cfg(memory);
-
+        // NOTE: new ptr == NULL if size == 0
         return ptr;
+    }
+
+    if (size == 0) {
+        return NULL;
     }
 
     return memtier_malloc(memory, size);
@@ -1222,28 +1227,35 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
         if (memtier_kind_free_pre)
             memtier_kind_free_pre(&ptr);
 #endif
-    size_t old_size = jemk_malloc_usable_size(ptr);
-    if (pol == MEMTIER_POLICY_DATA_HOTNESS) {
-//      unregister_block(ptr);
-        EventEntry_t entry = {
-            .type = EVENT_DESTROY_REMOVE,
-            .data.destroyRemoveData = {
-            .address = ptr,
-            .size = old_size,
-            }
-        };
+        size_t old_size = jemk_malloc_usable_size(ptr);
+        if (pol == MEMTIER_POLICY_DATA_HOTNESS) {
+    //      unregister_block(ptr);
+            EventEntry_t entry = {
+                .type = EVENT_DESTROY_REMOVE,
+                .data.destroyRemoveData = {
+                .address = ptr,
+                .size = old_size,
+                }
+            };
 
-        bool success = tachanka_ranking_event_push(&entry);
+#if CHECK_ADDED_SIZE
+            if (old_size == 0) {
+                log_info("memtier_kind_realloc old_size == 0");
+            }
+#endif
+
+            bool success = tachanka_ranking_event_push(&entry);
 #if PRINT_POLICY_LOG_STATISTICS_INFO
-        if (success) {
-            g_successful_adds++;
-            g_successful_adds_realloc0++;
-        } else {
-            g_failed_adds++;
-            g_failed_adds_realloc0++;
-        }
+            if (success) {
+                g_successful_adds++;
+                g_successful_adds_realloc0++;
+            } else {
+                g_failed_adds++;
+                g_failed_adds_realloc0++;
+                log_info("!!!!! g_failed_adds_realloc0++");
+            }
 #else
-        (void)success;
+            (void)success;
 #endif
         }
         decrement_alloc_size(kind->partition, old_size);
@@ -1258,6 +1270,12 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
                     .size = size,
                 }
             };
+
+#if CHECK_ADDED_SIZE
+            if (size == 0) {
+                log_info("memtier_kind_realloc ptr == NULL, new size == 0");
+            }
+#endif
 
             bool success = tachanka_ranking_event_push(&entry);
 #if PRINT_POLICY_LOG_STATISTICS_INFO
@@ -1289,6 +1307,13 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
                 .sizeNew = size,
             }
         };
+
+#if CHECK_ADDED_SIZE
+        if (size == 0) {
+            log_info("memtier_kind_realloc size == 0");
+        }
+#endif
+
         bool success = tachanka_ranking_event_push(&entry);
 #if PRINT_POLICY_LOG_STATISTICS_INFO
         if (success) {
@@ -1381,6 +1406,7 @@ MEMKIND_EXPORT void memtier_kind_free(memkind_t kind, void *ptr)
         } else {
             g_failed_adds++;
             g_failed_adds_free++;
+            log_info("!!!! g_failed_adds_free++");
         }
 #else
         (void)success;

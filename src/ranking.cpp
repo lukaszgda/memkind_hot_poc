@@ -21,6 +21,10 @@ extern "C" {
 
 #define abs(x) ((x) >= 0 ? (x) : -(x))
 
+#if CHECK_ADDED_SIZE
+extern size_t g_total_ranking_size;
+#endif
+
 // TODO extern ttypes cannot stay like that!!!
 // this should be fixed once custom allocator is created
 extern struct ttype *ttypes;
@@ -260,7 +264,7 @@ ranking_calculate_hot_threshold_dram_total_internal(ranking_t *ranking,
 {
 #if CHECK_ADDED_SIZE
     // only for asserts
-    size_t temp_size = wre_calculate_total_size(ranking->entries);
+    size_t temp_size = ranking_calculate_total_size(ranking);
     wre_tree_t *temp_cpy;
     wre_clone(&temp_cpy, ranking->entries);
 #endif
@@ -337,7 +341,7 @@ void ranking_add_internal(ranking_t *ranking, double hotness, size_t size)
 #if CHECK_ADDED_SIZE
     // only for asserts
     size_t after_size = wre_calculate_total_size(ranking->entries);
-    if (value)
+    if (value) 
         assert(temp_size == after_size+value->size);
     else
         assert(temp_size == after_size);
@@ -351,10 +355,15 @@ void ranking_add_internal(ranking_t *ranking, double hotness, size_t size)
         value = (AggregatedHotness_t *)slab_alloc_malloc(&ranking->aggHotAlloc);
         value->quantifiedHotness = ranking_quantify_hotness(hotness);
         value->size = size;
-        //         printf("wre: hotness not found, adds\n");
     }
-    if (value->size > 0)
+    if (value->size > 0) {
         wre_put(ranking->entries, value, value->size);
+#if CHECK_ADDED_SIZE
+        g_total_ranking_size += size;    
+        log_info("wre_put: %ld g_total_ranking_size %ld", 
+            size, g_total_ranking_size);
+#endif
+    }
     else
         slab_alloc_free(value);
 #if CHECK_ADDED_SIZE
@@ -386,7 +395,7 @@ static size_t ranking_remove_internal_relaxed(ranking_t *ranking, const struct t
 #if CHECK_ADDED_SIZE
     // only for asserts
     size_t after_size = wre_calculate_total_size(ranking->entries);
-    if (removed)
+    if (removed) 
         assert(temp_size == after_size + removed->size);
     else
         assert(temp_size == after_size);
@@ -420,6 +429,10 @@ static size_t ranking_remove_internal_relaxed(ranking_t *ranking, const struct t
     }
 #if CHECK_ADDED_SIZE
     (void)wre_calculate_total_size(ranking->entries); // only for asserts
+    
+    g_total_ranking_size -= ret;
+    log_info("wre_remove: -%ld g_total_ranking_size %ld", 
+        ret, g_total_ranking_size);
 #endif
 
     return ret;
@@ -428,10 +441,15 @@ static size_t ranking_remove_internal_relaxed(ranking_t *ranking, const struct t
 void ranking_remove_internal(ranking_t *ranking, double hotness, size_t size)
 {
     if (size == 0u) // nothing to do
+    {
+        log_info("ranking_remove_internal size == 0");
         return;
+    }
+
     AggregatedHotness temp;
     // only hotness matters for lookup
     temp.quantifiedHotness = ranking_quantify_hotness(hotness);
+
 #if CHECK_ADDED_SIZE
     // only for asserts
     size_t temp_size = wre_calculate_total_size(ranking->entries);
@@ -460,18 +478,27 @@ void ranking_remove_internal(ranking_t *ranking, double hotness, size_t size)
         removed->size -= size;
         if (removed->size == 0)
             slab_alloc_free(removed);
-        else
+        else 
             wre_put(ranking->entries, removed, removed->size);
     } else {
 #if CRASH_ON_BLOCK_NOT_FOUND
         assert(false && "dealloc non-allocated block!"); // TODO remove!
         assert(false && "attempt to remove non-existent data!");
 #endif
+
+#if CHECK_ADDED_SIZE
+        log_info("ranking_remove_internal attempt to remove non-existent data! "
+            "g_total_ranking_size %ld", g_total_ranking_size);
+#endif
     }
 #if CHECK_ADDED_SIZE
     // only for asserts
     size_t after_after_size = wre_calculate_total_size(ranking->entries);
     assert(after_after_size + size == temp_size);
+
+    g_total_ranking_size -= size;    
+    log_info("wre_remove: %ld g_total_ranking_size %ld", 
+        size, g_total_ranking_size);
 #endif
 }
 
@@ -606,4 +633,9 @@ MEMKIND_EXPORT void ranking_set_touch_callback(ranking_t *ranking,
     RANKING_LOCK_GUARD(ranking);
     type->touchCb = cb;
     type->touchCbArg = arg;
+}
+
+size_t ranking_calculate_total_size(ranking_t *ranking)
+{
+    return wre_calculate_total_size(ranking->entries);
 }
