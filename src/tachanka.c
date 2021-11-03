@@ -269,14 +269,19 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type(const void *addr)
 
     //printf("get_hotness block %d, type %d hot %g\n", bln, tblocks[bln].type, ttypes[tblocks[bln].type].f);
 
-    if (ranking_is_hot(ranking, t))
+    thresh_t thresh = ranking_get_hot_threshold(ranking);
+    if (!thresh.threshValid || t->f == thresh.threshVal)
+        return HOTNESS_NOT_FOUND;
+
+    if (t->f > thresh.threshVal)
         return HOTNESS_HOT;
+    // (t->f < thresh.threshVal)
     return HOTNESS_COLD;
 }
 
 MEMKIND_EXPORT double tachanka_get_hot_thresh(void)
 {
-    return ranking_get_hot_threshold(ranking);
+    return ranking_get_hot_threshold(ranking).threshVal;
 }
 
 MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
@@ -285,10 +290,15 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
     int nt = critnib_get(hash_to_type, hash);
     if (nt != -1) {
         struct ttype *t = &ttypes[nt];
-        if (ranking_is_hot(ranking, t))
+        thresh_t thresh = ranking_get_hot_threshold(ranking);
+        if (!thresh.threshValid || t->f == thresh.threshVal)
+            ret = HOTNESS_NOT_FOUND;
+        else if (t->f > thresh.threshVal)
             ret = HOTNESS_HOT;
-        else
+        else {
+            assert(t->f < thresh.threshVal);
             ret = HOTNESS_COLD;
+        }
     }
 
     return ret;

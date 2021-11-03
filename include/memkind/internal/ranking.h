@@ -6,6 +6,11 @@
 
 typedef struct ranking ranking_t;
 
+typedef struct thresh_t {
+    double threshVal;
+    bool threshValid;
+} thresh_t;
+
 // --- minimal API ---
 // Basic workflow:
 //
@@ -47,16 +52,17 @@ extern void ranking_remove(ranking_t *ranking, double hotness, size_t size);
 // extern void ranking_update(ranking_t *ranking, struct ttype *entry_to_update,
 //                            const struct ttype *updated_value);
 /// get last calculated hot threshold
-extern double ranking_get_hot_threshold(ranking_t *ranking);
+extern thresh_t ranking_get_hot_threshold(ranking_t *ranking);
 /// @p dram_pmem_ratio : dram/(dram+pmem)
-extern double
+extern thresh_t
 ranking_calculate_hot_threshold_dram_total(ranking_t *ranking,
                                            double dram_total_ratio,
                                            double dram_total_usage_ratio);
 /// @p dram_pmem_ratio : dram/pmem (does not support 0 pmem)
-extern double ranking_calculate_hot_threshold_dram_pmem(
+extern thresh_t ranking_calculate_hot_threshold_dram_pmem(
     ranking_t *ranking, double dram_pmem_ratio, double dram_pmem_used_ratio);
 extern bool ranking_is_hot(ranking_t *ranking, struct ttype *entry);
+extern thresh_t ranking_get_thresh(ranking_t *ranking);
 
 /// @warning @p callback will be executed from the context of touch function,
 /// from multiple threads, under mutex (call atomicity is guaranteed)

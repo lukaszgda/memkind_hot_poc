@@ -276,6 +276,7 @@ wre_find_weighted_nodes_internal(
     size_t left_subtrees=0u;
     size_t right_subtrees=0u;
 #endif
+    bool left_present=false;
     while (cnode) {
         if (cnode->subtreeWeight == 0) {
             // reached a leaf node, which has 0 weight
@@ -287,7 +288,8 @@ wre_find_weighted_nodes_internal(
             //             ((AggregatedHotness_t*)cnode->data)->hotness); //
             //             TODO remove
         } else {
-            size_t left_weight = cnode->left ? cnode->left->subtreeWeight : 0;
+            left_present = cnode->left;
+            size_t left_weight = left_present ? cnode->left->subtreeWeight : 0;
             size_t left_plus_own_weight = left_weight + cnode->ownWeight;
             double nratio_left = ((double)left_weight) / cnode->subtreeWeight;
             double nratio_right =
@@ -368,6 +370,8 @@ static wre_node_t *wre_find_node_right(wre_node_t *node) {
         switch (t->which) {
             case LEFT_NODE:
                 // parent->left is valid
+                assert(t->parent);
+                assert(t->parent->right);
                 t = t->parent->right;
                 while (t->left)
                     t = t->left;
@@ -377,7 +381,7 @@ static wre_node_t *wre_find_node_right(wre_node_t *node) {
                 assert(false && "should be unreachable");
                 break;
             case ROOT_NODE:
-                assert(right_node == NULL);
+                assert(right_node == NULL && "incorrect initialization!");
                 break;
         }
     }
@@ -395,11 +399,13 @@ static wre_node_t *wre_find_node_left(wre_node_t *node) {
             t = t->right;
         left_node = t;
     } else {
-        while (t->which == LEFT_NODE || !t->parent->left)
+        while (t->which == LEFT_NODE || (t->which == RIGHT_NODE && !t->parent->left))
             t = t->parent;
         switch (t->which) {
             case RIGHT_NODE:
                 // parent->left is valid
+                assert(t->parent);
+                assert(t->parent->left);
                 t = t->parent->left;
                 while (t->right)
                     t = t->right;
@@ -409,7 +415,7 @@ static wre_node_t *wre_find_node_left(wre_node_t *node) {
                 assert(false && "should be unreachable");
                 break;
             case ROOT_NODE:
-                assert(left_node == NULL);
+                assert(left_node == NULL && "incorrect initialization!");
                 break;
         }
     }
@@ -670,12 +676,21 @@ MEMKIND_EXPORT wre_interpolated_result_t wre_find_weighted_interpolated(wre_tree
     if (best_node) {
         wre_node_t *right_node=wre_find_node_right(best_node);
         if (from_left_percentage < 1) {
-            // basic scenario
+            // left or center
             // TODO debug
+            assert(best_node && "best_node is null!");
             ret.left = best_node->data;
-            ret.right = right_node->data;
+            if (right_node) {
+                // center - both nodes exist
+                ret.right = right_node->data;
+            } else {
+                // single node - no nodes to right, no nodes to left
+                // what should we really do? Fallback to static ratio?
+                ret.fallbackRequired = true;
+            }
         } else {
-            assert(!right_node);
+            // too far to right - right node is absent
+            assert(!right_node && "right_node exists - error in code!");
             // right node is absent
             wre_node_t *left_node=wre_find_node_left(best_node);
             ret.left = best_node->data;

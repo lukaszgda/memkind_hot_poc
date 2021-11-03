@@ -10,6 +10,7 @@ typedef struct wre_interpolated_result_t {
     void *left;
     void *right;
     double percentage; /// a/(a+b) where |---a---|-------b-------|
+    bool fallbackRequired;
 } wre_interpolated_result_t;
 
 

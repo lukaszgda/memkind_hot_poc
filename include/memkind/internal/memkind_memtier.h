@@ -287,6 +287,8 @@ extern double old_time_window_hotness_weight;
 #define QUANTIFICATION_ENABLED 0
 #define RANKING_FIXER_ENABLED 0
 #define INTERPOLATED_THRESH 1
+#define FALLBACK_TO_STATIC 1
+
 // when buffer is full, waits until it can re-add elements
 // this feature can negativly impact performance!
 #define ASSURE_RANKING_DELIVERY 1

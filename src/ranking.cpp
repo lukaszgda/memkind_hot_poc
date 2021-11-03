@@ -73,7 +73,7 @@ thread_local int recursion_counter::counter=0;
 using namespace std;
 
 struct ranking {
-    std::atomic<double> hotThreshold;
+    std::atomic<thresh_t> hotThreshold;
     wre_tree_t *entries;
     slab_alloc_t aggHotAlloc;
     std::mutex mutex;
@@ -111,14 +111,14 @@ static size_t ranking_remove_internal_relaxed(ranking_t *ranking,
 //                                     const struct tblock *block);
 static void
 ranking_remove_internal(ranking_t *ranking, double hotness, size_t size);
-static double ranking_get_hot_threshold_internal(ranking_t *ranking);
-static double
+static thresh_t ranking_get_hot_threshold_internal(ranking_t *ranking);
+static thresh_t
 ranking_calculate_hot_threshold_dram_total_internal(
     ranking_t *ranking, double dram_total_ratio, double dram_total_used_ratio);
-static double
+static thresh_t
 ranking_calculate_hot_threshold_dram_pmem_internal(
     ranking_t *ranking, double dram_pmem_ratio, double dram_pmem_used_ratio);
-static bool ranking_is_hot_internal(ranking_t *ranking, struct ttype *entry);
+// static bool ranking_is_hot_internal(ranking_t *ranking, struct ttype *entry);
 // static void ranking_update_internal(ranking_t *ranking,
 //                                     struct ttype *entry_to_update,
 //                                     const struct ttype *updated_values);
@@ -239,7 +239,10 @@ void ranking_create_internal(ranking_t **ranking, double old_weight)
     (void)new ((void *)(&(*ranking)->mutex)) std::mutex();
     int ret =
         slab_alloc_init(&(*ranking)->aggHotAlloc, sizeof(AggregatedHotness_t), 0);
-    (*ranking)->hotThreshold = 0.;
+//     thresh_t init_thresh;
+//     init_thresh.threshVal = 0.;
+//     init_thresh.threshValid = false;
+    (*ranking)->hotThreshold = { 0., false };
     (*ranking)->oldWeight = old_weight;
     (*ranking)->newWeight = 1 - old_weight;
     assert(ret == 0 && "slab allocator initialization failed!");
@@ -254,12 +257,12 @@ void ranking_destroy_internal(ranking_t *ranking)
     jemk_free(ranking);
 }
 
-double ranking_get_hot_threshold_internal(ranking_t *ranking)
+static thresh_t ranking_get_hot_threshold_internal(ranking_t *ranking)
 {
     return ranking->hotThreshold;
 }
 
-double
+thresh_t
 ranking_calculate_hot_threshold_dram_total_internal(
     ranking_t *ranking, double dram_total_ratio, double dram_total_used_ratio)
 {
@@ -283,30 +286,45 @@ ranking_calculate_hot_threshold_dram_total_internal(
 
 #endif
 
-    ranking->hotThreshold = 0;
 #if INTERPOLATED_THRESH
     wre_interpolated_result_t ret = wre_find_weighted_interpolated(
             ranking->entries, dram_total_ratio);
     AggregatedHotness_t agg_hot_={0};
     AggregatedHotness_t *agg_hot = NULL;
-
+    bool result_valid = false;
+    // TODO refactor - only one ret.left or fallbackRequired check
     if (ret.left) {
-        double hotness_left = ((AggregatedHotness_t*)ret.left)->quantifiedHotness;
-        double hotness_right =
-            ret.right ? ((AggregatedHotness_t*)ret.right)->quantifiedHotness : hotness_left+1; // TODO add coeff
-//         agg_hot_.size = 0u; // irrelevant
-        agg_hot_.quantifiedHotness = hotness_left + (hotness_right-hotness_left)*ret.percentage,
+        if (ret.fallbackRequired) {
+            // TODO fallback to static ratio
+            assert(!result_valid && "incorrect init!");
+        } else {
+            double hotness_left = ((AggregatedHotness_t*)ret.left)->quantifiedHotness;
+            double hotness_right =
+                ret.right ? ((AggregatedHotness_t*)ret.right)->quantifiedHotness : hotness_left+1; // TODO add coeff
+    //         agg_hot_.size = 0u; // irrelevant
+            agg_hot_.quantifiedHotness = hotness_left + (hotness_right-hotness_left)*ret.percentage,
 
-        agg_hot = &agg_hot_;
+            agg_hot = &agg_hot_;
+            result_valid=true;
+        }
     }
 #else
     AggregatedHotness_t *agg_hot = (AggregatedHotness_t *)wre_find_weighted(
         ranking->entries, dram_total_ratio);
+    result_valid = true;
 #endif
-    if (agg_hot) {
-        ranking->hotThreshold =
+    thresh_t thresh;
+    thresh.threshVal= 0.;
+    thresh.threshValid= false;
+    if (agg_hot && result_valid) {
+        thresh.threshVal =
             ranking_dequantify_hotness(agg_hot->quantifiedHotness);
+        thresh.threshValid = true;
     }
+    // set thresh even if invalid - static ratio fallback should happen
+    // in this situation
+    ranking->hotThreshold = thresh;
+
     // TODO remove this!!!
     //     printf("wre: threshold_dram_total_internal\n");
     // EOF TODO
@@ -320,7 +338,7 @@ ranking_calculate_hot_threshold_dram_total_internal(
     return ranking_get_hot_threshold_internal(ranking);
 }
 
-double
+static thresh_t
 ranking_calculate_hot_threshold_dram_pmem_internal(
     ranking_t *ranking, double dram_pmem_ratio, double dram_pmem_used_ratio)
 {
@@ -397,9 +415,16 @@ void ranking_add_internal(ranking_t *ranking, double hotness, size_t size)
 #endif
 }
 
+thresh_t ranking_get_thresh(ranking_t *ranking) {
+    // no need for lock
+    return ranking_get_hot_threshold_internal(ranking);
+}
+
 bool ranking_is_hot_internal(ranking_t *ranking, struct ttype *entry)
 {
-    return entry->f > ranking_get_hot_threshold_internal(ranking);
+    thresh_t thresh = ranking_get_hot_threshold_internal(ranking);
+    (void)thresh.threshValid;
+    return entry->f > thresh.threshVal;
 }
 
 static size_t ranking_remove_internal_relaxed(ranking_t *ranking, const struct ttype *entry)
@@ -559,14 +584,14 @@ MEMKIND_EXPORT void ranking_destroy(ranking_t *ranking)
     ranking_destroy_internal(ranking);
 }
 
-MEMKIND_EXPORT double ranking_get_hot_threshold(ranking_t *ranking)
+MEMKIND_EXPORT thresh_t ranking_get_hot_threshold(ranking_t *ranking)
 {
 //     std::lock_guard<std::mutex> lock_guard(ranking->mutex);
     RANKING_LOCK_GUARD(ranking);
     return ranking_get_hot_threshold_internal(ranking);
 }
 
-MEMKIND_EXPORT double
+MEMKIND_EXPORT thresh_t
 ranking_calculate_hot_threshold_dram_total(ranking_t *ranking,
                                            double dram_total_ratio,
                                            double dram_total_used_ratio)
@@ -577,7 +602,7 @@ ranking_calculate_hot_threshold_dram_total(ranking_t *ranking,
         ranking, dram_total_ratio, dram_total_used_ratio);
 }
 
-MEMKIND_EXPORT double
+MEMKIND_EXPORT thresh_t
 ranking_calculate_hot_threshold_dram_pmem(ranking_t *ranking,
                                           double dram_pmem_ratio,
                                           double dram_pmem_used_ratio)
