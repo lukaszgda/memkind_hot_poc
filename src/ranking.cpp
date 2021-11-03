@@ -33,7 +33,12 @@ extern struct ttype *ttypes;
 // MAKE SURE FIXER IS ENABLED!
 #define FIXER_GAIN 2
 
-#ifdef THREAD_SAFE
+// OFFLOAD_RANKING_OPS_TO_BACKGROUD_THREAD: ranking is only accessed from pebs
+// !OFFLOAD_RANKING_OPS_TO_BACKGROUD_THREAD: ranking is accessed from:
+//      - pebs (touch),
+//      - any thread that calls malloc, realloc, free, etc.
+// mutex is required when !OFFLOAD_RANKING_OPS_TO_BACKGROUD_THREAD
+#if defined(THREAD_SAFE) || !(OFFLOAD_RANKING_OPS_TO_BACKGROUD_THREAD)
 #ifdef THREAD_CHECKER
 
 class recursion_counter {
@@ -64,7 +69,9 @@ thread_local int recursion_counter::counter=0;
     std::lock_guard<std::mutex> lock_guard((ranking)->mutex);   \
 /* } while (0) */
 #else /* ndef THREAD_CHECKER */
-    std::lock_guard<std::mutex> lock_guard((ranking)->mutex);
+#define RANKING_LOCK_GUARD(ranking) \
+    std::lock_guard<std::mutex> lock_guard((ranking)->mutex)
+// lockguard cannot go into do-while(0), its scope would end within the macro!
 #endif
 #else /* ndef THREAD_SAFE */
 #define RANKING_LOCK_GUARD(ranking) (void)(ranking)->mutex
