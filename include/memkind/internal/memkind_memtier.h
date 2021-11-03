@@ -291,8 +291,8 @@ extern double old_time_window_hotness_weight;
 
 // when buffer is full, waits until it can re-add elements
 // this feature can negativly impact performance!
-#define ASSURE_RANKING_DELIVERY 1
-#define OFFLOAD_RANKING_OPS_TO_BACKGROUD_THREAD 0
+#define ASSURE_RANKING_DELIVERY 0
+#define OFFLOAD_RANKING_OPS_TO_BACKGROUD_THREAD 1
 
 #if QUANTIFICATION_ENABLED
 typedef int quantified_hotness_t;
