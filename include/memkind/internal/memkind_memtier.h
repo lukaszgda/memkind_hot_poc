@@ -285,7 +285,7 @@ extern double old_time_window_hotness_weight;
 #define CHECK_ADDED_SIZE 0
 
 #define QUANTIFICATION_ENABLED 0
-#define RANKING_FIXER_ENABLED 0
+#define RANKING_FIXER_ENABLED 1
 #define INTERPOLATED_THRESH 1
 #define FALLBACK_TO_STATIC 1
 
