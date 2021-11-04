@@ -297,12 +297,12 @@ ranking_calculate_hot_threshold_dram_total_internal(
 
 #endif
 
+    bool result_valid = false;
 #if INTERPOLATED_THRESH
     wre_interpolated_result_t ret = wre_find_weighted_interpolated(
             ranking->entries, dram_total_ratio);
     AggregatedHotness_t agg_hot_={0};
     AggregatedHotness_t *agg_hot = NULL;
-    bool result_valid = false;
     // TODO refactor - only one ret.left or fallbackRequired check
     if (ret.left) {
         if (ret.fallbackRequired) {
