@@ -352,7 +352,7 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
 /// @warning NOT THREAD SAFE
 /// This function operates on block that should not be freed/modifed
 /// in the meantime
-void touch(void *addr, __u64 timestamp, int from_malloc)
+MEMKIND_EXPORT void touch(void *addr, __u64 timestamp, int from_malloc)
 {
 #if CHECK_ADDED_SIZE
     assert(g_total_ranking_size == ranking_calculate_total_size(ranking));
@@ -555,13 +555,11 @@ MEMKIND_EXPORT bool tachanka_ranking_event_push(EventEntry_t *event)
             EventDataDestroyRemove *data = &event->data.destroyRemoveData;
             // REMOVE THE BLOCK FROM RANKING!!!
             // TODO remove all the exclamation marks and clean up once this is done
-            unregister_block_from_ranking(data->address);
             unregister_block(data->address);
             break;
         }
         case EVENT_REALLOC: {
             EventDataRealloc *data = &event->data.reallocData;
-            unregister_block_from_ranking(data->addressOld);
             unregister_block(data->addressOld);
 //                     realloc_block(data->addressOld, data->addressNew, data->sizeNew);
             register_block(0u /* FIXME hash should not be zero !!! */, data->addressNew, data->sizeNew);
