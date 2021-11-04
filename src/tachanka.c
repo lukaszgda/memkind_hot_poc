@@ -19,6 +19,7 @@
 #include <errno.h>
 #include <stdatomic.h>
 #include <assert.h>
+#include "unistd.h"
 #include <fcntl.h>
 #include <signal.h>
 
@@ -44,7 +45,8 @@ static int freeblock = -1;
 // TODO (possibly) move elsewhere - make sure multiple rankings are supported!
 static ranking_t *ranking;
 static lq_buffer_t ranking_event_buff;
-static _Atomic double g_dramToTotalMemRatio=1.0;
+static _Atomic double g_dramToTotalDesiredRatio=1.0;
+static _Atomic double g_dramToTotalActualRatio=1.0;
 /*static*/ critnib *hash_to_type, *addr_to_block;
 static bigary ba_ttypes, ba_tblocks;
 
@@ -55,6 +57,13 @@ static bigary ba_ttypes, ba_tblocks;
 size_t g_total_critnib_size=0u;
 size_t g_total_ranking_size=0u;
 #endif
+
+static void check_dram_total_ratio(double ratio) {
+    if (ratio < 0 || ratio > 1) {
+        log_fatal("Incorrect ratio [%f], exiting", ratio);
+        exit(-1);
+    }
+}
 
 void register_block(uint64_t hash, void *addr, size_t size)
 {
@@ -221,10 +230,10 @@ void register_block_in_ranking(void * addr, size_t size)
     int bln = critnib_find_le(addr_to_block, (uint64_t)addr);
     if (bln == -1) {
 #if PRINT_CRITNIB_NOT_FOUND_ON_UNREGISTER_BLOCK_WARNING
-        log_info("WARNING: Tried deallocating a non-allocated block at %p", addr);
+        log_info("WARNING: Tried searching for a non-allocated block at %p", addr);
 #endif
 #if CRASH_ON_BLOCK_NOT_FOUND
-        assert(false && "only existing blocks can be unregistered!");
+        assert(false && "only existing blocks can be registered in ranking!");
 #endif
         return;
     }
@@ -305,14 +314,19 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type(const void *addr)
 
     //printf("get_hotness block %d, type %d hot %g\n", bln, tblocks[bln].type, ttypes[tblocks[bln].type].f);
 
-    if (ranking_is_hot(ranking, t))
+    thresh_t thresh = ranking_get_hot_threshold(ranking);
+    if (!thresh.threshValid || t->f == thresh.threshVal)
+        return HOTNESS_NOT_FOUND;
+
+    if (t->f > thresh.threshVal)
         return HOTNESS_HOT;
+    // (t->f < thresh.threshVal)
     return HOTNESS_COLD;
 }
 
 MEMKIND_EXPORT double tachanka_get_hot_thresh(void)
 {
-    return ranking_get_hot_threshold(ranking);
+    return ranking_get_hot_threshold(ranking).threshVal;
 }
 
 MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
@@ -321,10 +335,15 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
     int nt = critnib_get(hash_to_type, hash);
     if (nt != -1) {
         struct ttype *t = &ttypes[nt];
-        if (ranking_is_hot(ranking, t))
+        thresh_t thresh = ranking_get_hot_threshold(ranking);
+        if (!thresh.threshValid || t->f == thresh.threshVal)
+            ret = HOTNESS_NOT_FOUND;
+        else if (t->f > thresh.threshVal)
             ret = HOTNESS_HOT;
-        else
+        else {
+            assert(t->f < thresh.threshVal);
             ret = HOTNESS_COLD;
+        }
     }
 
     return ret;
@@ -440,19 +459,21 @@ void tachanka_init(double old_window_hotness_weight, size_t event_queue_size)
     initialized = true;
 }
 
-MEMKIND_EXPORT void tachanka_set_dram_total_ratio(double ratio)
+MEMKIND_EXPORT void tachanka_set_dram_total_ratio(double desired, double actual)
 {
-    if (ratio < 0 || ratio > 1) {
-        log_fatal("Incorrect ratio [%f], exiting", ratio);
-        exit(-1);
-    }
-
-    g_dramToTotalMemRatio = ratio;
+    check_dram_total_ratio(desired);
+    check_dram_total_ratio(actual);
+    g_dramToTotalDesiredRatio = desired;
+    g_dramToTotalActualRatio = actual;
 }
 
 void tachanka_update_threshold(void)
 {
-    ranking_calculate_hot_threshold_dram_total(ranking, g_dramToTotalMemRatio);
+    // TODO POPULATE!!!
+    double dramTotalUsedRatio=0.5; // FIXME placeholder
+    // where can I take it from ? memkind_memtier! it supports tracking memory for static ratio policy
+    ranking_calculate_hot_threshold_dram_total(
+        ranking, g_dramToTotalDesiredRatio, dramTotalUsedRatio);
 }
 
 void tachanka_destroy(void)
@@ -508,11 +529,65 @@ MEMKIND_EXPORT int tachanka_set_touch_callback(void *addr, tachanka_touch_callba
 
 MEMKIND_EXPORT bool tachanka_ranking_event_push(EventEntry_t *event)
 {
+#if OFFLOAD_RANKING_OPS_TO_BACKGROUD_THREAD
     if (initialized == false) {
         log_fatal("push onto non-initialized queue");
         exit(-1);
     }
-    return ranking_event_push(&ranking_event_buff, event);
+    bool ret = ranking_event_push(&ranking_event_buff, event);
+#if ASSURE_RANKING_DELIVERY
+    while (!ret) {
+        usleep(1000);
+        ret = ranking_event_push(&ranking_event_buff, event);
+    }
+#endif
+#else // EXECUTE SYNCRONOUSLY
+    bool ret = true;
+    // TODO looks like a good place for refactor - code duplicated with pebs.c
+    switch (event->type) {
+        case EVENT_CREATE_ADD: {
+            EventDataCreateAdd *data = &event->data.createAddData;
+            register_block(data->hash, data->address, data->size);
+            register_block_in_ranking(data->address, data->size);
+            break;
+        }
+        case EVENT_DESTROY_REMOVE: {
+            EventDataDestroyRemove *data = &event->data.destroyRemoveData;
+            // REMOVE THE BLOCK FROM RANKING!!!
+            // TODO remove all the exclamation marks and clean up once this is done
+            unregister_block_from_ranking(data->address);
+            unregister_block(data->address);
+            break;
+        }
+        case EVENT_REALLOC: {
+            EventDataRealloc *data = &event->data.reallocData;
+            unregister_block_from_ranking(data->addressOld);
+            unregister_block(data->addressOld);
+//                     realloc_block(data->addressOld, data->addressNew, data->sizeNew);
+            register_block(0u /* FIXME hash should not be zero !!! */, data->addressNew, data->sizeNew);
+            register_block_in_ranking(data->addressNew, data->sizeNew);
+            break;
+        }
+        case EVENT_SET_TOUCH_CALLBACK: {
+            EventDataSetTouchCallback *data = &event->data.touchCallbackData;
+            tachanka_set_touch_callback(data->address,
+                                        data->callback,
+                                        data->callbackArg);
+            break;
+        }
+        case EVENT_TOUCH: {
+            EventDataTouch *data = &event->data.touchData;
+            touch(data->address, data->timestamp, 0 /*called from malloc*/);
+            break;
+        }
+        default: {
+            log_fatal("PEBS: event queue - case not implemented!");
+            exit(-1);
+        }
+    }
+
+#endif
+    return ret;
 }
 
 MEMKIND_EXPORT bool tachanka_ranking_event_pop(EventEntry_t *event)

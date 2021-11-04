@@ -228,6 +228,9 @@ int memtier_ctl_set(struct memtier_builder *builder, const char *name,
                     const void *val);
 
 
+double memtier_kind_get_actual_hot_to_total_allocated_ratio(void);
+double memtier_kind_get_actual_hot_to_total_desired_ratio(void);
+
 // DEBUG
 // float get_obj_hotness(int size);
 
@@ -283,6 +286,14 @@ extern double old_time_window_hotness_weight;
 #define CHECK_ADDED_SIZE 0
 
 #define QUANTIFICATION_ENABLED 0
+#define RANKING_FIXER_ENABLED 1
+#define INTERPOLATED_THRESH 0
+#define FALLBACK_TO_STATIC 0
+
+// when buffer is full, waits until it can re-add elements
+// this feature can negativly impact performance!
+#define ASSURE_RANKING_DELIVERY 0
+#define OFFLOAD_RANKING_OPS_TO_BACKGROUD_THREAD 1
 
 #if QUANTIFICATION_ENABLED
 typedef int quantified_hotness_t;

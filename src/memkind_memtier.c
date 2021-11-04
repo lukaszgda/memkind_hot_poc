@@ -166,9 +166,20 @@ struct memtier_memory {
 
 #define THREAD_BUCKETS  (256U)
 #define FLUSH_THRESHOLD (51200)
+#define MEMKIND_TOTAL_IDX (MEMKIND_MAX_KIND)
 
 static MEMKIND_ATOMIC long long t_alloc_size[MEMKIND_MAX_KIND][THREAD_BUCKETS];
-static MEMKIND_ATOMIC size_t g_alloc_size[MEMKIND_MAX_KIND];
+// MEMKIND_MAX_KIND+1 for MEMKIND_TOTAL_IDX
+static MEMKIND_ATOMIC size_t g_alloc_size[MEMKIND_MAX_KIND+1];
+
+// FIXME multiple memory builders might exist, but each one of them might
+// have different hot tier ID; right now, we permit creating multiple memories,
+// but we keep one, global hotTierId, g_hotTotalDesiredRatio
+// and statistics (t_alloc_size and g_alloc_size)!
+static MEMKIND_ATOMIC size_t g_totalTiers=0; // TODO use it for stats acquisition
+static MEMKIND_ATOMIC size_t g_hotTierId=0;
+static MEMKIND_ATOMIC double g_hotTotalDesiredRatio=0;
+static MEMKIND_ATOMIC double g_hotTotalActualRatio=0;
 
 /* Declare weak symbols for allocator decorators */
 extern void memtier_kind_malloc_post(struct memkind *, size_t, void **)
@@ -203,14 +214,32 @@ static inline unsigned t_hash_64(void)
     return (x ^ (x >> 31)) & (THREAD_BUCKETS - 1);
 }
 
+static void update_actual_ratios(size_t total_size) {
+    double hot_tier_size = g_alloc_size[g_hotTierId];
+        if (hot_tier_size>total_size)
+            // handle race condition gracefully, without repetitions
+            // and mutexes; this code should not have visible, negative effect
+            // TODO make sure it's ok!
+            total_size = hot_tier_size;
+        g_hotTotalActualRatio=hot_tier_size/total_size;
+
+        tachanka_set_dram_total_ratio(
+            g_hotTotalDesiredRatio, g_hotTotalActualRatio);
+}
+
 static inline void increment_alloc_size(unsigned kind_id, size_t size)
 {
     unsigned bucket_id = t_hash_64();
     if ((memkind_atomic_increment(t_alloc_size[kind_id][bucket_id], size) +
          size) > FLUSH_THRESHOLD) {
+        // why do we exactly keep separate per-thread buckets?
+        // TODO add explanation
         size_t size_f =
             memkind_atomic_get_and_zeroing(t_alloc_size[kind_id][bucket_id]);
         memkind_atomic_increment(g_alloc_size[kind_id], size_f);
+        size_t total_size = size + memkind_atomic_increment(
+            g_alloc_size[MEMKIND_TOTAL_IDX], size_f);
+        update_actual_ratios(total_size);
     }
 }
 
@@ -222,6 +251,9 @@ static inline void decrement_alloc_size(unsigned kind_id, size_t size)
         long long size_f =
             memkind_atomic_get_and_zeroing(t_alloc_size[kind_id][bucket_id]);
         memkind_atomic_increment(g_alloc_size[kind_id], size_f);
+        size_t total_size = size + memkind_atomic_increment(
+            g_alloc_size[MEMKIND_TOTAL_IDX], size_f);
+        update_actual_ratios(total_size);
     }
 }
 
@@ -278,7 +310,8 @@ static Hotness_e memtier_policy_data_hotness_calculate_hotness_type(uint64_t has
     static atomic_uint_fast16_t counter=0;
     static atomic_uint_fast64_t hotness_counter[3]= { 0 };
     static atomic_uint_fast64_t hotness_alloc_counter[3]= { 0 };
-    const uint64_t interval=1000;
+//     const uint64_t interval=1000;
+    const uint64_t interval=0; // TODO revert
     if (++counter > interval) {
         struct timespec t;
         int ret = clock_gettime(CLOCK_MONOTONIC, &t);
@@ -379,10 +412,12 @@ memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
             dest_tier = memory->cold_tier_id;
             break;
         case HOTNESS_NOT_FOUND:
-            // type not registered yet, fallback to static ratio
+#if FALLBACK_TO_STATIC
             // TODO add static ratio handling in other places !!!
-//             return memtier_policy_static_ratio_get_kind(memory, size, NULL);
+            return memtier_policy_static_ratio_get_kind(memory, size, NULL);
+#else
             dest_tier = memory->hot_tier_id;
+#endif
             break; // unreachable
         case HOTNESS_HOT:
             dest_tier = memory->hot_tier_id;
@@ -948,8 +983,12 @@ builder_hot_create_memory(struct memtier_builder *builder)
         log_fatal("No tier suitable for HOT memory defined.");
         exit(-1);
     }
-    double dram_total_ratio=memory->cfg[memory->hot_tier_id].kind_ratio;
-
+    double hot_total_ratio=memory->cfg[memory->hot_tier_id].kind_ratio;
+    // FIXME multiple memories,
+    // but only single g_hotTierId and g_hotTotalDesiredRatio!
+    g_hotTotalDesiredRatio = hot_total_ratio;
+    g_hotTierId = memory->hot_tier_id;
+    g_totalTiers = memory->cfg_size;
 #if PRINT_POLICY_CREATE_MEMORY_INFO
     struct timespec t;
     ret = clock_gettime(CLOCK_MONOTONIC, &t);
@@ -958,10 +997,10 @@ builder_hot_create_memory(struct memtier_builder *builder)
     }
 
     log_info("creates memory [ratio %f], timespec [seconds, nanoseconds]: [%ld, %ld]",
-        dram_total_ratio, t.tv_sec, t.tv_nsec);
+        hot_total_ratio, t.tv_sec, t.tv_nsec);
 #endif
 
-    tachanka_set_dram_total_ratio(dram_total_ratio);
+    tachanka_set_dram_total_ratio(hot_total_ratio, hot_total_ratio);
     return memory;
 }
 
@@ -1431,4 +1470,14 @@ MEMKIND_EXPORT size_t memtier_kind_allocated_size(memkind_t kind)
     size_ret =
         memkind_atomic_increment(g_alloc_size[kind->partition], size_all);
     return (size_ret + size_all);
+}
+
+MEMKIND_EXPORT double
+memtier_kind_get_actual_hot_to_total_allocated_ratio(void) {
+    return g_hotTotalActualRatio;
+}
+
+MEMKIND_EXPORT double
+memtier_kind_get_actual_hot_to_total_desired_ratio(void) {
+    return g_hotTotalDesiredRatio;
 }

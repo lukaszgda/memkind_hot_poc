@@ -5,6 +5,7 @@
 #include <memkind/internal/tachanka.h>
 #include <memkind/internal/slab_allocator.h>
 #include <memkind/internal/wre_avl_tree_internal.h>
+#include <memkind/internal/ranking_fixer.h>
 
 #include <random>
 #include <thread>
@@ -308,9 +309,9 @@ TEST_F(RankingTest, check_hotness_highest) {
     double RATIO_PMEM_ONLY=0;
     double thresh_highest =
         ranking_calculate_hot_threshold_dram_total(
-            ranking, RATIO_PMEM_ONLY);
+            ranking, RATIO_PMEM_ONLY, RATIO_PMEM_ONLY).threshVal;
     double thresh_highest_pmem =
-        ranking_calculate_hot_threshold_dram_pmem(ranking, 0);
+        ranking_calculate_hot_threshold_dram_pmem(ranking, 0, 0).threshVal;
     ASSERT_EQ(thresh_highest, thresh_highest_pmem); // double for equality
 #if QUANTIFICATION_ENABLED
     ASSERT_EQ(thresh_highest, quantify_dequantify(BLOCKS_SIZE-1));
@@ -337,10 +338,12 @@ TEST_F(RankingTest, check_hotness_lowest) {
     double RATIO_DRAM_ONLY=1;
     double thresh_lowest =
         ranking_calculate_hot_threshold_dram_total(
-            ranking, RATIO_DRAM_ONLY);
+            ranking, RATIO_DRAM_ONLY, RATIO_DRAM_ONLY).threshVal;
     double thresh_lowest_pmem =
         ranking_calculate_hot_threshold_dram_pmem(
-            ranking, std::numeric_limits<double>::max());
+            ranking,
+            std::numeric_limits<double>::max(),
+            std::numeric_limits<double>::max()).threshVal;
     ASSERT_EQ(thresh_lowest, thresh_lowest_pmem); // double for equality
     ASSERT_EQ(thresh_lowest, 0);
     ASSERT_EQ(ranking_is_hot(ranking, &blocks[0]), false);
@@ -363,9 +366,10 @@ TEST_F(RankingTest, check_hotness_50_50) {
     size_t n = floor((-1+sqrt(delta))/2);
     ASSERT_EQ(n, 70u); // calculated by hand
     double thresh_equal =
-        ranking_calculate_hot_threshold_dram_total(ranking, RATIO_EQUAL);
+        ranking_calculate_hot_threshold_dram_total(
+            ranking, RATIO_EQUAL, RATIO_EQUAL).threshVal;
     double thresh_equal_pmem =
-        ranking_calculate_hot_threshold_dram_pmem(ranking, 1);
+        ranking_calculate_hot_threshold_dram_pmem(ranking, 1, 1).threshVal;
     ASSERT_EQ(thresh_equal, thresh_equal_pmem);
 #if QUANTIFICATION_ENABLED
     double ACCURACY = 1e-9;
@@ -398,9 +402,9 @@ TEST_F(RankingTest, check_hotness_50_50_removed) {
     double RATIO_EQUAL_TOTAL=0.5;
     double RATIO_EQUAL_PMEM=1;
     double thresh_equal = ranking_calculate_hot_threshold_dram_total(
-        ranking, RATIO_EQUAL_TOTAL);
+        ranking, RATIO_EQUAL_TOTAL, RATIO_EQUAL_TOTAL).threshVal;
     double thresh_equal_pmem = ranking_calculate_hot_threshold_dram_pmem(
-        ranking, RATIO_EQUAL_PMEM);
+        ranking, RATIO_EQUAL_PMEM, RATIO_EQUAL_PMEM).threshVal;
     // hand calculations:
     // 100, 99, 98, 97, 96, 95, 94, 93, 92, 91
     // sum:
@@ -462,9 +466,9 @@ TEST_F(RankingTestSameHotness, check_hotness_highest) {
     double RATIO_PMEM_ONLY_TOTAL=0;
     double RATIO_PMEM_ONLY_PMEM=0;
     double thresh_highest = ranking_calculate_hot_threshold_dram_total(
-        ranking, RATIO_PMEM_ONLY_TOTAL);
+        ranking, RATIO_PMEM_ONLY_TOTAL, RATIO_PMEM_ONLY_TOTAL).threshVal;
     double thresh_highest_pmem = ranking_calculate_hot_threshold_dram_pmem(
-        ranking, RATIO_PMEM_ONLY_PMEM);
+        ranking, RATIO_PMEM_ONLY_PMEM, RATIO_PMEM_ONLY_PMEM).threshVal;
 #if QUANTIFICATION_ENABLED
     double ACCURACY=1e-9;
     ASSERT_EQ(thresh_highest, quantify_dequantify((BLOCKS_SIZE-1)%50));
@@ -497,9 +501,11 @@ TEST_F(RankingTestSameHotness, check_hotness_highest) {
 TEST_F(RankingTestSameHotness, check_hotness_lowest) {
     double RATIO_DRAM_ONLY=1;
     double thresh_lowest = ranking_calculate_hot_threshold_dram_total(
-        ranking, RATIO_DRAM_ONLY);
+        ranking, RATIO_DRAM_ONLY, RATIO_DRAM_ONLY).threshVal;
     double thresh_lowest_pmem = ranking_calculate_hot_threshold_dram_pmem(
-        ranking, std::numeric_limits<double>::max());
+        ranking,
+        std::numeric_limits<double>::max(),
+        std::numeric_limits<double>::max()).threshVal;
     ASSERT_EQ(thresh_lowest, 0);
     ASSERT_EQ(thresh_lowest, thresh_lowest_pmem);
     for (size_t i=0; i<BLOCKS_SIZE; ++i) {
@@ -520,9 +526,9 @@ TEST_F(RankingTestSameHotness, check_hotness_50_50) {
     // n_50^2-76*n_50+2525 = 0
     // delta = 76^2-4*2525 = 5776-10000
     double thresh_equal = ranking_calculate_hot_threshold_dram_total(
-        ranking, RATIO_EQUAL_TOTAL);
+        ranking, RATIO_EQUAL_TOTAL, RATIO_EQUAL_TOTAL).threshVal;
     double thresh_equal_pmem = ranking_calculate_hot_threshold_dram_pmem(
-        ranking, RATIO_EQUAL_PMEM);
+        ranking, RATIO_EQUAL_PMEM, RATIO_EQUAL_PMEM).threshVal;
 #if QUANTIFICATION_ENABLED
     double ACCURACY=1e-9;
     ASSERT_EQ(thresh_equal, quantify_dequantify(19));
@@ -568,9 +574,9 @@ TEST_F(RankingTestSameHotness, check_hotness_50_50_removed) {
     double RATIO_EQUAL_TOTAL=0.5;
     double RATIO_EQUAL_PMEM=1;
     double thresh_equal = ranking_calculate_hot_threshold_dram_total(
-        ranking, RATIO_EQUAL_TOTAL);
+        ranking, RATIO_EQUAL_TOTAL, RATIO_EQUAL_TOTAL).threshVal;
     double thresh_equal_pmem = ranking_calculate_hot_threshold_dram_pmem(
-        ranking, RATIO_EQUAL_PMEM);
+        ranking, RATIO_EQUAL_PMEM, RATIO_EQUAL_PMEM).threshVal;
     // hand calculations:
     // 100, 99, 98, 97, 96, 95, 94, 93, 92, 91
     // sum:
@@ -1188,7 +1194,7 @@ TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
 
     ASSERT_EQ(a_type, HOTNESS_HOT);
     ASSERT_EQ(b_type, HOTNESS_COLD);
-    ASSERT_EQ(c_type, HOTNESS_COLD); // when exactly equal thresh
+    ASSERT_EQ(c_type, HOTNESS_NOT_FOUND); // when exactly equal thresh
 
     memkind_t a_kind = ma.DetectKind();
     memkind_t b_kind = mb.DetectKind();
@@ -1311,8 +1317,8 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
 
                 ASSERT_EQ(a_type, HOTNESS_HOT);
                 ASSERT_EQ(b_type, HOTNESS_COLD);
-                // exactly at thresh - round to cold
-                ASSERT_EQ(c_type, HOTNESS_COLD);
+                // exactly at thresh
+                ASSERT_EQ(c_type, HOTNESS_NOT_FOUND);
                 break;
             }
             case 1: {
@@ -1329,8 +1335,8 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
                 Hotness_e c_type=mc.GetHotnessType();
                 ASSERT_EQ(a_type, HOTNESS_HOT);
                 ASSERT_EQ(b_type, HOTNESS_COLD);
-                // exactly at thresh - round to cold
-                ASSERT_EQ(c_type, HOTNESS_COLD);
+                // exactly at thresh
+                ASSERT_EQ(c_type, HOTNESS_NOT_FOUND);
 
 
                 memkind_t a_kind = ma.DetectKind();
@@ -1873,4 +1879,63 @@ TEST(SlabAlloc, Alignment) {
     test_slab_alloc_alignment(8, 814322);
     test_slab_alloc_alignment(7, 291146);
     test_slab_alloc_alignment(7, 291);
+}
+
+#define assert_close(a, b) do { \
+const double ACCURACY=1e-9; /* arbitrary value */ \
+    double diff = a-b; \
+    double abs_diff = diff >= 0 ? diff : -diff; \
+    ASSERT_LE(abs_diff, ACCURACY); \
+} while(0)
+
+TEST(RankingFixer, Basic) {
+    ranking_info info;
+    ranking_fixer_init_ranking_info(&info, 0.7, 1);
+    double fixed_thresh;
+    // corner cases:
+    // ALL PMEM
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 1);
+    assert_close(fixed_thresh, 0);
+    // ALL DRAM
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0);
+    assert_close(fixed_thresh, 1);
+    // already correct
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0.7);
+    assert_close(fixed_thresh, 0.7);
+    // 50%
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0.85);
+    assert_close(fixed_thresh, 0.35);
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0.35);
+    assert_close(fixed_thresh, 0.85);
+    // 30%
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0.8);
+    assert_close(fixed_thresh, 2./3.*0.7);
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 2./3.*0.7);
+    assert_close(fixed_thresh, 0.8);
+}
+
+TEST(RankingFixer, Gain) {
+    ranking_info info;
+    ranking_fixer_init_ranking_info(&info, 0.7, 2);
+    double fixed_thresh;
+    // corner cases:
+    // ALL PMEM
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 1);
+    assert_close(fixed_thresh, -0.7);
+    // ALL DRAM
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0);
+    assert_close(fixed_thresh, 1.3);
+    // already correct
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0.7);
+    assert_close(fixed_thresh, 0.7);
+    // 50%
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0.85);
+    assert_close(fixed_thresh, 0);
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0.35);
+    assert_close(fixed_thresh, 1);
+    // 1/3
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0.8);
+    assert_close(fixed_thresh, 1./3.*0.7);
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 2./3.*0.7);
+    assert_close(fixed_thresh, 0.9);
 }

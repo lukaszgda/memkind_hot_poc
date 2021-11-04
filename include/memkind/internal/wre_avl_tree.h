@@ -6,6 +6,14 @@
 extern "C" {
 #endif
 
+typedef struct wre_interpolated_result_t {
+    void *left;
+    void *right;
+    double percentage; /// a/(a+b) where |---a---|-------b-------|
+    bool fallbackRequired;
+} wre_interpolated_result_t;
+
+
 typedef bool (*is_lower)(const void *a, const void *b);
 
 typedef struct wre_tree  wre_tree_t;
@@ -23,6 +31,8 @@ extern void *wre_remove(wre_tree_t *tree, const void *data);
 /// always between 0 and 1
 extern void *wre_find(wre_tree_t *tree, const void *data);
 extern void *wre_find_weighted(wre_tree_t *tree, double ratio);
+extern wre_interpolated_result_t
+wre_find_weighted_interpolated(wre_tree_t *tree, double ratio);
 extern size_t wre_calculate_total_size(wre_tree_t *ranking);
 
 #ifdef __cplusplus
