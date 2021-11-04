@@ -1194,7 +1194,7 @@ TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
 
     ASSERT_EQ(a_type, HOTNESS_HOT);
     ASSERT_EQ(b_type, HOTNESS_COLD);
-    ASSERT_EQ(c_type, HOTNESS_COLD); // when exactly equal thresh
+    ASSERT_EQ(c_type, HOTNESS_NOT_FOUND); // when exactly equal thresh
 
     memkind_t a_kind = ma.DetectKind();
     memkind_t b_kind = mb.DetectKind();
@@ -1317,8 +1317,8 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
 
                 ASSERT_EQ(a_type, HOTNESS_HOT);
                 ASSERT_EQ(b_type, HOTNESS_COLD);
-                // exactly at thresh - round to cold
-                ASSERT_EQ(c_type, HOTNESS_COLD);
+                // exactly at thresh
+                ASSERT_EQ(c_type, HOTNESS_NOT_FOUND);
                 break;
             }
             case 1: {
@@ -1335,8 +1335,8 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
                 Hotness_e c_type=mc.GetHotnessType();
                 ASSERT_EQ(a_type, HOTNESS_HOT);
                 ASSERT_EQ(b_type, HOTNESS_COLD);
-                // exactly at thresh - round to cold
-                ASSERT_EQ(c_type, HOTNESS_COLD);
+                // exactly at thresh
+                ASSERT_EQ(c_type, HOTNESS_NOT_FOUND);
 
 
                 memkind_t a_kind = ma.DetectKind();
