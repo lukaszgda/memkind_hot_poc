@@ -471,11 +471,9 @@ MEMKIND_EXPORT void tachanka_set_dram_total_ratio(double desired, double actual)
 
 void tachanka_update_threshold(void)
 {
-    // TODO POPULATE!!!
-    double dramTotalUsedRatio=0.5; // FIXME placeholder
     // where can I take it from ? memkind_memtier! it supports tracking memory for static ratio policy
     ranking_calculate_hot_threshold_dram_total(
-        ranking, g_dramToTotalDesiredRatio, dramTotalUsedRatio);
+        ranking, g_dramToTotalDesiredRatio, g_dramToTotalActualRatio);
 }
 
 void tachanka_destroy(void)
