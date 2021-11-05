@@ -286,6 +286,7 @@ static memkind_t
 memtier_policy_dynamic_threshold_get_kind(struct memtier_memory *memory,
                                           size_t size, uint64_t* data)
 {
+    assert(false);
     struct memtier_threshold_cfg *thres = memory->thres;
     int i;
 
@@ -387,6 +388,7 @@ static memkind_t
 memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
                                      uint64_t *data)
 {
+    assert(false);
     // TODO remove
     return memtier_policy_static_ratio_get_kind(memory, size, data);
     // TODO eof remove
@@ -633,6 +635,7 @@ memtier_memory_init(size_t tier_size, bool is_dynamic_threshold,
         return NULL;
     }
     if (is_dynamic_threshold) {
+        assert(false);
         memory->get_kind = memtier_policy_dynamic_threshold_get_kind;
         memory->post_alloc = memtier_empty_post_alloc;
         memory->update_cfg = memtier_policy_dynamic_threshold_update_config;
