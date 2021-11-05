@@ -959,7 +959,26 @@ builder_hot_create_memory(struct memtier_builder *builder)
 
     // TODO remove - only temporary - force static
 
-    return builder_static_create_memory(builder);
+    {
+        int i;
+        struct memtier_memory *memory =
+            memtier_memory_init(builder->cfg_size, false, false);
+
+        if (!memory) {
+            log_err("memtier_memory_init failed.");
+            return NULL;
+        }
+
+        for (i = 1; i < memory->cfg_size; ++i) {
+            memory->cfg[i].kind = builder->cfg[i].kind;
+            memory->cfg[i].kind_ratio =
+                builder->cfg[0].kind_ratio / builder->cfg[i].kind_ratio;
+        }
+        memory->cfg[0].kind = builder->cfg[0].kind;
+        memory->cfg[0].kind_ratio = 1.0;
+
+        return memory;
+    }
     // eof TODO remove
 
     struct memtier_memory *memory =
