@@ -979,6 +979,15 @@ builder_hot_create_memory(struct memtier_builder *builder)
         }
     }
 
+    // TODO remove
+    // override ratios!
+
+    // scenario: only two ratios - same as in static_ratio policy
+    memory->cfg[1].kind_ratio = memory->cfg[0].kind_ratio/memory->cfg[1].kind_ratio;
+    memory->cfg[0].kind_ratio = 1;
+
+    // TODO eof remove
+
     if (memory->hot_tier_id == -1) {
         log_fatal("No tier suitable for HOT memory defined.");
         exit(-1);
