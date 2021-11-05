@@ -957,12 +957,20 @@ builder_hot_create_memory(struct memtier_builder *builder)
     tachanka_init(old_time_window_hotness_weight, RANKING_BUFFER_SIZE_ELEMENTS);
     pebs_init(getpid());
 
-    // TODO remove - only temporary - force static
+    struct memtier_memory *memory =
+        memtier_memory_init(builder->cfg_size, false, true);
+    memory->hot_tier_id = -1;
 
+    if (memory->cfg_size != 2) {
+        log_fatal("Incorrect number of tiers for data hotness policy");
+        exit(-1);
+    }
+
+    // TODO remove - only temporary - force static
     {
         int i;
-        struct memtier_memory *memory =
-            memtier_memory_init(builder->cfg_size, false, false);
+//         struct memtier_memory *memory =
+//             memtier_memory_init(builder->cfg_size, false, false);
 
         if (!memory) {
             log_err("memtier_memory_init failed.");
@@ -980,15 +988,6 @@ builder_hot_create_memory(struct memtier_builder *builder)
         return memory;
     }
     // eof TODO remove
-
-    struct memtier_memory *memory =
-        memtier_memory_init(builder->cfg_size, false, true);
-    memory->hot_tier_id = -1;
-
-    if (memory->cfg_size != 2) {
-        log_fatal("Incorrect number of tiers for data hotness policy");
-        exit(-1);
-    }
 
     double ratio_sum = builder->cfg[0].kind_ratio + builder->cfg[1].kind_ratio;
 
