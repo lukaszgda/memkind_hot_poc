@@ -893,6 +893,15 @@ extern pthread_t pebs_thread;
 static struct memtier_memory *
 builder_hot_create_memory(struct memtier_builder *builder)
 {
+    // TODO remove - only temporary - force static
+
+    tachanka_init(old_time_window_hotness_weight, RANKING_BUFFER_SIZE_ELEMENTS);
+    pebs_init(getpid());
+
+
+    return builder_static_create_memory(builder);
+    // eof TODO remove
+
     int i, ret;
     old_time_window_hotness_weight =
         0.4; // should not stay like this... only for tests and POC
