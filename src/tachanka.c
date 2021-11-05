@@ -254,6 +254,7 @@ void register_block_in_ranking(void * addr, size_t size)
 
 void unregister_block(void *addr)
 {
+    return;
     int bln = critnib_remove(addr_to_block, (intptr_t)addr);
     if (bln == -1)
     {

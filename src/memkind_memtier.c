@@ -638,10 +638,10 @@ memtier_memory_init(size_t tier_size, bool is_dynamic_threshold,
         memory->thres_check_cnt = THRESHOLD_CHECK_CNT;
     } else if (is_data_hotness) {
 //         memory->get_kind = memtier_policy_static_ratio_get_kind;
-        memory->post_alloc = memtier_empty_post_alloc;
+//         memory->post_alloc = memtier_empty_post_alloc;
         memory->update_cfg = memtier_policy_static_ratio_update_config;
         memory->get_kind = memtier_policy_data_hotness_get_kind;
-//         memory->post_alloc = memtier_policy_data_hotness_post_alloc;
+        memory->post_alloc = memtier_policy_data_hotness_post_alloc;
 //         memory->update_cfg = memtier_policy_data_hotness_update_config;
     } else {
         if (tier_size == 1)
