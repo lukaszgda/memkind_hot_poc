@@ -387,9 +387,6 @@ static memkind_t
 memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
                                      uint64_t *data)
 {
-    // TODO remove
-    return memtier_policy_static_ratio_get_kind(memory, size, NULL);
-    // TODO eof remove
     // -- recursion prevention
     void *foo=NULL; // value is irrelevant
     // corner case, which is not handled: actual stack is different from the one returned by pthread
