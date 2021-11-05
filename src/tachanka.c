@@ -554,7 +554,7 @@ MEMKIND_EXPORT bool tachanka_ranking_event_push(EventEntry_t *event)
             (void)data;
             // REMOVE THE BLOCK FROM RANKING!!!
             // TODO remove all the exclamation marks and clean up once this is done
-//             unregister_block(data->address);
+            unregister_block(data->address);
             break;
         }
         case EVENT_REALLOC: {
