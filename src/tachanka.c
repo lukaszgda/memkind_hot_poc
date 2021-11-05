@@ -346,6 +346,8 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
         }
     }
 
+    ret = HOTNESS_NOT_FOUND; // TODO remove
+
     return ret;
 }
 
