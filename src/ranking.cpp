@@ -215,8 +215,8 @@ void ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry,
             if ((entry->t0 - entry->t2) > hotness_measure_window) {
                 // TODO - classify hotness
                 entry->timestamp_state = TIMESTAMP_INIT_DONE;
-                ;
                 entry->t1 = entry->t0;
+                entry->n2 = entry->n1;
                 //                 printf("wre: hotness init done\n");
             }
         }
