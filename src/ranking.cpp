@@ -186,7 +186,7 @@ void ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry,
     assert(add_hotness>=0);
     assert(entry->n1>=0);
     assert(entry->n2>=0);
-    entry->n1 += add_hotness;
+//     entry->n1 += add_hotness; // TODO restore!!!
     entry->t0 = timestamp;
     if (timestamp != 0) {
         if (entry->timestamp_state == TIMESTAMP_NOT_SET) {
