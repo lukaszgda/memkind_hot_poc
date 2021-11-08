@@ -164,7 +164,7 @@ void *pebs_monitor(void *state)
                 break;
             switch (event.type) {
                 case EVENT_CREATE_ADD: {
-                    log_info("EVENT_CREATE_ADD");
+                    log_debug("EVENT_CREATE_ADD");
                     EventDataCreateAdd *data = &event.data.createAddData;
                     register_block(data->hash, data->address, data->size);
                     register_block_in_ranking(data->address, data->size);
@@ -172,7 +172,7 @@ void *pebs_monitor(void *state)
                     break;
                 }
                 case EVENT_DESTROY_REMOVE: {
-                    log_info("EVENT_DESTROY_REMOVE");
+                    log_debug("EVENT_DESTROY_REMOVE");
                     EventDataDestroyRemove *data = &event.data.destroyRemoveData;
                     // REMOVE THE BLOCK FROM RANKING!!!
                     // TODO remove all the exclamation marks and clean up once this is done
@@ -181,7 +181,7 @@ void *pebs_monitor(void *state)
                     break;
                 }
                 case EVENT_REALLOC: {
-                    log_info("EVENT_REALLOC");
+                    log_debug("EVENT_REALLOC");
                     EventDataRealloc *data = &event.data.reallocData;
                     unregister_block(data->addressOld);
 //                     realloc_block(data->addressOld, data->addressNew, data->sizeNew);
@@ -191,7 +191,7 @@ void *pebs_monitor(void *state)
                     break;
                 }
                 case EVENT_SET_TOUCH_CALLBACK: {
-                    log_info("EVENT_SET_TOUCH_CALLBACK");
+                    log_debug("EVENT_SET_TOUCH_CALLBACK");
                     EventDataSetTouchCallback *data = &event.data.touchCallbackData;
                     tachanka_set_touch_callback(data->address,
                                                 data->callback,
