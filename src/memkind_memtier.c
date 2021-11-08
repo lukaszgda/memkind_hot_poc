@@ -387,6 +387,7 @@ static memkind_t
 memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
                                      uint64_t *data)
 {
+    return memtier_policy_static_ratio_get_kind(memory, size, data);
     // -- recursion prevention
     void *foo=NULL; // value is irrelevant
     // corner case, which is not handled: actual stack is different from the one returned by pthread
@@ -433,19 +434,6 @@ memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
 static void
 memtier_policy_data_hotness_post_alloc(uint64_t hash, void *addr, size_t size)
 {
-//     static atomic_uint_fast16_t counter=0;
-//     const uint64_t interval=1000;
-//     if (++counter > interval) {
-//         struct timespec t;
-//         int ret = clock_gettime(CLOCK_MONOTONIC, &t);
-//         if (ret != 0) {
-//             printf("ASSERT TOUCH COUNTER FAILURE!\n");
-//         }
-//         assert(ret == 0);
-//         printf("touch counter %lu hit, [seconds, nanoseconds]: [%ld, %ld]\n",
-//             interval, t.tv_sec, t.tv_nsec);
-//         counter=0u;
-//     }
     // TODO: there are 2 lookups in hash_to_block - one from "get_kind" and
     // second here - this could be easily optimized
 //     register_block(hash, addr, size);
@@ -544,7 +532,14 @@ memtier_policy_static_ratio_update_config(struct memtier_memory *memory)
 
 static void
 memtier_policy_data_hotness_update_config(struct memtier_memory *memory)
-{}
+{
+#if PRINT_POLICY_LOG_STATISTICS_INFO
+    static atomic_uint_fast16_t counter=0;
+    const uint64_t interval=1000;
+    if (++counter > interval)
+        print_memtier_memory(memory);
+#endif
+}
 
 static void
 memtier_empty_post_alloc(uint64_t data, void *addr, size_t size)
@@ -636,12 +631,9 @@ memtier_memory_init(size_t tier_size, bool is_dynamic_threshold,
         memory->update_cfg = memtier_policy_dynamic_threshold_update_config;
         memory->thres_check_cnt = THRESHOLD_CHECK_CNT;
     } else if (is_data_hotness) {
-//         memory->get_kind = memtier_policy_static_ratio_get_kind;
-        memory->post_alloc = memtier_empty_post_alloc;
-        memory->update_cfg = memtier_policy_static_ratio_update_config;
         memory->get_kind = memtier_policy_data_hotness_get_kind;
-//         memory->post_alloc = memtier_policy_data_hotness_post_alloc;
-//         memory->update_cfg = memtier_policy_data_hotness_update_config;
+        memory->post_alloc = memtier_policy_data_hotness_post_alloc;
+        memory->update_cfg = memtier_policy_data_hotness_update_config;
     } else {
         if (tier_size == 1)
             memory->get_kind = memtier_single_get_kind;
@@ -676,7 +668,10 @@ builder_static_create_memory(struct memtier_builder *builder)
     }
     memory->cfg[0].kind = builder->cfg[0].kind;
     memory->cfg[0].kind_ratio = 1.0;
-
+    // TODO remove
+    for (i = 0; i < memory->cfg_size; ++i)
+        printf("tier %d, ratio %f\n", i, memory->cfg[i].kind_ratio);
+    // EOF TODO
     return memory;
 }
 
@@ -1037,6 +1032,23 @@ builder_hot_create_memory(struct memtier_builder *builder)
 #endif
 
     tachanka_set_dram_total_ratio(hot_total_ratio, hot_total_ratio);
+
+//     TODO remove
+//     for (i = 0; i < memory->cfg_size; ++i)
+//         printf("tier %d, ratio %f\n", i, memory->cfg[i].kind_ratio);
+//     EOF TODO
+    // EDIT prepare fallback to static
+    double temp = memory->cfg[0].kind_ratio;
+    memory->cfg[0].kind_ratio = 1;
+    for (i = 1; i < memory->cfg_size; ++i) {
+        memory->cfg[i].kind_ratio = temp / memory->cfg[i].kind_ratio;
+    }
+    // eof prepare fallback to static
+    // TODO remove
+    for (i = 0; i < memory->cfg_size; ++i)
+        printf("tier %d, ratio %f\n", i, memory->cfg[i].kind_ratio);
+    // EOF TODO
+
     return memory;
 }
 
