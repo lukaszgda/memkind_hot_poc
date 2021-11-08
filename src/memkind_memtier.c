@@ -1010,8 +1010,8 @@ builder_hot_create_memory(struct memtier_builder *builder)
     // override ratios!
 
     // scenario: only two ratios - same as in static_ratio policy
-    memory->cfg[1].kind_ratio = memory->cfg[0].kind_ratio/memory->cfg[1].kind_ratio;
-    memory->cfg[0].kind_ratio = 1;
+//     memory->cfg[1].kind_ratio = memory->cfg[0].kind_ratio/memory->cfg[1].kind_ratio;
+//     memory->cfg[0].kind_ratio = 1;
 
     // TODO eof remove
 
