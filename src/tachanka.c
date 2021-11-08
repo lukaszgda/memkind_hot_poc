@@ -336,7 +336,7 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
     if (nt != -1) {
         struct ttype *t = &ttypes[nt];
         thresh_t thresh = ranking_get_hot_threshold(ranking);
-        log_info("thresh_valid: %d, thresh: %f, hotness: %f", thresh.threshValid, thresh.threshVal, t->f);
+//         log_info("thresh_valid: %d, thresh: %f, hotness: %f", thresh.threshValid, thresh.threshVal, t->f);
         if (!thresh.threshValid || t->f == thresh.threshVal)
             ret = HOTNESS_NOT_FOUND;
         else if (t->f > thresh.threshVal)
@@ -348,6 +348,8 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
     }
     else log_info("not found, hash %lu", hash);
 
+    // TODO
+    ret = HOTNESS_NOT_FOUND;
     return ret;
 }
 
@@ -547,6 +549,7 @@ MEMKIND_EXPORT bool tachanka_ranking_event_push(EventEntry_t *event)
     switch (event->type) {
         case EVENT_CREATE_ADD: {
             EventDataCreateAdd *data = &event->data.createAddData;
+//             (void)data;
             register_block(data->hash, data->address, data->size);
             register_block_in_ranking(data->address, data->size);
             break;
