@@ -336,6 +336,7 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
     if (nt != -1) {
         struct ttype *t = &ttypes[nt];
         thresh_t thresh = ranking_get_hot_threshold(ranking);
+        log_info("thresh_valid: %d, thresh: %f, hotness: %f", thresh.threshValid, thresh.threshVal, t->f);
         if (!thresh.threshValid || t->f == thresh.threshVal)
             ret = HOTNESS_NOT_FOUND;
         else if (t->f > thresh.threshVal)
@@ -345,6 +346,7 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
             ret = HOTNESS_COLD;
         }
     }
+    else log_info("not found, hash %lu", hash);
 
     return ret;
 }

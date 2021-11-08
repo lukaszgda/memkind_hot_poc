@@ -311,8 +311,7 @@ static Hotness_e memtier_policy_data_hotness_calculate_hotness_type(uint64_t has
     static atomic_uint_fast16_t counter=0;
     static atomic_uint_fast64_t hotness_counter[3]= { 0 };
     static atomic_uint_fast64_t hotness_alloc_counter[3]= { 0 };
-//     const uint64_t interval=1000;
-    const uint64_t interval=0; // TODO revert
+    const uint64_t interval=1000;
     if (++counter > interval) {
         struct timespec t;
         int ret = clock_gettime(CLOCK_MONOTONIC, &t);
@@ -972,26 +971,26 @@ builder_hot_create_memory(struct memtier_builder *builder)
     }
 
     // TODO remove - only temporary - force static
-    {
-        int i;
+//     {
+//         int i;
 //         struct memtier_memory *memory =
 //             memtier_memory_init(builder->cfg_size, false, false);
-
-        if (!memory) {
-            log_err("memtier_memory_init failed.");
-            return NULL;
-        }
-
-        for (i = 1; i < memory->cfg_size; ++i) {
-            memory->cfg[i].kind = builder->cfg[i].kind;
-            memory->cfg[i].kind_ratio =
-                builder->cfg[0].kind_ratio / builder->cfg[i].kind_ratio;
-        }
-        memory->cfg[0].kind = builder->cfg[0].kind;
-        memory->cfg[0].kind_ratio = 1.0;
-
-        return memory;
-    }
+//
+//         if (!memory) {
+//             log_err("memtier_memory_init failed.");
+//             return NULL;
+//         }
+//
+//         for (i = 1; i < memory->cfg_size; ++i) {
+//             memory->cfg[i].kind = builder->cfg[i].kind;
+//             memory->cfg[i].kind_ratio =
+//                 builder->cfg[0].kind_ratio / builder->cfg[i].kind_ratio;
+//         }
+//         memory->cfg[0].kind = builder->cfg[0].kind;
+//         memory->cfg[0].kind_ratio = 1.0;
+//
+//         return memory;
+//     }
     // eof TODO remove
 
     double ratio_sum = builder->cfg[0].kind_ratio + builder->cfg[1].kind_ratio;
