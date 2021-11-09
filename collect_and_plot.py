@@ -32,5 +32,5 @@ for t0, t1 in zip(values[0], values[1]):
 
 plt.plot(ratios)
 plt.grid()
-plt.xlim(0, 1)
+plt.ylim(0, 1)
 plt.show()

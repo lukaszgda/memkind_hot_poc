@@ -165,7 +165,8 @@ struct memtier_memory {
 // clang-format on
 
 #define THREAD_BUCKETS  (256U)
-#define FLUSH_THRESHOLD (51200)
+// #define FLUSH_THRESHOLD (51200)
+#define FLUSH_THRESHOLD (0)
 #define MEMKIND_TOTAL_IDX (MEMKIND_MAX_KIND)
 
 static MEMKIND_ATOMIC long long t_alloc_size[MEMKIND_MAX_KIND][THREAD_BUCKETS];
@@ -251,7 +252,7 @@ static inline void decrement_alloc_size(unsigned kind_id, size_t size)
         long long size_f =
             memkind_atomic_get_and_zeroing(t_alloc_size[kind_id][bucket_id]);
         memkind_atomic_increment(g_alloc_size[kind_id], size_f);
-        size_t total_size = size + memkind_atomic_increment(
+        size_t total_size = size_f + memkind_atomic_increment(
             g_alloc_size[MEMKIND_TOTAL_IDX], size_f);
         update_actual_ratios(total_size);
     }
@@ -387,7 +388,7 @@ static memkind_t
 memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
                                      uint64_t *data)
 {
-    return memtier_policy_static_ratio_get_kind(memory, size, data);
+//     return memtier_policy_static_ratio_get_kind(memory, size, data);
     // -- recursion prevention
     void *foo=NULL; // value is irrelevant
     // corner case, which is not handled: actual stack is different from the one returned by pthread
@@ -528,7 +529,14 @@ static void print_builder(struct memtier_builder *builder)
 
 static void
 memtier_policy_static_ratio_update_config(struct memtier_memory *memory)
-{}
+{
+#if PRINT_POLICY_LOG_STATISTICS_INFO
+    static atomic_uint_fast16_t counter=0;
+    const uint64_t interval=1000;
+    if (++counter > interval)
+        print_memtier_memory(memory);
+#endif
+}
 
 static void
 memtier_policy_data_hotness_update_config(struct memtier_memory *memory)

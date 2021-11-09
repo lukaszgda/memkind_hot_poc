@@ -349,7 +349,7 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
     else log_info("not found, hash %lu", hash);
 
     // TODO
-    ret = HOTNESS_NOT_FOUND;
+//     ret = HOTNESS_NOT_FOUND;
     return ret;
 }
 
