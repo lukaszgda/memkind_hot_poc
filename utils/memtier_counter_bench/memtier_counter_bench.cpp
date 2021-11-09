@@ -3,6 +3,8 @@
 
 #include <memkind/internal/memkind_memtier.h>
 
+#include <memkind/internal/tachanka.h>
+
 #include <argp.h>
 #include <assert.h>
 #include <chrono>
@@ -23,6 +25,7 @@ struct BenchArgs {
     size_t thread_no;
     size_t run_no;
     size_t iter_no;
+    bool test_tiering;
 };
 
 struct RunRet {
@@ -95,7 +98,9 @@ public:
     virtual ~counter_bench_alloc() = default;
 
 protected:
-    const size_t m_sizes[10] = { 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024};
+    static constexpr size_t M_SIZES_SIZE=10;
+    const size_t m_sizes[M_SIZES_SIZE] = { 20, 40, 80, 25, 50, 100, 90, 70, 30, 28};
+//     const size_t m_sizes[M_SIZES_SIZE] = { 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024};
     virtual void *bench_alloc(size_t) const = 0;
     virtual void bench_free(void *) const = 0;
 
@@ -106,7 +111,9 @@ private:
         std::vector<void *> v;
         v.reserve(arguments.iter_no);
         for (size_t i = 0; i < arguments.iter_no; i++) {
-            v.emplace_back(bench_alloc(m_sizes[i%10]));
+            v.emplace_back(arguments.test_tiering ?
+                bench_alloc_touch(m_sizes[i%M_SIZES_SIZE], (i%5)*(i%5)*(i%5))
+                : bench_alloc(m_sizes[i%M_SIZES_SIZE]));
         }
         double ratio = memtier_kind_get_actual_hot_to_total_allocated_ratio();
         for (size_t i = 0; i < arguments.iter_no; i++) {
@@ -115,6 +122,15 @@ private:
         v.clear();
 
         return ratio;
+    }
+
+    void *bench_alloc_touch(size_t size, size_t touches) const
+    {
+        void *ptr = bench_alloc(size);
+        const long long one_second = 1000000000;
+        for (size_t i=0; i<touches; ++i)
+            touch(ptr, i*one_second, 0);
+        return ptr;
     }
 };
 
@@ -245,6 +261,9 @@ static int parse_opt(int key, char *arg, struct argp_state *state)
         case 'i':
             args->iter_no = std::strtol(arg, nullptr, 10);
             break;
+        case 'g':
+            args->test_tiering = true;
+            break;
     }
     return 0;
 }
@@ -259,6 +278,7 @@ static struct argp_option options[] = {
     {"thread", 't', "int", 0, "Threads numbers."},
     {"runs", 'r', "int", 0, "Benchmark run numbers."},
     {"iterations", 'i', "int", 0, "Benchmark iteration numbers."},
+    {"test_tiering", 'g', 0, 0, "Test tiering in addition to malloc overhead."},
     {0}};
 // clang-format on
 

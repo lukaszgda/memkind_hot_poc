@@ -18,6 +18,7 @@
 
 typedef enum
 {
+    MESSAGE_TYPE_DEBUG,
     MESSAGE_TYPE_INFO,
     MESSAGE_TYPE_ERROR,
     MESSAGE_TYPE_FATAL,
@@ -25,6 +26,7 @@ typedef enum
 } message_type_t;
 
 static char *message_prefixes[MESSAGE_TYPE_MAX_VALUE] = {
+    [MESSAGE_TYPE_DEBUG] = "MEMKIND_DEBUG",
     [MESSAGE_TYPE_INFO] = "MEMKIND_INFO",
     [MESSAGE_TYPE_ERROR] = "MEMKIND_ERROR",
     [MESSAGE_TYPE_FATAL] = "MEMKIND_FATAL",
@@ -105,6 +107,14 @@ static void log_generic(message_type_t type, const char *format, va_list args)
         if (pthread_mutex_unlock(&log_lock) != 0)
             assert(0 && "failed to release mutex");
     }
+}
+
+void log_debug(const char *format, ...)
+{
+    va_list args;
+    va_start(args, format);
+    log_generic(MESSAGE_TYPE_DEBUG, format, args);
+    va_end(args);
 }
 
 void log_info(const char *format, ...)
