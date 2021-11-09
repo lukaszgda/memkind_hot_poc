@@ -9,6 +9,12 @@ extern "C" {
 #define PRINTF_FORMAT __attribute__((format(printf, 1, 2)))
 
 /*
+ * For printing debugging messages
+ * Requires environment variable MEMKIND_DEBUG to be set to appropriate value
+ */
+void log_debug(const char *format, ...) PRINTF_FORMAT;
+
+/*
  * For printing informational messages
  * Requires environment variable MEMKIND_DEBUG to be set to appropriate value
  */
