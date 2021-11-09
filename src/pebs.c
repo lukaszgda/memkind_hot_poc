@@ -165,8 +165,10 @@ void *pebs_monitor(void *state)
             switch (event.type) {
                 case EVENT_CREATE_ADD: {
                     EventDataCreateAdd *data = &event.data.createAddData;
+#if PRINT_PEBS_EVENT_INFO
                     log_debug("EVENT_CREATE_ADD, address %p, size %lu",
                               data->address, data->size);
+#endif
                     register_block(data->hash, data->address, data->size);
                     register_block_in_ranking(data->address, data->size);
                     g_queue_counter_malloc++;
@@ -175,8 +177,10 @@ void *pebs_monitor(void *state)
                 case EVENT_DESTROY_REMOVE: {
                     EventDataDestroyRemove *data =
                         &event.data.destroyRemoveData;
+#if PRINT_PEBS_EVENT_INFO
                     log_debug("EVENT_DESTROY_REMOVE, address %p",
                               data->address);
+#endif
                     // REMOVE THE BLOCK FROM RANKING!!!
                     // TODO remove all the exclamation marks and clean up once this is done
                     unregister_block(data->address);
@@ -185,9 +189,11 @@ void *pebs_monitor(void *state)
                 }
                 case EVENT_REALLOC: {
                     EventDataRealloc *data = &event.data.reallocData;
+#if PRINT_PEBS_EVENT_INFO
                     log_debug("EVENT_REALLOC, address [old->new]: %p -> %p,"
                         " size [old -> new]: %lu -> %lu", data->addressOld,
                         data->addressNew, data->sizeOld, data->sizeNew);
+#endif
                     unregister_block(data->addressOld);
 //                     realloc_block(data->addressOld, data->addressNew, data->sizeNew);
                     register_block(0u /* FIXME hash should not be zero !!! */, data->addressNew, data->sizeNew);
@@ -195,8 +201,10 @@ void *pebs_monitor(void *state)
                     g_queue_counter_realloc++;
                     break;
                 }
-                case EVENT_SET_TOUCH_CALLBACK: {
+                case EVENT_SET_TOUCH_CALLBACK: {              
+#if PRINT_PEBS_EVENT_INFO
                     log_debug("EVENT_SET_TOUCH_CALLBACK");
+#endif
                     EventDataSetTouchCallback *data = &event.data.touchCallbackData;
                     tachanka_set_touch_callback(data->address,
                                                 data->callback,

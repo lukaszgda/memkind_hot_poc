@@ -25,8 +25,8 @@ try:
 except IndexError as e:
     print('Incorrect number of arguments')
     print('sample usage:')
-    print('\tMEMKIND_DEBUG=1 LD_LIBRARY_PATH=.libs' \
-        './utils/memtier_counter_bench/memtier_counter_bench' \
+    print('\tMEMKIND_DEBUG=1 LD_LIBRARY_PATH=.libs ' \
+        './utils/memtier_counter_bench/memtier_counter_bench ' \
         '-p -i 5000 -r 3 -t 1 -g 2>run.log')
     print('\t./collect_and_plot.py run.log')
     exit(-1)
@@ -55,3 +55,5 @@ plt.plot(ratios)
 plt.grid()
 #plt.ylim(0, 2)
 plt.show()
+
+plt.savefig("run.png")
