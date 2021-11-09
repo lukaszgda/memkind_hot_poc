@@ -98,7 +98,9 @@ public:
     virtual ~counter_bench_alloc() = default;
 
 protected:
-    const size_t m_sizes[10] = { 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024};
+    static constexpr size_t M_SIZES_SIZE=10;
+    const size_t m_sizes[M_SIZES_SIZE] = { 20, 40, 80, 25, 50, 100, 90, 70, 30, 28};
+//     const size_t m_sizes[M_SIZES_SIZE] = { 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024};
     virtual void *bench_alloc(size_t) const = 0;
     virtual void bench_free(void *) const = 0;
 
@@ -110,8 +112,8 @@ private:
         v.reserve(arguments.iter_no);
         for (size_t i = 0; i < arguments.iter_no; i++) {
             v.emplace_back(arguments.test_tiering ?
-                bench_alloc_touch(m_sizes[i%10], (i%5)*(i%5)*(i%5))
-                : bench_alloc(m_sizes[i%10]));
+                bench_alloc_touch(m_sizes[i%M_SIZES_SIZE], (i%5)*(i%5)*(i%5))
+                : bench_alloc(m_sizes[i%M_SIZES_SIZE]));
         }
         double ratio = memtier_kind_get_actual_hot_to_total_allocated_ratio();
         for (size_t i = 0; i < arguments.iter_no; i++) {

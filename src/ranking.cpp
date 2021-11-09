@@ -35,7 +35,7 @@ extern struct ttype *ttypes;
 
 // IF YOU MODIFY FIXER_GAIN AND DO NOT OBSERVE ThE EXPECTED RESULTS,
 // MAKE SURE FIXER IS ENABLED!
-#define FIXER_GAIN 2
+#define FIXER_GAIN 10
 
 // OFFLOAD_RANKING_OPS_TO_BACKGROUD_THREAD: ranking is only accessed from pebs
 // !OFFLOAD_RANKING_OPS_TO_BACKGROUD_THREAD: ranking is accessed from:
