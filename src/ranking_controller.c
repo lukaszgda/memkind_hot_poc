@@ -1,18 +1,18 @@
-#include "memkind/internal/ranking_fixer.h"
+#include "memkind/internal/ranking_controller.h"
 
 #ifndef MEMKIND_EXPORT
 #define MEMKIND_EXPORT __attribute__((visibility("default")))
 #endif
 
 
-MEMKIND_EXPORT void ranking_fixer_init_ranking_info(
-    ranking_info *info, double expected_dram_total, double gain) {
-    info->gain = gain;
-    info->hotTierSize = expected_dram_total;
-    info->coldTierSize = 1-expected_dram_total;
+MEMKIND_EXPORT void ranking_controller_init_ranking_controller(
+    ranking_controller *controller, double expected_dram_total, double gain) {
+    controller->gain = gain;
+    controller->hotTierSize = expected_dram_total;
+    controller->coldTierSize = 1-expected_dram_total;
 }
 
-MEMKIND_EXPORT double ranking_fixer_calculate_fixed_thresh(ranking_info *info, double found_dram_total) {
+MEMKIND_EXPORT double ranking_controller_calculate_fixed_thresh(ranking_controller *controller, double found_dram_total) {
 
     // case: found thresh too low
     // |---a----------|--------b--|
@@ -30,8 +30,8 @@ MEMKIND_EXPORT double ranking_fixer_calculate_fixed_thresh(ranking_info *info, d
     // |-------|--e---|-----------|
     // (c-a)/b==e/a
     // e = - a/b * (c-a)
-    double a=info->coldTierSize;
-    double b=info->hotTierSize;
+    double a=controller->coldTierSize;
+    double b=controller->hotTierSize;
     double c = 1-found_dram_total;
     // double d = 1-found_ratio; // unused
     double t=a-c;
@@ -41,5 +41,5 @@ MEMKIND_EXPORT double ranking_fixer_calculate_fixed_thresh(ranking_info *info, d
         return found_dram_total; // no need to fix ratio
     double e = (t>=0 ? b/a : a/b)*t;
 
-    return 1.-(a+e*info->gain);
+    return 1.-(a+e*controller->gain);
 }

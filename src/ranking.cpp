@@ -4,7 +4,7 @@ extern "C" {
 }
 
 #include "memkind/internal/slab_allocator.h"
-#include "memkind/internal/ranking_fixer.h"
+#include "memkind/internal/ranking_controller.h"
 
 #include <jemalloc/jemalloc.h>
 #include <algorithm>
@@ -286,11 +286,11 @@ ranking_calculate_hot_threshold_dram_total_internal(
 
 #if RANKING_FIXER_ENABLED
     // TODO add tests for this one?
-    ranking_info info;
+    ranking_controller controller;
     // TODO add gain as configurable variable
-    ranking_fixer_init_ranking_info(&info, dram_total_ratio, FIXER_GAIN);
+    ranking_controller_init_ranking_controller(&controller, dram_total_ratio, FIXER_GAIN);
     double fixed_dram_total_ratio =
-        ranking_fixer_calculate_fixed_thresh(&info, dram_total_used_ratio);
+        ranking_controller_calculate_fixed_thresh(&controller, dram_total_used_ratio);
     log_info("fixer: ratio fixed [%f to %f]",
              dram_total_ratio, fixed_dram_total_ratio);
     dram_total_ratio = fixed_dram_total_ratio;
