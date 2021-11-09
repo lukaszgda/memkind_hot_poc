@@ -228,34 +228,36 @@ static void update_actual_ratios(size_t total_size) {
             g_hotTotalDesiredRatio, g_hotTotalActualRatio);
 }
 
+static inline void
+apply_temporary_buffer_alloc_size(size_t kind_id,size_t bucket_id)
+{
+    // please note that size_f might be negative
+    long long size_f =
+        memkind_atomic_get_and_zeroing(t_alloc_size[kind_id][bucket_id]);
+    memkind_atomic_increment(g_alloc_size[kind_id], size_f);
+    size_t old_total_size = memkind_atomic_increment(
+        g_alloc_size[MEMKIND_TOTAL_IDX], size_f);
+    // total_size is, by definition, positive
+    size_t total_size = (size_t)(size_f + (long long)old_total_size);
+    update_actual_ratios(total_size);
+}
+
 static inline void increment_alloc_size(unsigned kind_id, size_t size)
 {
     unsigned bucket_id = t_hash_64();
-    if ((memkind_atomic_increment(t_alloc_size[kind_id][bucket_id], size) +
-         size) > FLUSH_THRESHOLD) {
-        // why do we exactly keep separate per-thread buckets?
-        // TODO add explanation
-        size_t size_f =
-            memkind_atomic_get_and_zeroing(t_alloc_size[kind_id][bucket_id]);
-        memkind_atomic_increment(g_alloc_size[kind_id], size_f);
-        size_t total_size = size_f + memkind_atomic_increment(
-            g_alloc_size[MEMKIND_TOTAL_IDX], size_f);
-        update_actual_ratios(total_size);
-    }
+    long long old_talloc =
+        memkind_atomic_increment(t_alloc_size[kind_id][bucket_id], size);
+    if ((old_talloc + size) > FLUSH_THRESHOLD)
+        apply_temporary_buffer_alloc_size(kind_id, bucket_id);
 }
 
 static inline void decrement_alloc_size(unsigned kind_id, size_t size)
 {
     unsigned bucket_id = t_hash_64();
-    if ((memkind_atomic_decrement(t_alloc_size[kind_id][bucket_id], size) -
-         size) < -FLUSH_THRESHOLD) {
-        long long size_f =
-            memkind_atomic_get_and_zeroing(t_alloc_size[kind_id][bucket_id]);
-        memkind_atomic_increment(g_alloc_size[kind_id], size_f);
-        size_t total_size = size_f + memkind_atomic_increment(
-            g_alloc_size[MEMKIND_TOTAL_IDX], size_f);
-        update_actual_ratios(total_size);
-    }
+    long long old_talloc =
+        memkind_atomic_decrement(t_alloc_size[kind_id][bucket_id], size);
+    if (old_talloc - size < -FLUSH_THRESHOLD)
+        apply_temporary_buffer_alloc_size(kind_id, bucket_id);
 }
 
 static memkind_t memtier_single_get_kind(struct memtier_memory *memory,
