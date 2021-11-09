@@ -35,7 +35,8 @@ extern struct ttype *ttypes;
 
 // IF YOU MODIFY FIXER_GAIN AND DO NOT OBSERVE ThE EXPECTED RESULTS,
 // MAKE SURE FIXER IS ENABLED!
-#define FIXER_GAIN 10
+#define FIXER_PROPORTIONAL_GAIN 8
+#define FIXER_INTEGRAL_GAIN 0.01
 
 // OFFLOAD_RANKING_OPS_TO_BACKGROUD_THREAD: ranking is only accessed from pebs
 // !OFFLOAD_RANKING_OPS_TO_BACKGROUD_THREAD: ranking is accessed from:
@@ -288,7 +289,9 @@ ranking_calculate_hot_threshold_dram_total_internal(
     // TODO add tests for this one?
     ranking_controller controller;
     // TODO add gain as configurable variable
-    ranking_controller_init_ranking_controller(&controller, dram_total_ratio, FIXER_GAIN);
+    ranking_controller_init_ranking_controller(
+        &controller, dram_total_ratio, FIXER_PROPORTIONAL_GAIN,
+        FIXER_INTEGRAL_GAIN);
     double fixed_dram_total_ratio =
         ranking_controller_calculate_fixed_thresh(&controller, dram_total_used_ratio);
     log_info("fixer: ratio fixed [%f to %f]",

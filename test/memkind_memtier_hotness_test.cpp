@@ -1941,7 +1941,7 @@ const double ACCURACY=1e-9; /* arbitrary value */ \
 
 TEST(RankingController, Basic) {
     ranking_controller controller;
-    ranking_controller_init_ranking_controller(&controller, 0.7, 1);
+    ranking_controller_init_ranking_controller(&controller, 0.7, 1, 0);
     double fixed_thresh;
     // corner cases:
     // ALL PMEM
@@ -1967,7 +1967,7 @@ TEST(RankingController, Basic) {
 
 TEST(RankingController, Gain) {
     ranking_info controller;
-    ranking_controller_init_ranking_controller(&controller, 0.7, 2);
+    ranking_controller_init_ranking_controller(&controller, 0.7, 2, 0);
     double fixed_thresh;
     // corner cases:
     // ALL PMEM
@@ -1990,3 +1990,5 @@ TEST(RankingController, Gain) {
     fixed_thresh = ranking_controller_calculate_fixed_thresh(&controller, 2./3.*0.7);
     assert_close(fixed_thresh, 0.9);
 }
+
+// TODO write a test for integral part of controller

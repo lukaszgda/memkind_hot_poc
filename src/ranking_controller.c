@@ -6,8 +6,11 @@
 
 
 MEMKIND_EXPORT void ranking_controller_init_ranking_controller(
-    ranking_controller *controller, double expected_dram_total, double gain) {
-    controller->gain = gain;
+    ranking_controller *controller, double expected_dram_total,
+    double proportinal_term, double integral_term) {
+    controller->integrated_error = 0;
+    controller->proportional = proportinal_term;
+    controller->integral = integral_term;
     controller->hotTierSize = expected_dram_total;
     controller->coldTierSize = 1-expected_dram_total;
 }
@@ -41,5 +44,11 @@ MEMKIND_EXPORT double ranking_controller_calculate_fixed_thresh(ranking_controll
         return found_dram_total; // no need to fix ratio
     double e = (t>=0 ? b/a : a/b)*t;
 
-    return 1.-(a+e*controller->gain);
+    // euler forward integration with timestep = 1
+    controller->integrated_error += e;  // it's really this simple
+
+    double steering_signal =
+        e*controller->proportional
+        + controller->integrated_error * controller->integral;
+    return 1.-(a+steering_signal);
 }
