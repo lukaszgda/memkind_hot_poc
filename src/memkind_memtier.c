@@ -165,7 +165,8 @@ struct memtier_memory {
 // clang-format on
 
 #define THREAD_BUCKETS  (256U)
-#define FLUSH_THRESHOLD (51200)
+// #define FLUSH_THRESHOLD (51200)
+#define FLUSH_THRESHOLD (0)
 #define MEMKIND_TOTAL_IDX (MEMKIND_MAX_KIND)
 
 static MEMKIND_ATOMIC long long t_alloc_size[MEMKIND_MAX_KIND][THREAD_BUCKETS];
@@ -251,7 +252,7 @@ static inline void decrement_alloc_size(unsigned kind_id, size_t size)
         long long size_f =
             memkind_atomic_get_and_zeroing(t_alloc_size[kind_id][bucket_id]);
         memkind_atomic_increment(g_alloc_size[kind_id], size_f);
-        size_t total_size = size + memkind_atomic_increment(
+        size_t total_size = size_f + memkind_atomic_increment(
             g_alloc_size[MEMKIND_TOTAL_IDX], size_f);
         update_actual_ratios(total_size);
     }
@@ -310,8 +311,7 @@ static Hotness_e memtier_policy_data_hotness_calculate_hotness_type(uint64_t has
     static atomic_uint_fast16_t counter=0;
     static atomic_uint_fast64_t hotness_counter[3]= { 0 };
     static atomic_uint_fast64_t hotness_alloc_counter[3]= { 0 };
-//     const uint64_t interval=1000;
-    const uint64_t interval=0; // TODO revert
+    const uint64_t interval=1000;
     if (++counter > interval) {
         struct timespec t;
         int ret = clock_gettime(CLOCK_MONOTONIC, &t);
@@ -433,19 +433,6 @@ memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
 static void
 memtier_policy_data_hotness_post_alloc(uint64_t hash, void *addr, size_t size)
 {
-//     static atomic_uint_fast16_t counter=0;
-//     const uint64_t interval=1000;
-//     if (++counter > interval) {
-//         struct timespec t;
-//         int ret = clock_gettime(CLOCK_MONOTONIC, &t);
-//         if (ret != 0) {
-//             printf("ASSERT TOUCH COUNTER FAILURE!\n");
-//         }
-//         assert(ret == 0);
-//         printf("touch counter %lu hit, [seconds, nanoseconds]: [%ld, %ld]\n",
-//             interval, t.tv_sec, t.tv_nsec);
-//         counter=0u;
-//     }
     // TODO: there are 2 lookups in hash_to_block - one from "get_kind" and
     // second here - this could be easily optimized
 //     register_block(hash, addr, size);
@@ -540,11 +527,25 @@ static void print_builder(struct memtier_builder *builder)
 
 static void
 memtier_policy_static_ratio_update_config(struct memtier_memory *memory)
-{}
+{
+#if PRINT_POLICY_LOG_STATISTICS_INFO
+    static atomic_uint_fast16_t counter=0;
+    const uint64_t interval=1000;
+    if (++counter > interval)
+        print_memtier_memory(memory);
+#endif
+}
 
 static void
 memtier_policy_data_hotness_update_config(struct memtier_memory *memory)
-{}
+{
+#if PRINT_POLICY_LOG_STATISTICS_INFO
+    static atomic_uint_fast16_t counter=0;
+    const uint64_t interval=1000;
+    if (++counter > interval)
+        print_memtier_memory(memory);
+#endif
+}
 
 static void
 memtier_empty_post_alloc(uint64_t data, void *addr, size_t size)
@@ -672,7 +673,8 @@ builder_static_create_memory(struct memtier_builder *builder)
     }
     memory->cfg[0].kind = builder->cfg[0].kind;
     memory->cfg[0].kind_ratio = 1.0;
-
+    for (i = 0; i < memory->cfg_size; ++i)
+        log_info("RATIO: tier %d, ratio %f", i, memory->cfg[i].kind_ratio);
     return memory;
 }
 
@@ -890,6 +892,7 @@ extern pthread_t pebs_thread;
 static struct memtier_memory *
 builder_hot_create_memory(struct memtier_builder *builder)
 {
+    // TODO this function is convoluted and needs simplification!
     int i, ret;
     old_time_window_hotness_weight =
         0.4; // should not stay like this... only for tests and POC
@@ -1001,6 +1004,17 @@ builder_hot_create_memory(struct memtier_builder *builder)
 #endif
 
     tachanka_set_dram_total_ratio(hot_total_ratio, hot_total_ratio);
+
+    // EDIT prepare fallback to static - calculate ratios differently
+    double temp = memory->cfg[0].kind_ratio;
+    memory->cfg[0].kind_ratio = 1;
+    for (i = 1; i < memory->cfg_size; ++i) {
+        memory->cfg[i].kind_ratio = temp / memory->cfg[i].kind_ratio;
+    }
+    // eof prepare fallback to static
+    for (i = 0; i < memory->cfg_size; ++i)
+        log_info("RATIO: tier %d, ratio %f", i, memory->cfg[i].kind_ratio);
+
     return memory;
 }
 
