@@ -164,16 +164,19 @@ void *pebs_monitor(void *state)
                 break;
             switch (event.type) {
                 case EVENT_CREATE_ADD: {
-                    log_debug("EVENT_CREATE_ADD");
                     EventDataCreateAdd *data = &event.data.createAddData;
+                    log_debug("EVENT_CREATE_ADD, address %p, size %lu",
+                              data->address, data->size);
                     register_block(data->hash, data->address, data->size);
                     register_block_in_ranking(data->address, data->size);
                     g_queue_counter_malloc++;
                     break;
                 }
                 case EVENT_DESTROY_REMOVE: {
-                    log_debug("EVENT_DESTROY_REMOVE");
-                    EventDataDestroyRemove *data = &event.data.destroyRemoveData;
+                    EventDataDestroyRemove *data =
+                        &event.data.destroyRemoveData;
+                    log_debug("EVENT_DESTROY_REMOVE, address %p",
+                              data->address);
                     // REMOVE THE BLOCK FROM RANKING!!!
                     // TODO remove all the exclamation marks and clean up once this is done
                     unregister_block(data->address);
@@ -181,8 +184,10 @@ void *pebs_monitor(void *state)
                     break;
                 }
                 case EVENT_REALLOC: {
-                    log_debug("EVENT_REALLOC");
                     EventDataRealloc *data = &event.data.reallocData;
+                    log_debug("EVENT_REALLOC, address [old->new]: %p -> %p,"
+                        " size [old -> new]: %lu -> %lu", data->addressOld,
+                        data->addressNew, data->sizeOld, data->sizeNew);
                     unregister_block(data->addressOld);
 //                     realloc_block(data->addressOld, data->addressNew, data->sizeNew);
                     register_block(0u /* FIXME hash should not be zero !!! */, data->addressNew, data->sizeNew);

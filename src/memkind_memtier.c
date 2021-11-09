@@ -238,7 +238,7 @@ static inline void increment_alloc_size(unsigned kind_id, size_t size)
         size_t size_f =
             memkind_atomic_get_and_zeroing(t_alloc_size[kind_id][bucket_id]);
         memkind_atomic_increment(g_alloc_size[kind_id], size_f);
-        size_t total_size = size + memkind_atomic_increment(
+        size_t total_size = size_f + memkind_atomic_increment(
             g_alloc_size[MEMKIND_TOTAL_IDX], size_f);
         update_actual_ratios(total_size);
     }
