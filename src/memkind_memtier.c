@@ -500,6 +500,16 @@ static void print_memtier_memory(struct memtier_memory *memory)
     log_info("Cold tier ID %d", memory->cold_tier_id);
 }
 
+static void print_memory_statistics(struct memtier_memory *memory) {
+#if PRINT_POLICY_LOG_STATISTICS_INFO
+    static atomic_uint_fast16_t counter=0;
+    if (++counter > PRINT_MEMDUMP_INTERVAL) {
+        print_memtier_memory(memory);
+        counter=0;
+    }
+#endif
+}
+
 static void print_builder(struct memtier_builder *builder)
 {
     int i;
@@ -530,23 +540,11 @@ static void print_builder(struct memtier_builder *builder)
 static void
 memtier_policy_static_ratio_update_config(struct memtier_memory *memory)
 {
-#if PRINT_POLICY_LOG_STATISTICS_INFO
-    static atomic_uint_fast16_t counter=0;
-    const uint64_t interval=1000;
-    if (++counter > interval)
-        print_memtier_memory(memory);
-#endif
 }
 
 static void
 memtier_policy_data_hotness_update_config(struct memtier_memory *memory)
 {
-#if PRINT_POLICY_LOG_STATISTICS_INFO
-    static atomic_uint_fast16_t counter=0;
-    const uint64_t interval=1000;
-    if (++counter > interval)
-        print_memtier_memory(memory);
-#endif
 }
 
 static void
@@ -1187,6 +1185,7 @@ MEMKIND_EXPORT void *memtier_malloc(struct memtier_memory *memory, size_t size)
     ptr = memtier_kind_malloc(memory->get_kind(memory, size, &data), size);
     memory->post_alloc(data, ptr, size);
     memory->update_cfg(memory);
+    print_memory_statistics(memory);
 
     return ptr;
 }
@@ -1238,6 +1237,7 @@ MEMKIND_EXPORT void *memtier_calloc(struct memtier_memory *memory, size_t num,
     ptr = memtier_kind_calloc(memory->get_kind(memory, size, &data), num, size);
     memory->post_alloc(data, ptr, size);
     memory->update_cfg(memory);
+    print_memory_statistics(memory);
 
     return ptr;
 }
@@ -1263,6 +1263,9 @@ MEMKIND_EXPORT void *memtier_realloc(struct memtier_memory *memory, void *ptr,
         struct memkind *kind = memkind_detect_kind(ptr);
         ptr = memtier_kind_realloc(kind, ptr, size);
         memory->update_cfg(memory);
+
+        if (size!=0)
+            print_memory_statistics(memory);
         // NOTE: new ptr == NULL if size == 0
         return ptr;
     }

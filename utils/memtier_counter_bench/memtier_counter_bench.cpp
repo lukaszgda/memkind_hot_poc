@@ -198,11 +198,19 @@ private:
 class memtier_multiple_bench_alloc: public counter_bench_alloc
 {
 public:
-    memtier_multiple_bench_alloc(memtier_policy_t policy)
+    memtier_multiple_bench_alloc(memtier_policy_t policy, char *arg)
     {
+        int pmem_dram_ratio = 1;
+        if (arg) {
+            std::cout << "Nonzero arg: " << arg << std::endl;
+            pmem_dram_ratio = atoi(arg);
+        }
+        std::cout << "Pmem dram: " << pmem_dram_ratio << std::endl;
+        assert(pmem_dram_ratio > 0);
+
         m_tier_builder = memtier_builder_new(policy);
         memtier_builder_add_tier(m_tier_builder, MEMKIND_DEFAULT, 1);
-        memtier_builder_add_tier(m_tier_builder, MEMKIND_REGULAR, 1);
+        memtier_builder_add_tier(m_tier_builder, MEMKIND_REGULAR, pmem_dram_ratio);
         m_tier_memory =
             memtier_builder_construct_memtier_memory(m_tier_builder);
     }
@@ -244,13 +252,19 @@ static int parse_opt(int key, char *arg, struct argp_state *state)
             args->bench = Benchptr(new memtier_bench_alloc());
             break;
         case 's':
-            args->bench = Benchptr(new memtier_multiple_bench_alloc(MEMTIER_POLICY_STATIC_RATIO));
+            args->bench =
+                Benchptr(new memtier_multiple_bench_alloc(
+                    MEMTIER_POLICY_STATIC_RATIO, arg));
             break;
         case 'd':
-            args->bench = Benchptr(new memtier_multiple_bench_alloc(MEMTIER_POLICY_DYNAMIC_THRESHOLD));
+            args->bench =
+                Benchptr(new memtier_multiple_bench_alloc(
+                    MEMTIER_POLICY_DYNAMIC_THRESHOLD, arg));
             break;
         case 'p':
-            args->bench = Benchptr(new memtier_multiple_bench_alloc(MEMTIER_POLICY_DATA_HOTNESS));
+            args->bench =
+                Benchptr(new memtier_multiple_bench_alloc(
+                    MEMTIER_POLICY_DATA_HOTNESS, arg));
             break;
         case 't':
             args->thread_no = std::strtol(arg, nullptr, 10);
@@ -273,8 +287,8 @@ static struct argp_option options[] = {
     {"memtier_kind", 'k', 0, 0, "Benchmark memtier_memkind."},
     {"memtier", 'x', 0, 0, "Benchmark memtier_memory - single tier."},
     {"memtier_multiple", 's', 0, 0, "Benchmark memtier_memory - two tiers, static ratio."},
-    {"memtier_multiple", 'd', 0, 0, "Benchmark memtier_memory - two tiers, dynamic threshold."},
-    {"memtier_multiple", 'p', 0, 0, "Benchmark memtier_memory - two tiers, data hotness."},
+    {"memtier_multiple", 'd', "int", 0, "Benchmark memtier_memory - two tiers, dynamic threshold, pmem/dram ratio."},
+    {"memtier_multiple", 'p', "int", 0, "Benchmark memtier_memory - two tiers, data hotness, pmem/dram ratio."},
     {"thread", 't', "int", 0, "Threads numbers."},
     {"runs", 'r', "int", 0, "Benchmark run numbers."},
     {"iterations", 'i', "int", 0, "Benchmark iteration numbers."},
