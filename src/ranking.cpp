@@ -33,11 +33,6 @@ extern struct ttype *ttypes;
 // #define THREAD_SAFE
 // #define THREAD_CHECKER
 
-// IF YOU MODIFY FIXER_GAIN AND DO NOT OBSERVE ThE EXPECTED RESULTS,
-// MAKE SURE FIXER IS ENABLED!
-#define FIXER_PROPORTIONAL_GAIN 8
-#define FIXER_INTEGRAL_GAIN 0.01
-
 // OFFLOAD_RANKING_OPS_TO_BACKGROUD_THREAD: ranking is only accessed from pebs
 // !OFFLOAD_RANKING_OPS_TO_BACKGROUD_THREAD: ranking is accessed from:
 //      - pebs (touch),
@@ -260,7 +255,7 @@ void ranking_create_internal(ranking_t **ranking, double old_weight)
     (*ranking)->newWeight = 1 - old_weight;
     ranking_controller_init_ranking_controller(
         &(*ranking)->controller, 0.5 /* unknown at this point */,
-        FIXER_PROPORTIONAL_GAIN, FIXER_INTEGRAL_GAIN);
+        CONTROLLER_PROPORTIONAL_GAIN, CONTROLLER_INTEGRAL_GAIN);
     assert(ret == 0 && "slab allocator initialization failed!");
 }
 
@@ -289,14 +284,14 @@ ranking_calculate_hot_threshold_dram_total_internal(
     wre_clone(&temp_cpy, ranking->entries);
 #endif
 
-#if RANKING_FIXER_ENABLED
+#if RANKING_CONTROLLER_ENABLED
     // TODO add tests for this one?
     ranking_controller_set_expected_dram_total(&ranking->controller,
                                                dram_total_ratio);
     double fixed_dram_total_ratio =
         ranking_controller_calculate_fixed_thresh(&ranking->controller,
                                                   dram_total_used_ratio);
-    log_info("fixer: ratio fixed [%f to %f]",
+    log_info("controller: ratio adjusted [%f to %f]",
              dram_total_ratio, fixed_dram_total_ratio);
     dram_total_ratio = fixed_dram_total_ratio;
 
