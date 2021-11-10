@@ -7,15 +7,17 @@
 
 MEMKIND_EXPORT void ranking_controller_init_ranking_controller(
     ranking_controller *controller, double expected_dram_total,
-    double proportinal_term, double integral_term) {
+    double proportional_term, double integral_term) {
     controller->integrated_error = 0;
-    controller->proportional = proportinal_term;
+    controller->proportional = proportional_term;
     controller->integral = integral_term;
     controller->hotTierSize = expected_dram_total;
     controller->coldTierSize = 1-expected_dram_total;
 }
 
-MEMKIND_EXPORT double ranking_controller_calculate_fixed_thresh(ranking_controller *controller, double found_dram_total) {
+MEMKIND_EXPORT double
+ranking_controller_calculate_fixed_thresh(ranking_controller *controller,
+                                          double found_dram_total) {
 
     // case: found thresh too low
     // |---a----------|--------b--|
