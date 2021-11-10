@@ -416,6 +416,7 @@ memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
         case HOTNESS_NOT_FOUND:
 #if FALLBACK_TO_STATIC
             // TODO add static ratio handling in other places !!!
+            log_info("fallback to static!!!");
             return memtier_policy_static_ratio_get_kind(memory, size, NULL);
 #else
             dest_tier = memory->hot_tier_id;

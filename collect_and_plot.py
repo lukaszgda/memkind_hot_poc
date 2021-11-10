@@ -22,9 +22,9 @@ values = [[], []]
 
 def print_help():
     print('sample usage:')
-    print('\tMEMKIND_DEBUG=1 LD_LIBRARY_PATH=.libs' \
-        ' ./utils/memtier_counter_bench/memtier_counter_bench' \
-        ' -p -i 5000 -r 1 -t 1 -g 2>run.log')
+    print('\tMEMKIND_DEBUG=1 LD_LIBRARY_PATH=.libs ' \
+        './utils/memtier_counter_bench/memtier_counter_bench ' \
+        '-p 1 -i 5000 -r 1 -t 1 -g 2>run.log')
     print('\t./collect_and_plot.py run.log')
 
 try:
@@ -61,3 +61,5 @@ plt.plot(ratios)
 plt.grid()
 #plt.ylim(0, 2)
 plt.show()
+
+plt.savefig("run.png")
