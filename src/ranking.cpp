@@ -91,6 +91,7 @@ struct ranking {
     std::mutex mutex;
     double oldWeight;
     double newWeight;
+    ranking_controller controller;
 };
 
 typedef struct AggregatedHotness {
@@ -257,6 +258,9 @@ void ranking_create_internal(ranking_t **ranking, double old_weight)
     (*ranking)->hotThreshold = { 0., false };
     (*ranking)->oldWeight = old_weight;
     (*ranking)->newWeight = 1 - old_weight;
+    ranking_controller_init_ranking_controller(
+        &(*ranking)->controller, 0.5 /* unknown at this point */,
+        FIXER_PROPORTIONAL_GAIN, FIXER_INTEGRAL_GAIN);
     assert(ret == 0 && "slab allocator initialization failed!");
 }
 
@@ -287,13 +291,11 @@ ranking_calculate_hot_threshold_dram_total_internal(
 
 #if RANKING_FIXER_ENABLED
     // TODO add tests for this one?
-    ranking_controller controller;
-    // TODO add gain as configurable variable
-    ranking_controller_init_ranking_controller(
-        &controller, dram_total_ratio, FIXER_PROPORTIONAL_GAIN,
-        FIXER_INTEGRAL_GAIN);
+    ranking_controller_set_expected_dram_total(&ranking->controller,
+                                               dram_total_ratio);
     double fixed_dram_total_ratio =
-        ranking_controller_calculate_fixed_thresh(&controller, dram_total_used_ratio);
+        ranking_controller_calculate_fixed_thresh(&ranking->controller,
+                                                  dram_total_used_ratio);
     log_info("fixer: ratio fixed [%f to %f]",
              dram_total_ratio, fixed_dram_total_ratio);
     dram_total_ratio = fixed_dram_total_ratio;

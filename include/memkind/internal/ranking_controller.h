@@ -18,6 +18,10 @@ extern void ranking_controller_init_ranking_controller(
     ranking_controller *controller, double expected_dram_total,
     double proportional_term, double integral_term);
 
+extern void
+ranking_controller_set_expected_dram_total(ranking_controller *controller,
+                                          double expected_dram_total);
+
 extern double ranking_controller_calculate_fixed_thresh(
     ranking_controller *controller, double found_dram_total);
 

@@ -11,6 +11,13 @@ MEMKIND_EXPORT void ranking_controller_init_ranking_controller(
     controller->integrated_error = 0;
     controller->proportional = proportional_term;
     controller->integral = integral_term;
+    ranking_controller_set_expected_dram_total(
+        controller, expected_dram_total);
+}
+
+MEMKIND_EXPORT void
+ranking_controller_set_expected_dram_total(ranking_controller *controller,
+                                          double expected_dram_total) {
     controller->hotTierSize = expected_dram_total;
     controller->coldTierSize = 1-expected_dram_total;
 }
@@ -20,19 +27,23 @@ ranking_controller_calculate_fixed_thresh(ranking_controller *controller,
                                           double found_dram_total) {
 
     // case: found thresh too low
-    // |---a----------|--------b--|
-    // |---c--|----------------d--|
-    // |---c--|-(a-c)-|-----------|
-    // |---a----------|-e-|-------|
+    // |---a----------|--------b--------------|
+    // |---c--|----------------d--------------|
+    // |---c--|-(a-c)-|-----------------------|
+    // |---a----------|-e-|-------------------|
+    // |---a----------|-steering_signal-|-out-|
+    // |---new_inv_thresh---------------|-out-|
     // (a-c)/a==e/b
     // e = b/a * (a-c)
 
     // case: found thresh too high
-    // |---a----------|--------b--|
-    // |---c------------------|-d-|
-    // |---c------------------|-d-|
-    // |---c----------|-(c-a)-|---|
-    // |-------|--e---|-----------|
+    // |---a-----------------|--------b--------|
+    // |---c-------------------------|-d-------|
+    // |---c-------------------------|-d-------|
+    // |---c-----------------|-(c-a)-|---------|
+    // |--------------|--e---|-----------------| *e* is negative
+    // |---|-steering_signal-|-----------------| *steering_signal* is negative
+    // |xxx|-------------------------out-------|
     // (c-a)/b==e/a
     // e = - a/b * (c-a)
     double a=controller->coldTierSize;
@@ -52,5 +63,8 @@ ranking_controller_calculate_fixed_thresh(ranking_controller *controller,
     double steering_signal =
         e*controller->proportional
         + controller->integrated_error * controller->integral;
-    return 1.-(a+steering_signal);
+    double new_inv_thresh = a+ steering_signal;
+    double out = 1.0 - new_inv_thresh;
+
+    return out;
 }
