@@ -4,7 +4,7 @@ extern "C" {
 }
 
 #include "memkind/internal/slab_allocator.h"
-#include "memkind/internal/ranking_fixer.h"
+#include "memkind/internal/ranking_controller.h"
 
 #include <jemalloc/jemalloc.h>
 #include <algorithm>
@@ -32,10 +32,6 @@ extern struct ttype *ttypes;
 
 // #define THREAD_SAFE
 // #define THREAD_CHECKER
-
-// IF YOU MODIFY FIXER_GAIN AND DO NOT OBSERVE ThE EXPECTED RESULTS,
-// MAKE SURE FIXER IS ENABLED!
-#define FIXER_GAIN 10
 
 // OFFLOAD_RANKING_OPS_TO_BACKGROUD_THREAD: ranking is only accessed from pebs
 // !OFFLOAD_RANKING_OPS_TO_BACKGROUD_THREAD: ranking is accessed from:
@@ -90,6 +86,7 @@ struct ranking {
     std::mutex mutex;
     double oldWeight;
     double newWeight;
+    ranking_controller controller;
 };
 
 typedef struct AggregatedHotness {
@@ -256,6 +253,9 @@ void ranking_create_internal(ranking_t **ranking, double old_weight)
     (*ranking)->hotThreshold = { 0., false };
     (*ranking)->oldWeight = old_weight;
     (*ranking)->newWeight = 1 - old_weight;
+    ranking_controller_init_ranking_controller(
+        &(*ranking)->controller, 0.5 /* unknown at this point */,
+        CONTROLLER_PROPORTIONAL_GAIN, CONTROLLER_INTEGRAL_GAIN);
     assert(ret == 0 && "slab allocator initialization failed!");
 }
 
@@ -284,14 +284,14 @@ ranking_calculate_hot_threshold_dram_total_internal(
     wre_clone(&temp_cpy, ranking->entries);
 #endif
 
-#if RANKING_FIXER_ENABLED
+#if RANKING_CONTROLLER_ENABLED
     // TODO add tests for this one?
-    ranking_info info;
-    // TODO add gain as configurable variable
-    ranking_fixer_init_ranking_info(&info, dram_total_ratio, FIXER_GAIN);
+    ranking_controller_set_expected_dram_total(&ranking->controller,
+                                               dram_total_ratio);
     double fixed_dram_total_ratio =
-        ranking_fixer_calculate_fixed_thresh(&info, dram_total_used_ratio);
-    log_info("fixer: ratio fixed [%f to %f]",
+        ranking_controller_calculate_fixed_thresh(&ranking->controller,
+                                                  dram_total_used_ratio);
+    log_info("controller: ratio adjusted [%f to %f]",
              dram_total_ratio, fixed_dram_total_ratio);
     dram_total_ratio = fixed_dram_total_ratio;
 

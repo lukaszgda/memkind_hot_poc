@@ -1,4 +1,4 @@
-#!/bin/python
+#!/bin/python3
 
 # This script reads a log file, parses it to extract information about hot/cold
 # ratio and plots it on the screen
@@ -20,15 +20,21 @@ AWAITING_TIER1=1
 state = -1
 values = [[], []]
 
-try:
-    filename = sys.argv[1]
-except IndexError as e:
-    print('Incorrect number of arguments')
+def print_help():
     print('sample usage:')
     print('\tMEMKIND_DEBUG=1 LD_LIBRARY_PATH=.libs ' \
         './utils/memtier_counter_bench/memtier_counter_bench ' \
-        '-p -i 5000 -r 3 -t 1 -g 2>run.log')
+        '-p 1 -i 5000 -r 1 -t 1 -g 2>run.log')
     print('\t./collect_and_plot.py run.log')
+
+try:
+    filename = sys.argv[1]
+    if '--help' in sys.argv or '--help' in filename:
+        print_help()
+        exit(0)
+except IndexError as e:
+    print('Incorrect number of arguments')
+    print_help()
     exit(-1)
 
 for line in open(filename).read().split('\n'):
@@ -48,7 +54,7 @@ ratios = []
 
 for t0, t1 in zip(values[0], values[1]):
     if t0 != 0 and t1 != 0:
-        ratios.append(t0/t1)
+        ratios.append(t0/(t0+t1))
 
 
 plt.plot(ratios)
