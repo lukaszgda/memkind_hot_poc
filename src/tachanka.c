@@ -401,7 +401,7 @@ MEMKIND_EXPORT void touch(void *addr, __u64 timestamp, int from_malloc)
 //             ranking_add(ranking, bl); // first of all, add
     //         hotness=INIT_MALLOC_HOTNESS; TODO this does not work, for now
         } else {
-            double hotness = 1e16/total_size ;
+            double hotness = 1e10/total_size ;
             ranking_touch(ranking, t, timestamp, hotness);
         }
     }
