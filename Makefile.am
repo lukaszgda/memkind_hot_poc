@@ -38,11 +38,13 @@ libmemkind_la_SOURCES = src/hbwmalloc.c \
                         src/wre_avl_tree.c \
                         src/lockless_srmw_queue.c \
                         src/ranking_queue.c \
+                        src/slab_allocator.c \
+                        src/ranking_fixer.c \
                         # end
 
 
 libmemkind_la_LIBADD = jemalloc/lib/libjemalloc_pic.a
-libmemkind_la_LDFLAGS = -version-info 0:1:0 -ldl -lrt -lpfm
+libmemkind_la_LDFLAGS = -version-info 0:1:0 -ldl -lrt -lpfm -latomic
 include_HEADERS = include/hbw_allocator.h \
                   include/hbwmalloc.h \
                   include/memkind.h \

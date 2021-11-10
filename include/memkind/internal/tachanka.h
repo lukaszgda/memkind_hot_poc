@@ -27,15 +27,13 @@ typedef void (*tachanka_touch_callback)(void*);
 void register_block(uint64_t hash, void *addr, size_t size);
 void register_block_in_ranking(void *addr, size_t size);
 void unregister_block(void *addr);
-/// @warn incorrect (outdated) address might be used
-void unregister_block_from_ranking(void *address);
 void realloc_block(void *addr, void *new_addr, size_t size);
 void *new_block(size_t size);
 void touch(void *addr, __u64 timestamp, int from_malloc);
 void tachanka_init(double old_window_hotness_weight, size_t event_queue_size);
 void tachanka_destroy(void);
 void tachanka_update_threshold(void);
-void tachanka_set_dram_total_ratio(double ratio);
+void tachanka_set_dram_total_ratio(double desired, double actual);
 double tachanka_get_obj_hotness(int size);
 double tachanka_get_addr_hotness(void *addr);
 // double tachanka_set_touch_callback(void *addr, const char*name);
@@ -45,6 +43,19 @@ Hotness_e tachanka_get_hotness_type_hash(uint64_t hash);
 double tachanka_get_hot_thresh(void);
 bool tachanka_ranking_event_push(EventEntry_t *event);
 bool tachanka_ranking_event_pop(EventEntry_t *event);
+
+/// \brief Touch every ttype object to update hotness
+/// \param timestamp timestamp from pebs
+/// \param add_hotness hotness value to be added to all types
+void tachanka_ranking_touch_all(__u64 timestamp, double add_hotness);
+
+/// \brief Getter for type's frequency
+/// \param index index of a type in ttypes list 
+double tachanka_get_frequency(size_t index);
+
+/// \brief Getter for type's timestamp state
+/// \param index index of a type in ttypes list
+TimestampState_t tachanka_get_timestamp_state(size_t index);
 
 struct ttype {
     uint64_t hash;

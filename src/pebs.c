@@ -21,6 +21,11 @@ ThreadState_t thread_state = THREAD_INIT;
 int pebs_fd;
 static char *pebs_mmap;
 
+#if CHECK_ADDED_SIZE
+extern size_t g_total_ranking_size;
+extern size_t g_total_critnib_size;
+#endif
+
 extern critnib* hash_to_type;
 static size_t g_queue_pop_counter=0;
 static size_t g_queue_counter_malloc=0;
@@ -79,7 +84,7 @@ void *pebs_monitor(void *state)
 {
     ThreadState_t* pthread_state = state;
 
-    double period_ms = 1000 / PEBS_FREQ_HZ;
+    double period_ms = 1000 / pebs_freq_hz;
     struct timespec tv_period;
     timespec_millis_to_timespec(period_ms, &tv_period);
 
@@ -91,7 +96,9 @@ void *pebs_monitor(void *state)
     pthread_setschedparam(pthread_self(), policy, &param);
 
     __u64 last_head = 0;
+#if PRINT_PEBS_BASIC_INFO
     int cur_tid = syscall(SYS_gettid);
+#endif
 
     // DEBUG
 #if PEBS_LOG_TO_FILE
@@ -149,8 +156,6 @@ void *pebs_monitor(void *state)
         }
 #endif
 
-
-
         EventEntry_t event;
         bool pop_success;
         while (true) {
@@ -160,23 +165,35 @@ void *pebs_monitor(void *state)
             switch (event.type) {
                 case EVENT_CREATE_ADD: {
                     EventDataCreateAdd *data = &event.data.createAddData;
+#if PRINT_PEBS_EVENT_INFO
+                    log_debug("EVENT_CREATE_ADD, address %p, size %lu",
+                              data->address, data->size);
+#endif
                     register_block(data->hash, data->address, data->size);
                     register_block_in_ranking(data->address, data->size);
                     g_queue_counter_malloc++;
                     break;
                 }
                 case EVENT_DESTROY_REMOVE: {
-                    EventDataDestroyRemove *data = &event.data.destroyRemoveData;
+                    EventDataDestroyRemove *data =
+                        &event.data.destroyRemoveData;
+#if PRINT_PEBS_EVENT_INFO
+                    log_debug("EVENT_DESTROY_REMOVE, address %p",
+                              data->address);
+#endif
                     // REMOVE THE BLOCK FROM RANKING!!!
                     // TODO remove all the exclamation marks and clean up once this is done
-                    unregister_block_from_ranking(data->address);
                     unregister_block(data->address);
                     g_queue_counter_free++;
                     break;
                 }
                 case EVENT_REALLOC: {
                     EventDataRealloc *data = &event.data.reallocData;
-                    unregister_block_from_ranking(data->addressOld);
+#if PRINT_PEBS_EVENT_INFO
+                    log_debug("EVENT_REALLOC, address [old->new]: %p -> %p,"
+                        " size [old -> new]: %lu -> %lu", data->addressOld,
+                        data->addressNew, data->sizeOld, data->sizeNew);
+#endif
                     unregister_block(data->addressOld);
 //                     realloc_block(data->addressOld, data->addressNew, data->sizeNew);
                     register_block(0u /* FIXME hash should not be zero !!! */, data->addressNew, data->sizeNew);
@@ -184,7 +201,10 @@ void *pebs_monitor(void *state)
                     g_queue_counter_realloc++;
                     break;
                 }
-                case EVENT_SET_TOUCH_CALLBACK: {
+                case EVENT_SET_TOUCH_CALLBACK: {              
+#if PRINT_PEBS_EVENT_INFO
+                    log_debug("EVENT_SET_TOUCH_CALLBACK");
+#endif
                     EventDataSetTouchCallback *data = &event.data.touchCallbackData;
                     tachanka_set_touch_callback(data->address,
                                                 data->callback,
@@ -192,28 +212,36 @@ void *pebs_monitor(void *state)
                     g_queue_counter_callback++;
                     break;
                 }
+                /*
                 case EVENT_TOUCH: {
+                    int fromMalloc = 0; // false
                     EventDataTouch *data = &event.data.touchData;
-                    touch(data->address, data->timestamp, 0 /*called from malloc*/);
+                    touch(data->address, data->timestamp, fromMalloc);
                     g_queue_counter_touch++;
                     break;
-                }
+                }*/
                 default: {
                     log_fatal("PEBS: event queue - case not implemented!");
                     exit(-1);
                 }
             }
             g_queue_pop_counter++;
+
+#if CHECK_ADDED_SIZE
+        log_info("EVENT end g_total_ranking_size %ld g_total_critnib_size %ld", 
+            g_total_ranking_size, g_total_critnib_size);
+#endif
         }
+
         struct perf_event_mmap_page* pebs_metadata =
             (struct perf_event_mmap_page*)pebs_mmap;
-
 
         if (last_head < pebs_metadata->data_head) {
 #if PRINT_PEBS_NEW_DATA_INFO
             log_info("PEBS: new data to process!");
 #endif
             int samples = 0;
+            __u64 timestamp = 0;
 
             while (last_head < pebs_metadata->data_head) {
 	            char *data_mmap = pebs_mmap + getpagesize() +
@@ -239,7 +267,7 @@ void *pebs_monitor(void *state)
                 switch (event->type) {
                     case PERF_RECORD_SAMPLE:
                     {
-                        __u64 timestamp = *(__u64*)(data_mmap + sizeof(struct perf_event_header));
+                        timestamp = *(__u64*)(data_mmap + sizeof(struct perf_event_header));
                         // 'addr' is the acessed address
                         __u64 addr = *(__u64*)(data_mmap + sizeof(struct perf_event_header) + sizeof(__u64));
 
@@ -276,8 +304,8 @@ void *pebs_monitor(void *state)
                         // so we are just ignoring buffer overflows
 //                         (void)tachanka_ranking_event_push(&entry); // TODO
                         touch(entry.data.touchData.address,
-                        entry.data.touchData.timestamp, 0 /*called from malloc*/);
-                        g_queue_counter_touch++;
+                            entry.data.touchData.timestamp, 0 /*called from malloc*/);
+                            g_queue_counter_touch++;
 
 //                         touch((void*)addr, timestamp, 0 /* from malloc */);
 //                         printf("touched, timestamp: [%llu], from malloc [0]\n", timestamp);
@@ -305,6 +333,13 @@ void *pebs_monitor(void *state)
                 data_mmap += event->size;
                 samples++;
             }
+
+#if RANKING_TOUCH_ALL
+            // Touch every ttype object to update hotness
+            if (timestamp > 0) {
+                tachanka_ranking_touch_all(timestamp, 0);
+            }
+#endif
 
 #if PRINT_PEBS_SAMPLES_NUM_INFO
             log_info("PEBS: processed %d samples", samples);
@@ -398,7 +433,7 @@ void pebs_init(pid_t pid)
     }
 
     pe.size = sizeof(struct perf_event_attr);
-    pe.sample_period = SAMPLE_FREQUENCY;
+    pe.sample_period = sample_frequency;
     pe.sample_type = PERF_SAMPLE_ADDR | PERF_SAMPLE_TIME;
 
     pe.precise_ip = 2; // NOTE: this is reqired but was not set

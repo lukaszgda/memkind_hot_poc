@@ -3,6 +3,9 @@
 
 #include <memkind/internal/memkind_memtier.h>
 #include <memkind/internal/tachanka.h>
+#include <memkind/internal/slab_allocator.h>
+#include <memkind/internal/wre_avl_tree_internal.h>
+#include <memkind/internal/ranking_fixer.h>
 
 #include <random>
 #include <thread>
@@ -266,6 +269,57 @@ TEST_P(MemkindMemtierHotnessTest, test_matmul)
 INSTANTIATE_TEST_CASE_P(numObjsParam, MemkindMemtierHotnessTest,
                         ::testing::Values(3, 20));
 
+TEST_F(MemkindMemtierHotnessTest, check_ranking_touch_all) {
+    const int MALLOC_COUNT = 5;
+    __u64 hotness_measure_window = 1000000000; // equals to the hotness_measure_window defined in pebs_init()
+    __u64 wait_time = hotness_measure_window + 1;
+    std::vector<void *> malloc_vec;
+
+    int res = memtier_builder_add_tier(m_builder, MEMKIND_DEFAULT, 1);
+    ASSERT_EQ(0, res);
+    res = memtier_builder_add_tier(m_builder, MEMKIND_REGULAR, 1);
+    ASSERT_EQ(0, res);
+    m_tier_memory = memtier_builder_construct_memtier_memory(m_builder);
+    ASSERT_NE(nullptr, m_tier_memory);
+
+    for (size_t i = 1; i <= MALLOC_COUNT; ++i) {
+        void *ptr = memtier_malloc(m_tier_memory, i);
+        ASSERT_NE(nullptr, ptr);
+        malloc_vec.push_back(ptr);
+    }
+
+    
+    sleep(1); // wait for pebs_monitor() to register new types from memtier_mallocs
+
+    for (size_t i = 0; i < MALLOC_COUNT; ++i) {
+        ASSERT_EQ(tachanka_get_timestamp_state(i), TIMESTAMP_NOT_SET);
+    }
+    tachanka_ranking_touch_all(wait_time, 0); // set timestamp state to TIMESTAMP_INIT
+    for (size_t i = 0; i < MALLOC_COUNT; ++i) {
+        ASSERT_EQ(tachanka_get_frequency(i), 0);
+    }
+    for (size_t i = 0; i < MALLOC_COUNT; ++i) {
+        ASSERT_EQ(tachanka_get_timestamp_state(i), TIMESTAMP_INIT);
+    }
+
+    tachanka_ranking_touch_all(2 * wait_time, 1e6); // set timestamp state to TIMESTAMP_INIT_DONE, set f to non-zero value
+    for (size_t i = 0; i < MALLOC_COUNT; ++i) {
+        ASSERT_EQ(tachanka_get_frequency(i), 0);
+    }
+    for (size_t i = 0; i < MALLOC_COUNT; ++i) {
+        ASSERT_EQ(tachanka_get_timestamp_state(i), TIMESTAMP_INIT_DONE);
+    }
+
+    tachanka_ranking_touch_all(3 * wait_time, 0);  // touch all ttypes without adding the hotness
+    for (size_t i = 0; i < MALLOC_COUNT; ++i) {
+        ASSERT_GT(tachanka_get_frequency(i), 0);
+    }
+
+    for (auto const &ptr : malloc_vec) {
+        memtier_free(ptr);
+    }
+}
+
 // ----------------- hotness thresh tests
 
 extern "C" {
@@ -306,9 +360,9 @@ TEST_F(RankingTest, check_hotness_highest) {
     double RATIO_PMEM_ONLY=0;
     double thresh_highest =
         ranking_calculate_hot_threshold_dram_total(
-            ranking, RATIO_PMEM_ONLY);
+            ranking, RATIO_PMEM_ONLY, RATIO_PMEM_ONLY).threshVal;
     double thresh_highest_pmem =
-        ranking_calculate_hot_threshold_dram_pmem(ranking, 0);
+        ranking_calculate_hot_threshold_dram_pmem(ranking, 0, 0).threshVal;
     ASSERT_EQ(thresh_highest, thresh_highest_pmem); // double for equality
 #if QUANTIFICATION_ENABLED
     ASSERT_EQ(thresh_highest, quantify_dequantify(BLOCKS_SIZE-1));
@@ -335,10 +389,12 @@ TEST_F(RankingTest, check_hotness_lowest) {
     double RATIO_DRAM_ONLY=1;
     double thresh_lowest =
         ranking_calculate_hot_threshold_dram_total(
-            ranking, RATIO_DRAM_ONLY);
+            ranking, RATIO_DRAM_ONLY, RATIO_DRAM_ONLY).threshVal;
     double thresh_lowest_pmem =
         ranking_calculate_hot_threshold_dram_pmem(
-            ranking, std::numeric_limits<double>::max());
+            ranking,
+            std::numeric_limits<double>::max(),
+            std::numeric_limits<double>::max()).threshVal;
     ASSERT_EQ(thresh_lowest, thresh_lowest_pmem); // double for equality
     ASSERT_EQ(thresh_lowest, 0);
     ASSERT_EQ(ranking_is_hot(ranking, &blocks[0]), false);
@@ -361,9 +417,10 @@ TEST_F(RankingTest, check_hotness_50_50) {
     size_t n = floor((-1+sqrt(delta))/2);
     ASSERT_EQ(n, 70u); // calculated by hand
     double thresh_equal =
-        ranking_calculate_hot_threshold_dram_total(ranking, RATIO_EQUAL);
+        ranking_calculate_hot_threshold_dram_total(
+            ranking, RATIO_EQUAL, RATIO_EQUAL).threshVal;
     double thresh_equal_pmem =
-        ranking_calculate_hot_threshold_dram_pmem(ranking, 1);
+        ranking_calculate_hot_threshold_dram_pmem(ranking, 1, 1).threshVal;
     ASSERT_EQ(thresh_equal, thresh_equal_pmem);
 #if QUANTIFICATION_ENABLED
     double ACCURACY = 1e-9;
@@ -396,9 +453,9 @@ TEST_F(RankingTest, check_hotness_50_50_removed) {
     double RATIO_EQUAL_TOTAL=0.5;
     double RATIO_EQUAL_PMEM=1;
     double thresh_equal = ranking_calculate_hot_threshold_dram_total(
-        ranking, RATIO_EQUAL_TOTAL);
+        ranking, RATIO_EQUAL_TOTAL, RATIO_EQUAL_TOTAL).threshVal;
     double thresh_equal_pmem = ranking_calculate_hot_threshold_dram_pmem(
-        ranking, RATIO_EQUAL_PMEM);
+        ranking, RATIO_EQUAL_PMEM, RATIO_EQUAL_PMEM).threshVal;
     // hand calculations:
     // 100, 99, 98, 97, 96, 95, 94, 93, 92, 91
     // sum:
@@ -460,9 +517,9 @@ TEST_F(RankingTestSameHotness, check_hotness_highest) {
     double RATIO_PMEM_ONLY_TOTAL=0;
     double RATIO_PMEM_ONLY_PMEM=0;
     double thresh_highest = ranking_calculate_hot_threshold_dram_total(
-        ranking, RATIO_PMEM_ONLY_TOTAL);
+        ranking, RATIO_PMEM_ONLY_TOTAL, RATIO_PMEM_ONLY_TOTAL).threshVal;
     double thresh_highest_pmem = ranking_calculate_hot_threshold_dram_pmem(
-        ranking, RATIO_PMEM_ONLY_PMEM);
+        ranking, RATIO_PMEM_ONLY_PMEM, RATIO_PMEM_ONLY_PMEM).threshVal;
 #if QUANTIFICATION_ENABLED
     double ACCURACY=1e-9;
     ASSERT_EQ(thresh_highest, quantify_dequantify((BLOCKS_SIZE-1)%50));
@@ -495,9 +552,11 @@ TEST_F(RankingTestSameHotness, check_hotness_highest) {
 TEST_F(RankingTestSameHotness, check_hotness_lowest) {
     double RATIO_DRAM_ONLY=1;
     double thresh_lowest = ranking_calculate_hot_threshold_dram_total(
-        ranking, RATIO_DRAM_ONLY);
+        ranking, RATIO_DRAM_ONLY, RATIO_DRAM_ONLY).threshVal;
     double thresh_lowest_pmem = ranking_calculate_hot_threshold_dram_pmem(
-        ranking, std::numeric_limits<double>::max());
+        ranking,
+        std::numeric_limits<double>::max(),
+        std::numeric_limits<double>::max()).threshVal;
     ASSERT_EQ(thresh_lowest, 0);
     ASSERT_EQ(thresh_lowest, thresh_lowest_pmem);
     for (size_t i=0; i<BLOCKS_SIZE; ++i) {
@@ -518,9 +577,9 @@ TEST_F(RankingTestSameHotness, check_hotness_50_50) {
     // n_50^2-76*n_50+2525 = 0
     // delta = 76^2-4*2525 = 5776-10000
     double thresh_equal = ranking_calculate_hot_threshold_dram_total(
-        ranking, RATIO_EQUAL_TOTAL);
+        ranking, RATIO_EQUAL_TOTAL, RATIO_EQUAL_TOTAL).threshVal;
     double thresh_equal_pmem = ranking_calculate_hot_threshold_dram_pmem(
-        ranking, RATIO_EQUAL_PMEM);
+        ranking, RATIO_EQUAL_PMEM, RATIO_EQUAL_PMEM).threshVal;
 #if QUANTIFICATION_ENABLED
     double ACCURACY=1e-9;
     ASSERT_EQ(thresh_equal, quantify_dequantify(19));
@@ -566,9 +625,9 @@ TEST_F(RankingTestSameHotness, check_hotness_50_50_removed) {
     double RATIO_EQUAL_TOTAL=0.5;
     double RATIO_EQUAL_PMEM=1;
     double thresh_equal = ranking_calculate_hot_threshold_dram_total(
-        ranking, RATIO_EQUAL_TOTAL);
+        ranking, RATIO_EQUAL_TOTAL, RATIO_EQUAL_TOTAL).threshVal;
     double thresh_equal_pmem = ranking_calculate_hot_threshold_dram_pmem(
-        ranking, RATIO_EQUAL_PMEM);
+        ranking, RATIO_EQUAL_PMEM, RATIO_EQUAL_PMEM).threshVal;
     // hand calculations:
     // 100, 99, 98, 97, 96, 95, 94, 93, 92, 91
     // sum:
@@ -1186,7 +1245,7 @@ TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
 
     ASSERT_EQ(a_type, HOTNESS_HOT);
     ASSERT_EQ(b_type, HOTNESS_COLD);
-    ASSERT_EQ(c_type, HOTNESS_COLD); // when exactly equal thresh
+    ASSERT_EQ(c_type, HOTNESS_NOT_FOUND); // when exactly equal thresh
 
     memkind_t a_kind = ma.DetectKind();
     memkind_t b_kind = mb.DetectKind();
@@ -1309,8 +1368,8 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
 
                 ASSERT_EQ(a_type, HOTNESS_HOT);
                 ASSERT_EQ(b_type, HOTNESS_COLD);
-                // exactly at thresh - round to cold
-                ASSERT_EQ(c_type, HOTNESS_COLD);
+                // exactly at thresh
+                ASSERT_EQ(c_type, HOTNESS_NOT_FOUND);
                 break;
             }
             case 1: {
@@ -1327,8 +1386,8 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
                 Hotness_e c_type=mc.GetHotnessType();
                 ASSERT_EQ(a_type, HOTNESS_HOT);
                 ASSERT_EQ(b_type, HOTNESS_COLD);
-                // exactly at thresh - round to cold
-                ASSERT_EQ(c_type, HOTNESS_COLD);
+                // exactly at thresh
+                ASSERT_EQ(c_type, HOTNESS_NOT_FOUND);
 
 
                 memkind_t a_kind = ma.DetectKind();
@@ -1717,3 +1776,217 @@ TEST(LocklessRanking, LocklessStress){
     stress_tests_simple();
 }
 
+
+
+#define struct_bar(size) typedef struct bar##size { char boo[(size)]; } bar##size
+
+struct_bar(7);
+
+#define test_slab_alloc(size, nof_elements) \
+    do { \
+        struct_bar(size); \
+        slab_alloc_t temp; \
+        int ret = slab_alloc_init(&temp, size, nof_elements); \
+        ASSERT_TRUE(ret == 0 && "mutex creation failed!"); \
+        slab_alloc_destroy(&temp); \
+        ret = slab_alloc_init(&temp, size, nof_elements); \
+        ASSERT_TRUE(ret == 0 && "mutex creation failed!"); \
+        bar##size *elements[nof_elements]; \
+        for (size_t i=0; i<nof_elements; ++i) { \
+            elements[i] = (bar##size*)slab_alloc_malloc(&temp); \
+            ASSERT_TRUE(elements[i] && "slab returned NULL!"); \
+            memset(elements[i], i, size); \
+        } \
+        for (int i=0; i<nof_elements; ++i) { \
+            for (size_t j=0; j<size; j++) \
+                ASSERT_TRUE(elements[i]->boo[j] == (char)((unsigned)(i))%255); \
+        } \
+        ASSERT_TRUE(temp.used == nof_elements); \
+        for (int i=0; i<nof_elements; ++i) { \
+            slab_alloc_free(elements[i]); \
+        } \
+        ASSERT_TRUE(temp.used == nof_elements); \
+        for (size_t i=0; i<nof_elements; ++i) { \
+            elements[i] = (bar##size*)slab_alloc_malloc(&temp); \
+            ASSERT_TRUE(elements[i] && "slab returned NULL!"); \
+            memset(elements[i], i+15, size); \
+        } \
+        for (int i=0; i<nof_elements; ++i) { \
+            for (size_t j=0; j<size; j++) \
+                ASSERT_TRUE(elements[i]->boo[j] == (char)((unsigned)(i+15))%255); \
+        } \
+        ASSERT_TRUE(temp.used == nof_elements); \
+        for (int i=0; i<nof_elements; ++i) { \
+            slab_alloc_free(elements[i]); \
+        } \
+        ASSERT_TRUE(temp.used == nof_elements); \
+        slab_alloc_destroy(&temp); \
+    } while (0)
+
+#define struct_bar_align(size) typedef struct bar_align##size { uint64_t boo[(size)]; } bar_align##size
+
+struct_bar_align(7);
+
+#define test_slab_alloc_alignment(size, nof_elements) \
+    do { \
+        struct_bar_align(size); \
+        size_t bar_align_size=sizeof(bar_align##size); \
+        slab_alloc_t temp; \
+        int ret = slab_alloc_init(&temp, bar_align_size, nof_elements); \
+        ASSERT_TRUE(ret == 0 && "mutex creation failed!"); \
+        bar_align##size *elements[nof_elements]; \
+        for (size_t i=0; i<nof_elements; ++i) { \
+            elements[i] = (bar_align##size*)slab_alloc_malloc(&temp); \
+            ASSERT_TRUE(elements[i] && "slab returned NULL!"); \
+            for (size_t j=0; j<size; ++j) \
+                elements[i]->boo[j] = i*nof_elements+j; \
+        } \
+        for (size_t i=0; i<nof_elements; ++i) { \
+            for (size_t j=0; j<size; j++) \
+                ASSERT_TRUE(elements[i]->boo[j] == i*nof_elements+j); \
+        } \
+        ASSERT_TRUE(temp.used == nof_elements); \
+        for (size_t i=0; i<nof_elements; ++i) { \
+            slab_alloc_free(elements[i]); \
+        } \
+        ASSERT_TRUE(temp.used == nof_elements); \
+        for (size_t i=0; i<nof_elements; ++i) { \
+            elements[i] = (bar_align##size*)slab_alloc_malloc(&temp); \
+            ASSERT_TRUE(elements[i] && "slab returned NULL!"); \
+            for (size_t j=0; j<size; ++j) \
+                elements[i]->boo[j] = 7*i*nof_elements+j+5; \
+        } \
+        for (size_t i=0; i<nof_elements; ++i) { \
+            for (size_t j=0; j<size; j++) \
+                ASSERT_TRUE(elements[i]->boo[j] == 7*i*nof_elements+j+5); \
+        } \
+        ASSERT_TRUE(temp.used == nof_elements); \
+        for (size_t i=0; i<nof_elements; ++i) { \
+            slab_alloc_free(elements[i]); \
+        } \
+        ASSERT_TRUE(temp.used == nof_elements); \
+        slab_alloc_destroy(&temp); \
+    } while (0)
+
+static void test_slab_alloc_static3(void) {
+    struct_bar(3);
+    size_t NOF_ELEMENTS=1024;
+    size_t SIZE=3;
+    slab_alloc_t temp;
+    int ret = slab_alloc_init(&temp, SIZE, NOF_ELEMENTS);
+    ASSERT_TRUE(ret == 0 && "slab alloc init failed!");
+    slab_alloc_destroy(&temp);
+    ret = slab_alloc_init(&temp, SIZE, NOF_ELEMENTS);
+    ASSERT_TRUE(ret == 0 && "slab alloc init failed!");
+    bar3 *elements[NOF_ELEMENTS];
+    for (size_t i=0; i<NOF_ELEMENTS; ++i) {
+        elements[i] = (bar3*)slab_alloc_malloc(&temp);
+        ASSERT_TRUE(elements[i] && "slab returned NULL!");
+        memset(elements[i], i, SIZE);
+    }
+    for (size_t i=0; i<NOF_ELEMENTS; ++i) {
+        for (size_t j=0; j<SIZE; j++)
+            ASSERT_TRUE(elements[i]->boo[j] == (char)((unsigned)(i))%255);
+    }
+    ASSERT_TRUE(temp.used == NOF_ELEMENTS);
+    for (size_t i=0; i<NOF_ELEMENTS; ++i) {
+        slab_alloc_free(elements[i]);
+    }
+    ASSERT_TRUE(temp.used == NOF_ELEMENTS);
+    for (size_t i=0; i<NOF_ELEMENTS; ++i) {
+        elements[i] = (bar3*)slab_alloc_malloc(&temp);
+        ASSERT_TRUE(elements[i] && "slab returned NULL!");
+        memset(elements[i], i+15, SIZE);
+    }
+    for (size_t i=0; i<NOF_ELEMENTS; ++i) {
+        for (size_t j=0; j<SIZE; j++)
+            ASSERT_TRUE(elements[i]->boo[j] == (char)((unsigned)(i+15))%255);
+    }
+    ASSERT_TRUE(temp.used == NOF_ELEMENTS);
+    for (size_t i=0; i<NOF_ELEMENTS; ++i) {
+        slab_alloc_free(elements[i]);
+    }
+    ASSERT_TRUE(temp.used == NOF_ELEMENTS);
+    slab_alloc_destroy(&temp);
+}
+
+TEST(SlabAlloc, Basic) {
+    test_slab_alloc_static3();
+    test_slab_alloc(1, 1000000);
+    test_slab_alloc(2, 1002300);
+    test_slab_alloc(4, 798341);
+    test_slab_alloc(8, 714962);
+    test_slab_alloc(8, 1000000);
+    test_slab_alloc(7, 942883);
+    test_slab_alloc(17, 71962);
+    test_slab_alloc(58, 214662);
+}
+
+TEST(SlabAlloc, Alignment) {
+    test_slab_alloc_alignment(1, 100000);
+    test_slab_alloc_alignment(1, 213299);
+    test_slab_alloc_alignment(2, 912348);
+    test_slab_alloc_alignment(4, 821429);
+    test_slab_alloc_alignment(8, 814322);
+    test_slab_alloc_alignment(7, 291146);
+    test_slab_alloc_alignment(7, 291);
+}
+
+#define assert_close(a, b) do { \
+const double ACCURACY=1e-9; /* arbitrary value */ \
+    double diff = a-b; \
+    double abs_diff = diff >= 0 ? diff : -diff; \
+    ASSERT_LE(abs_diff, ACCURACY); \
+} while(0)
+
+TEST(RankingFixer, Basic) {
+    ranking_info info;
+    ranking_fixer_init_ranking_info(&info, 0.7, 1);
+    double fixed_thresh;
+    // corner cases:
+    // ALL PMEM
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 1);
+    assert_close(fixed_thresh, 0);
+    // ALL DRAM
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0);
+    assert_close(fixed_thresh, 1);
+    // already correct
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0.7);
+    assert_close(fixed_thresh, 0.7);
+    // 50%
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0.85);
+    assert_close(fixed_thresh, 0.35);
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0.35);
+    assert_close(fixed_thresh, 0.85);
+    // 30%
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0.8);
+    assert_close(fixed_thresh, 2./3.*0.7);
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 2./3.*0.7);
+    assert_close(fixed_thresh, 0.8);
+}
+
+TEST(RankingFixer, Gain) {
+    ranking_info info;
+    ranking_fixer_init_ranking_info(&info, 0.7, 2);
+    double fixed_thresh;
+    // corner cases:
+    // ALL PMEM
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 1);
+    assert_close(fixed_thresh, -0.7);
+    // ALL DRAM
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0);
+    assert_close(fixed_thresh, 1.3);
+    // already correct
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0.7);
+    assert_close(fixed_thresh, 0.7);
+    // 50%
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0.85);
+    assert_close(fixed_thresh, 0);
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0.35);
+    assert_close(fixed_thresh, 1);
+    // 1/3
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 0.8);
+    assert_close(fixed_thresh, 1./3.*0.7);
+    fixed_thresh = ranking_fixer_calculate_fixed_thresh(&info, 2./3.*0.7);
+    assert_close(fixed_thresh, 0.9);
+}

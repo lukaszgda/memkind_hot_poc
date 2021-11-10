@@ -1,4 +1,5 @@
 
+#include <memkind/internal/memkind_private.h>
 #include <memkind/internal/memkind_memtier.h>
 #include <memkind/internal/memkind_log.h>
 #include <memkind/internal/bthash.h>
@@ -7,15 +8,26 @@
 #include <memkind/internal/ranking.h>
 #include <memkind/internal/lockless_srmw_queue.h>
 #include <memkind/internal/bigary.h>
+#include <memkind/internal/wre_avl_tree.h>
 
 #include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <syscall.h>
 #include <time.h>
 #include <errno.h>
 #include <stdatomic.h>
 #include <assert.h>
+#include "unistd.h"
+#include <fcntl.h>
+#include <signal.h>
+
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <sys/prctl.h>
+#include <sys/syscall.h>         /* Definition of SYS_* constants */
+#include <sys/types.h>
 
 
 // DEBUG
@@ -33,7 +45,8 @@ static int freeblock = -1;
 // TODO (possibly) move elsewhere - make sure multiple rankings are supported!
 static ranking_t *ranking;
 static lq_buffer_t ranking_event_buff;
-static _Atomic double g_dramToTotalMemRatio=1.0;
+static _Atomic double g_dramToTotalDesiredRatio=1.0;
+static _Atomic double g_dramToTotalActualRatio=1.0;
 /*static*/ critnib *hash_to_type, *addr_to_block;
 static bigary ba_ttypes, ba_tblocks;
 
@@ -41,14 +54,29 @@ static bigary ba_ttypes, ba_tblocks;
 #define SUB(var,x) __sync_fetch_and_sub(&(var), (x))
 
 #if CHECK_ADDED_SIZE
-static size_t g_total_critnib_size=0u;
-static size_t g_total_ranking_size=0u;
+size_t g_total_critnib_size=0u;
+size_t g_total_ranking_size=0u;
 #endif
+
+static void check_dram_total_ratio(double ratio) {
+    if (ratio < 0 || ratio > 1) {
+        log_fatal("Incorrect ratio [%f], exiting", ratio);
+        exit(-1);
+    }
+}
 
 void register_block(uint64_t hash, void *addr, size_t size)
 {
     struct ttype *t;
 #if CHECK_ADDED_SIZE
+    if (g_total_ranking_size != g_total_critnib_size) {
+        log_info("rank %ld, crit: %ld", g_total_ranking_size, g_total_critnib_size);
+    }
+
+    if (g_total_ranking_size != g_total_critnib_size) 
+    {
+        log_info("g_total_ranking_size != g_total_critnib_size");
+    }
     assert(g_total_ranking_size == g_total_critnib_size);
 #endif
 
@@ -69,6 +97,7 @@ void register_block(uint64_t hash, void *addr, size_t size)
         t->timestamp_state = TIMESTAMP_NOT_SET;
         if (critnib_insert(hash_to_type, nt) == EEXIST) {
             // TODO FREE nt !!!
+            log_info("critnib_insert EEXIST");
             nt = critnib_get(hash_to_type, hash); // raced with another thread
             if (nt == -1) {
                 log_fatal("Alloc type disappeared?!?");
@@ -121,6 +150,10 @@ void register_block(uint64_t hash, void *addr, size_t size)
         exit(-1);
     }
 
+    if (bl->addr != 0) {
+        log_fatal("!!!!!!!!! use block that is not empty");
+    }
+
     bl->addr = addr;
     bl->size = size;
     bl->type = nt;
@@ -129,16 +162,25 @@ void register_block(uint64_t hash, void *addr, size_t size)
     log_info("New block %d registered: addr %p size %lu type %d", fb, (void*)addr, size, nt);
 #endif
 
-    critnib_insert(addr_to_block, fb);
+    int ret = critnib_insert(addr_to_block, fb);
 #if CHECK_ADDED_SIZE
-    g_total_critnib_size += size;
+    if (ret == EEXIST) 
+    {
+        log_info("!!!!!!!!! register_block: critnib_insert(addr_to_block, %d) == EEXIST, "
+            "g_total_ranking_size %ld g_total_critnib_size %ld", fb, g_total_ranking_size, g_total_critnib_size);
+    }
+
+    g_total_critnib_size += bl->size;
+    log_info("critnib_insert addr_to_block leaf %d size %ld g_total_critnib_size %ld",
+        fb, bl->size, g_total_critnib_size);
+#else
+    (void)ret;
 #endif
 }
 
 void realloc_block(void *addr, void *new_addr, size_t size)
 {
     int bln = critnib_remove(addr_to_block, (intptr_t)addr);
-
     if (bln == -1)
     {
 #if PRINT_CRITNIB_NOT_FOUND_ON_REALLOC_WARNING
@@ -149,11 +191,11 @@ void realloc_block(void *addr, void *new_addr, size_t size)
 #endif
         return;
     }
+
     struct tblock *bl = &tblocks[bln];
-#if CHECK_ADDED_SIZE
-    assert(g_total_critnib_size >= bl->size);
+
+#if CHECK_ADDED_SIZE 
     g_total_critnib_size -= bl->size;
-    assert(g_total_ranking_size == g_total_critnib_size);
 #endif
 
 #if PRINT_CRITNIB_REALLOC_INFO
@@ -164,11 +206,23 @@ void realloc_block(void *addr, void *new_addr, size_t size)
     struct ttype *t = &ttypes[bl->type];
     SUB(t->total_size, bl->size);
     ADD(t->total_size, size);
-    // TODO the new block might have completely different hash/type ...
-    critnib_insert(addr_to_block, bln);
+
+    int ret = critnib_insert(addr_to_block, bln);
 #if CHECK_ADDED_SIZE
-    g_total_critnib_size += size;
+    if (ret == EEXIST) {
+        log_info("!!!!!!!!! register_block: critnib_insert(addr_to_block, %d) == EEXIST, "
+            "g_total_ranking_size %ld g_total_critnib_size %ld", 
+            bln, g_total_ranking_size, g_total_critnib_size);
+    } else {
+        g_total_critnib_size += bl->size;
+        log_info("critnib_insert addr_to_block leaf %d size %ld g_total_critnib_size %ld",
+            bln, bl->size, g_total_critnib_size);
+    }
+#else
+    (void)ret;
 #endif
+
+    // TODO the new block might have completely different hash/type ...
 }
 
 void register_block_in_ranking(void * addr, size_t size)
@@ -176,45 +230,25 @@ void register_block_in_ranking(void * addr, size_t size)
     int bln = critnib_find_le(addr_to_block, (uint64_t)addr);
     if (bln == -1) {
 #if PRINT_CRITNIB_NOT_FOUND_ON_UNREGISTER_BLOCK_WARNING
-        log_info("WARNING: Tried deallocating a non-allocated block at %p", addr);
+        log_info("WARNING: Tried searching for a non-allocated block at %p", addr);
 #endif
 #if CRASH_ON_BLOCK_NOT_FOUND
-        assert(false && "only existing blocks can be unregistered!");
+        assert(false && "only existing blocks can be registered in ranking!");
 #endif
         return;
     }
     int type = tblocks[bln].type;
     assert(type != -1);
+
 #if CHECK_ADDED_SIZE
     volatile size_t pre_real_ranking_size = ranking_calculate_total_size(ranking);
 #endif
     ranking_add(ranking, ttypes[type].f, size);
 #if CHECK_ADDED_SIZE
-    g_total_ranking_size += size;
-    assert(g_total_ranking_size == g_total_critnib_size);
     volatile size_t real_ranking_size = ranking_calculate_total_size(ranking);
     assert(g_total_ranking_size == real_ranking_size);
     assert(pre_real_ranking_size + size == real_ranking_size);
 //     wre_destroy(temp_cpy);
-#endif
-}
-
-void unregister_block_from_ranking(void * addr)
-{
-#if CHECK_ADDED_SIZE
-    assert(g_total_ranking_size == g_total_critnib_size);
-#endif
-    int bln = critnib_find_le(addr_to_block, (uint64_t)addr);
-    if (bln == -1) {
-        assert(false && "only existing blocks can be unregistered!");
-        return;
-    }
-    int type = tblocks[bln].type;
-    assert(type != -1);
-    ranking_remove(ranking, ttypes[type].f, tblocks[bln].size);
-#if CHECK_ADDED_SIZE
-    assert(g_total_ranking_size >= tblocks[bln].size);
-    g_total_ranking_size -= tblocks[bln].size;
 #endif
 }
 
@@ -226,24 +260,48 @@ void unregister_block(void *addr)
 #if PRINT_CRITNIB_NOT_FOUND_ON_UNREGISTER_BLOCK_WARNING
         log_info("WARNING: Tried deallocating a non-allocated block at %p", addr);
 #endif
+
 #if CRASH_ON_BLOCK_NOT_FOUND
         assert(false && "dealloc non-allocated block!"); // TODO remove!
 #endif
         return;
     }
+
     struct tblock *bl = &tblocks[bln];
     struct ttype *t = &ttypes[bl->type];
-    SUB(t->num_allocs, 1);
-    SUB(t->total_size, bl->size);
+
 #if CHECK_ADDED_SIZE
-    assert(g_total_critnib_size >= bl->size);
     g_total_critnib_size -= bl->size;
-    assert(g_total_ranking_size == g_total_critnib_size);
-    assert(g_total_ranking_size == ranking_calculate_total_size(ranking));
 #endif
+
+    SUB(t->num_allocs, 1);
+    assert(t->num_allocs >= 0);
+    SUB(t->total_size, bl->size);
+    assert(t->total_size >= 0);
+    
+#if PRINT_CRITNIB_UNREGISTER_BLOCK_INFO
+    log_info("Block unregistered: %d addr %p size %lu type %d h %f", 
+        bln, (void*)addr, bl->size, bl->type, t->f);
+#endif
+
+    ranking_remove(ranking, t->f, bl->size);
+
     bl->addr = 0;
     bl->size = 0;
-    __atomic_exchange(&freeblock, &bln, &bl->nextfree, __ATOMIC_ACQ_REL);
+    bl->type = -1;
+
+    __atomic_exchange(&freeblock, &bln, &tblocks[bln].nextfree, __ATOMIC_ACQ_REL);
+
+#if CHECK_ADDED_SIZE
+    if (g_total_ranking_size != g_total_critnib_size) {
+        log_info("rank %ld, crit: %ld", g_total_ranking_size, g_total_critnib_size);
+    }
+    if (g_total_ranking_size != g_total_critnib_size) 
+    {
+        log_info("g_total_ranking_size != g_total_critnib_size");
+    }
+    assert(g_total_ranking_size == g_total_critnib_size);
+#endif
 }
 
 MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type(const void *addr)
@@ -256,14 +314,19 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type(const void *addr)
 
     //printf("get_hotness block %d, type %d hot %g\n", bln, tblocks[bln].type, ttypes[tblocks[bln].type].f);
 
-    if (ranking_is_hot(ranking, t))
+    thresh_t thresh = ranking_get_hot_threshold(ranking);
+    if (!thresh.threshValid || t->f == thresh.threshVal)
+        return HOTNESS_NOT_FOUND;
+
+    if (t->f > thresh.threshVal)
         return HOTNESS_HOT;
+    // (t->f < thresh.threshVal)
     return HOTNESS_COLD;
 }
 
 MEMKIND_EXPORT double tachanka_get_hot_thresh(void)
 {
-    return ranking_get_hot_threshold(ranking);
+    return ranking_get_hot_threshold(ranking).threshVal;
 }
 
 MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
@@ -272,11 +335,17 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
     int nt = critnib_get(hash_to_type, hash);
     if (nt != -1) {
         struct ttype *t = &ttypes[nt];
-        if (ranking_is_hot(ranking, t))
+        thresh_t thresh = ranking_get_hot_threshold(ranking);
+        if (!thresh.threshValid || t->f == thresh.threshVal)
+            ret = HOTNESS_NOT_FOUND;
+        else if (t->f > thresh.threshVal)
             ret = HOTNESS_HOT;
-        else
+        else {
+            assert(t->f < thresh.threshVal);
             ret = HOTNESS_COLD;
+        }
     }
+    else log_info("not found, hash %lu", hash);
 
     return ret;
 }
@@ -284,11 +353,12 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
 /// @warning NOT THREAD SAFE
 /// This function operates on block that should not be freed/modifed
 /// in the meantime
-void touch(void *addr, __u64 timestamp, int from_malloc)
+MEMKIND_EXPORT void touch(void *addr, __u64 timestamp, int from_malloc)
 {
 #if CHECK_ADDED_SIZE
     assert(g_total_ranking_size == ranking_calculate_total_size(ranking));
 #endif
+
     int bln = critnib_find_le(addr_to_block, (uint64_t)addr);
     if (bln == -1) {
 #if PRINT_CRITNIB_NOT_FOUND_ON_TOUCH_WARNING
@@ -359,9 +429,7 @@ void touch(void *addr, __u64 timestamp, int from_malloc)
     // current solution: assert(FALSE)
     // future solution: ignore?
 //     printf("touches tachanka, timestamp: [%llu]\n", timestamp);
-#if CHECK_ADDED_SIZE
-    assert(g_total_ranking_size == ranking_calculate_total_size(ranking));
-#endif
+    //assert(g_total_ranking_size == ranking_calculate_total_size(ranking));
 }
 
 static bool initialized=false;
@@ -392,19 +460,19 @@ void tachanka_init(double old_window_hotness_weight, size_t event_queue_size)
     initialized = true;
 }
 
-MEMKIND_EXPORT void tachanka_set_dram_total_ratio(double ratio)
+MEMKIND_EXPORT void tachanka_set_dram_total_ratio(double desired, double actual)
 {
-    if (ratio < 0 || ratio > 1) {
-        log_fatal("Incorrect ratio [%f], exiting", ratio);
-        exit(-1);
-    }
-
-    g_dramToTotalMemRatio = ratio;
+    check_dram_total_ratio(desired);
+    check_dram_total_ratio(actual);
+    g_dramToTotalDesiredRatio = desired;
+    g_dramToTotalActualRatio = actual;
 }
 
 void tachanka_update_threshold(void)
 {
-    ranking_calculate_hot_threshold_dram_total(ranking, g_dramToTotalMemRatio);
+    // where can I take it from ? memkind_memtier! it supports tracking memory for static ratio policy
+    ranking_calculate_hot_threshold_dram_total(
+        ranking, g_dramToTotalDesiredRatio, g_dramToTotalActualRatio);
 }
 
 void tachanka_destroy(void)
@@ -460,11 +528,63 @@ MEMKIND_EXPORT int tachanka_set_touch_callback(void *addr, tachanka_touch_callba
 
 MEMKIND_EXPORT bool tachanka_ranking_event_push(EventEntry_t *event)
 {
+#if OFFLOAD_RANKING_OPS_TO_BACKGROUD_THREAD
     if (initialized == false) {
         log_fatal("push onto non-initialized queue");
         exit(-1);
     }
-    return ranking_event_push(&ranking_event_buff, event);
+    bool ret = ranking_event_push(&ranking_event_buff, event);
+#if ASSURE_RANKING_DELIVERY
+    while (!ret) {
+        usleep(1000);
+        ret = ranking_event_push(&ranking_event_buff, event);
+    }
+#endif
+#else // EXECUTE SYNCRONOUSLY
+    bool ret = true;
+    // TODO looks like a good place for refactor - code duplicated with pebs.c
+    switch (event->type) {
+        case EVENT_CREATE_ADD: {
+            EventDataCreateAdd *data = &event->data.createAddData;
+            register_block(data->hash, data->address, data->size);
+            register_block_in_ranking(data->address, data->size);
+            break;
+        }
+        case EVENT_DESTROY_REMOVE: {
+            EventDataDestroyRemove *data = &event->data.destroyRemoveData;
+            // REMOVE THE BLOCK FROM RANKING!!!
+            // TODO remove all the exclamation marks and clean up once this is done
+            unregister_block(data->address);
+            break;
+        }
+        case EVENT_REALLOC: {
+            EventDataRealloc *data = &event->data.reallocData;
+            unregister_block(data->addressOld);
+//                     realloc_block(data->addressOld, data->addressNew, data->sizeNew);
+            register_block(0u /* FIXME hash should not be zero !!! */, data->addressNew, data->sizeNew);
+            register_block_in_ranking(data->addressNew, data->sizeNew);
+            break;
+        }
+        case EVENT_SET_TOUCH_CALLBACK: {
+            EventDataSetTouchCallback *data = &event->data.touchCallbackData;
+            tachanka_set_touch_callback(data->address,
+                                        data->callback,
+                                        data->callbackArg);
+            break;
+        }
+        case EVENT_TOUCH: {
+            EventDataTouch *data = &event->data.touchData;
+            touch(data->address, data->timestamp, 0 /*called from malloc*/);
+            break;
+        }
+        default: {
+            log_fatal("PEBS: event queue - case not implemented!");
+            exit(-1);
+        }
+    }
+
+#endif
+    return ret;
 }
 
 MEMKIND_EXPORT bool tachanka_ranking_event_pop(EventEntry_t *event)
@@ -474,4 +594,22 @@ MEMKIND_EXPORT bool tachanka_ranking_event_pop(EventEntry_t *event)
         exit(-1);
     }
     return ranking_event_pop(&ranking_event_buff, event);
+}
+
+MEMKIND_EXPORT void tachanka_ranking_touch_all(__u64 timestamp, double add_hotness)
+{
+    int i;
+    for (i = 0; i < ntypes; ++i) {
+        ranking_touch(ranking, &ttypes[i], timestamp, add_hotness);
+    }
+}
+
+// Getter used in the tachanka_check_ranking_touch_all test
+MEMKIND_EXPORT double tachanka_get_frequency(size_t index) {
+    return ttypes[index].f;
+}
+
+// Getter used in the tachanka_check_ranking_touch_all test
+MEMKIND_EXPORT TimestampState_t tachanka_get_timestamp_state(size_t index) {
+    return ttypes[index].timestamp_state;
 }

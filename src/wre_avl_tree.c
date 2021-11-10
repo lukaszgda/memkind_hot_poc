@@ -2,12 +2,25 @@
 #include "assert.h"
 #include "jemalloc/jemalloc.h"
 #include "memkind/internal/memkind_private.h"
+#include "memkind/internal/slab_allocator.h"
+#include "memkind/internal/wre_avl_tree_internal.h"
+#include "memkind/internal/memkind_log.h"
+#include "memkind/internal/memkind_memtier.h"
 #include "stdint.h"
+#include "string.h"
 
-#define DEBUG_PRINTFS // TODO move/remove
+#include "stdio.h"
+typedef struct AggregatedHotness {
+    size_t size;
+    double hotness;
+} AggregatedHotness_t;
+// EOF REMOVE
+
+// #define DEBUG_PRINTFS // TODO move/remove
 
 #ifdef DEBUG_PRINTFS
 #include "stdatomic.h"
+#include "stdio.h"
 #endif
 
 #define max(X, Y) (((X) > (Y)) ? (X) : (Y))
@@ -162,11 +175,11 @@ static wre_node_t *find_node(wre_tree_t *tree, const void *data)
     wre_node_t *cnode = tree->rootNode; // double pointer - ptr modified
     while (cnode) {
         // descend further
-        if (tree->is_lower(cnode->data, data)) {
+        if (tree->is_lower_check(cnode->data, data)) {
             cnode = cnode->right; // search right branch
         } else {
             // check equality: if none is lower, they are the same
-            if (!tree->is_lower(data, cnode->data))
+            if (!tree->is_lower_check(data, cnode->data))
                 break; // node found, can exit
             // new data is lower: search right branch
             cnode = cnode->left; // search left branch
@@ -205,11 +218,11 @@ static void balance_upwards(wre_tree_t *tree, wre_node_t *node)
 }
 
 /// @brief Allocates and creates a node that is not attached to any structure
-static wre_node_t *node_create(which_node_e which)
+static wre_node_t *node_create(slab_alloc_t *alloc, which_node_e which)
 {
-    wre_node_t *ret = (wre_node_t *)jemk_calloc(1, sizeof(wre_node_t));
+    wre_node_t *ret = (wre_node_t *)slab_alloc_malloc(alloc);
     if (ret) {
-        // only non-zero fields need to be set
+        memset(ret, 0, sizeof(wre_node_t));
         ret->which = which;
     }
     return ret;
@@ -217,22 +230,206 @@ static wre_node_t *node_create(which_node_e which)
 
 static void node_destroy(wre_node_t *node)
 {
-    jemk_free(node);
+    slab_alloc_free(node);
 }
 
-static void copy_recursive(wre_node_t *dest, wre_node_t *src) {
+static void copy_recursive(slab_alloc_t *alloc, wre_node_t *dest, wre_node_t *src) {
     if (src->right) {
-        dest->right = node_create(RIGHT_NODE);
+        dest->right = node_create(alloc, RIGHT_NODE);
         *dest->right = *src->right;
         dest->right->parent = dest;
-        copy_recursive(dest->right, src->right);
+        copy_recursive(alloc, dest->right, src->right);
     }
     if (src->left) {
-        dest->left = node_create(RIGHT_NODE);
+        dest->left = node_create(alloc, RIGHT_NODE);
         *dest->left = *src->left;
         dest->left->parent = dest;
-        copy_recursive(dest->left, src->left);
+        copy_recursive(alloc, dest->left, src->left);
     }
+}
+
+static size_t wre_calculate_subtree_size(wre_node_t *node) {
+    size_t ret=0;
+    if (node) {
+        ret += wre_calculate_subtree_size(node->left);
+        ret += wre_calculate_subtree_size(node->right);
+        ret += node->ownWeight;
+        assert(ret == node->subtreeWeight);
+        size_t max_subheight=0;
+        int max_subheight_left=0;
+        int max_subheight_right=0;
+        if (node->left) {
+            assert(node->left->which == LEFT_NODE);
+            max_subheight_left = node->left->height + 1;
+            assert(node->left->parent == node);
+        }
+        if (node->right) {
+            assert(node->right->which == RIGHT_NODE);
+            max_subheight_right = node->right->height + 1;
+            assert(node->right->parent == node);
+        }
+        max_subheight = max(max_subheight_left, max_subheight_right);
+        assert(max_subheight == node->height);
+        assert(abs(max_subheight_left-max_subheight_right) < 2);
+    }
+    return ret;
+}
+
+static wre_node_t *
+wre_find_weighted_nodes_internal(
+    wre_tree_t *tree, double ratio, double *from_left_percentage)
+{
+    wre_node_t *best_node = tree->rootNode;
+    wre_node_t *cnode = tree->rootNode;
+#ifdef DEBUG_PRINTFS
+    size_t left_subtrees=0u;
+    size_t right_subtrees=0u;
+#endif
+    bool left_present=false;
+    while (cnode) {
+        if (cnode->subtreeWeight == 0) {
+            // reached a leaf node, which has 0 weight
+            // only possible when @p ratio fits this one EXACTLY
+            cnode = cnode->right;
+            // 1) cnode should be NULL
+            // 2) the function should return in the next iteration
+            //             printf("wre: found 0 weight [%.16f]\n",
+            //             ((AggregatedHotness_t*)cnode->data)->hotness); //
+            //             TODO remove
+        } else {
+            left_present = cnode->left;
+            size_t left_weight = left_present ? cnode->left->subtreeWeight : 0;
+            size_t left_plus_own_weight = left_weight + cnode->ownWeight;
+            double nratio_left = ((double)left_weight) / cnode->subtreeWeight;
+            double nratio_right =
+                ((double)left_plus_own_weight) / cnode->subtreeWeight;
+            // 3 cases:
+            // ratio < nratio_left: descend into left
+            // ratio > nratio_left: descend into left
+            // nratio_left <= ratio <= nratio_right: take current node
+            best_node = cnode;
+            //             printf("wre: ratio [left|right|current]:
+            //             [%.16f|%.16f|%.16f], height: [%lu]\n",
+            //                    nratio_left, nratio_right, ratio,
+            //                    cnode->height); // TODO remove
+            if (ratio < nratio_left) {
+                // left is best - descend into left branch
+                cnode = cnode->left;
+                ratio = ratio / nratio_left;
+                //                 printf("wre: descend left [%.16f]\n",
+                //                 ((AggregatedHotness_t*)cnode->data)->hotness);
+                //                 // TODO remove
+#ifdef DEBUG_PRINTFS
+                right_subtrees++;
+#endif
+
+            } else if (ratio > nratio_right) {
+                // right is best - descend into right branch
+                cnode = cnode->right;
+                ratio = (ratio - nratio_right) / (1 - nratio_right);
+                //                 printf("wre: descend right [%.16f]\n",
+                //                 ((AggregatedHotness_t*)cnode->data)->hotness);
+                //                 // TODO remove
+#ifdef DEBUG_PRINTFS
+                left_subtrees++;
+#endif
+            } else {
+                // cnode is best node
+                best_node = cnode;
+                //                 printf("wre: found best [%.16f]\n",
+                //                 ((AggregatedHotness_t*)cnode->data)->hotness);
+                //                 // TODO remove
+                if (from_left_percentage) {
+                    double from_left = ratio-nratio_left;
+                    double width = nratio_right-nratio_left;
+                    *from_left_percentage = (from_left/width);
+                }
+                break;
+            }
+        }
+    }
+    if (best_node) {
+#ifdef DEBUG_PRINTFS
+        static atomic_size_t counter=0;
+        counter++;
+        const size_t interval = 1000;
+        if (counter>interval) {
+            printf("wre found, subtrees to left: %lu, subtrees to right %lu\n", left_subtrees, right_subtrees);
+            counter=0;
+        }
+#endif
+    }
+
+    return best_node;
+}
+
+
+// TODO unit tests or sth
+static wre_node_t *wre_find_node_right(wre_node_t *node) {
+    wre_node_t *right_node=NULL;
+    wre_node_t *t = node;
+    if (t->right) {
+        t = t->right;
+        while (t->left)
+            t = t->left;
+        right_node = t;
+    } else {
+        while (t->which == RIGHT_NODE || (t->which == LEFT_NODE && !t->parent->right))
+            t = t->parent;
+        switch (t->which) {
+            case LEFT_NODE:
+                // parent->left is valid
+                assert(t->parent);
+                assert(t->parent->right);
+                t = t->parent->right;
+                while (t->left)
+                    t = t->left;
+                right_node = t;
+                break;
+            case RIGHT_NODE:
+                assert(false && "should be unreachable");
+                break;
+            case ROOT_NODE:
+                assert(right_node == NULL && "incorrect initialization!");
+                break;
+        }
+    }
+
+    return right_node;
+}
+
+// TODO unit tests or sth
+static wre_node_t *wre_find_node_left(wre_node_t *node) {
+    wre_node_t *left_node=NULL;
+    wre_node_t *t = node;
+    if (t->left) {
+        t = t->left;
+        while (t->right)
+            t = t->right;
+        left_node = t;
+    } else {
+        while (t->which == LEFT_NODE || (t->which == RIGHT_NODE && !t->parent->left))
+            t = t->parent;
+        switch (t->which) {
+            case RIGHT_NODE:
+                // parent->left is valid
+                assert(t->parent);
+                assert(t->parent->left);
+                t = t->parent->left;
+                while (t->right)
+                    t = t->right;
+                left_node = t;
+                break;
+            case LEFT_NODE:
+                assert(false && "should be unreachable");
+                break;
+            case ROOT_NODE:
+                assert(left_node == NULL && "incorrect initialization!");
+                break;
+        }
+    }
+
+    return left_node;
 }
 
 //---public functions
@@ -240,12 +437,15 @@ static void copy_recursive(wre_node_t *dest, wre_node_t *src) {
 MEMKIND_EXPORT void wre_create(wre_tree_t **tree, is_lower compare)
 {
     *tree = (wre_tree_t *)jemk_malloc(sizeof(wre_tree_t));
-    (*tree)->is_lower = compare;
+    (*tree)->is_lower_check = compare;
     (*tree)->rootNode = NULL;
+    int ret = slab_alloc_init(&(*tree)->nodeAlloc, sizeof(wre_node_t), 0);
+    assert(ret == 0 && "slab_alloc_init failed");
 }
 
 MEMKIND_EXPORT void wre_destroy(wre_tree_t *tree)
 {
+    slab_alloc_destroy(&tree->nodeAlloc);
     jemk_free(tree);
 }
 
@@ -259,7 +459,7 @@ MEMKIND_EXPORT void wre_put(wre_tree_t *tree, void *data, size_t weight)
     while (*cnode != NULL) {
         // descend further
         parent = *cnode;
-        if (tree->is_lower((*cnode)->data, data)) {
+        if (tree->is_lower_check((*cnode)->data, data)) {
             // new data is higher-equal: should be attached to right node
             cnode = &(*cnode)->right;
             which = RIGHT_NODE;
@@ -270,7 +470,7 @@ MEMKIND_EXPORT void wre_put(wre_tree_t *tree, void *data, size_t weight)
         }
     }
     // cnode is null - we should allocate a new node
-    *cnode = node_create(which); // assignment to ** already attaches child
+    *cnode = node_create(&tree->nodeAlloc, which); // assignment to ** already attaches child
     (*cnode)->parent = parent;   // set parent
     (*cnode)->subtreeWeight = weight;
     (*cnode)->ownWeight = weight;
@@ -441,6 +641,7 @@ MEMKIND_EXPORT void *wre_remove(wre_tree_t *tree, const void *data)
                 update_node_subtree_metadata(replacer);
             }
         }
+
         node_destroy(cnode);
         tree->size--;
     }
@@ -455,100 +656,72 @@ MEMKIND_EXPORT void *wre_find(wre_tree_t *tree, const void *data)
         ret = cnode->data;
     return ret;
 }
-// TODO REMOVE
-#include "stdio.h"
-typedef struct AggregatedHotness {
-    size_t size;
-    double hotness;
-} AggregatedHotness_t;
-// EOF REMOVE
 
 MEMKIND_EXPORT void *wre_find_weighted(wre_tree_t *tree, double ratio)
 {
     void *ret = NULL;
-    wre_node_t *best_node = tree->rootNode;
-    wre_node_t *cnode = tree->rootNode;
-#ifdef DEBUG_PRINTFS
-    size_t left_subtrees=0u;
-    size_t right_subtrees=0u;
-#endif
-    while (cnode) {
-        if (cnode->subtreeWeight == 0) {
-            // reached a leaf node, which has 0 weight
-            // only possible when @p ratio fits this one EXACTLY
-            cnode = cnode->right;
-            // 1) cnode should be NULL
-            // 2) the function should return in the next iteration
-            //             printf("wre: found 0 weight [%.16f]\n",
-            //             ((AggregatedHotness_t*)cnode->data)->hotness); //
-            //             TODO remove
-        } else {
-            size_t left_weight = cnode->left ? cnode->left->subtreeWeight : 0;
-            size_t left_plus_own_weight = left_weight + cnode->ownWeight;
-            double nratio_left = ((double)left_weight) / cnode->subtreeWeight;
-            double nratio_right =
-                ((double)left_plus_own_weight) / cnode->subtreeWeight;
-            // 3 cases:
-            // ratio < nratio_left: descend into left
-            // ratio > nratio_left: descend into left
-            // nratio_left <= ratio <= nratio_right: take current node
-            best_node = cnode;
-            //             printf("wre: ratio [left|right|current]:
-            //             [%.16f|%.16f|%.16f], height: [%lu]\n",
-            //                    nratio_left, nratio_right, ratio,
-            //                    cnode->height); // TODO remove
-            if (ratio < nratio_left) {
-                // left is best - descend into left branch
-                cnode = cnode->left;
-                ratio = ratio / nratio_left;
-                //                 printf("wre: descend left [%.16f]\n",
-                //                 ((AggregatedHotness_t*)cnode->data)->hotness);
-                //                 // TODO remove
-#ifdef DEBUG_PRINTFS
-                right_subtrees++;
-#endif
-
-            } else if (ratio > nratio_right) {
-                // right is best - descend into right branch
-                cnode = cnode->right;
-                ratio = (ratio - nratio_right) / (1 - nratio_right);
-                //                 printf("wre: descend right [%.16f]\n",
-                //                 ((AggregatedHotness_t*)cnode->data)->hotness);
-                //                 // TODO remove
-#ifdef DEBUG_PRINTFS
-                left_subtrees++;
-#endif
-            } else {
-                // cnode is best node
-                best_node = cnode;
-                //                 printf("wre: found best [%.16f]\n",
-                //                 ((AggregatedHotness_t*)cnode->data)->hotness);
-                //                 // TODO remove
-                break;
-            }
-        }
-    }
+    wre_node_t *best_node = wre_find_weighted_nodes_internal(tree, ratio, NULL);
     if (best_node) {
         ret = best_node->data;
-#ifdef DEBUG_PRINTFS
-        static atomic_size_t counter=0;
-        counter++;
-        const size_t interval = 1000;
-        if (counter>interval) {
-            printf("wre found, subtrees to left: %lu, subtrees to right %lu\n", left_subtrees, right_subtrees);
-            counter=0;
+    }
+
+    return ret;
+}
+
+// left + ratio*(right-left)
+// left is always present, right might not be
+MEMKIND_EXPORT wre_interpolated_result_t wre_find_weighted_interpolated(wre_tree_t *tree, double ratio)
+{
+    wre_interpolated_result_t ret = { 0 };
+    double from_left_percentage=0.;
+    wre_node_t *best_node =
+        wre_find_weighted_nodes_internal(tree, ratio, &from_left_percentage);
+    if (best_node) {
+        wre_node_t *right_node=wre_find_node_right(best_node);
+        if (from_left_percentage < 1) {
+            // left or center
+            // TODO debug
+            assert(best_node && "best_node is null!");
+            ret.left = best_node->data;
+            if (right_node) {
+                // center - both nodes exist
+                ret.right = right_node->data;
+            } else {
+                // single node - no nodes to right, no nodes to left
+                // what should we really do? Fallback to static ratio?
+                ret.fallbackRequired = true;
+            }
+        } else {
+            // too far to right - right node is absent
+            assert(!right_node && "right_node exists - error in code!");
+            // right node is absent
+            wre_node_t *left_node=wre_find_node_left(best_node);
+            ret.left = best_node->data;
+            if (left_node) {
+                // left node is present
+                ret.right = left_node->data;
+                from_left_percentage = 1 - from_left_percentage; // sub zero
+            } else {
+                // only single node exists - which one should we take?
+                assert(!left_node && !right_node && "error in code");
+            }
         }
-#endif
+        ret.percentage = from_left_percentage;
     }
 
     return ret;
 }
 
 MEMKIND_EXPORT void wre_clone(wre_tree_t **tree, wre_tree_t *src) {
-    wre_create(tree, src->is_lower);
+    wre_create(tree, src->is_lower_check);
     if (src->rootNode) {
-        (*tree)->rootNode = node_create(ROOT_NODE);
+        (*tree)->rootNode = node_create(&(*tree)->nodeAlloc, ROOT_NODE);
         *(*tree)->rootNode = *src->rootNode;
-        copy_recursive((*tree)->rootNode, src->rootNode);
+        copy_recursive(&(*tree)->nodeAlloc, (*tree)->rootNode, src->rootNode);
     }
+}
+
+MEMKIND_EXPORT size_t wre_calculate_total_size(wre_tree_t *tree) {
+    // traverse tree using DFS and aggregate all sizes
+    return wre_calculate_subtree_size(tree->rootNode);
 }

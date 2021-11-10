@@ -1,13 +1,14 @@
 #include <pthread.h>
 #include <stdarg.h>
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
 #include "memkind/internal/bigary.h"
-
-#define BIGARY_DEFAULT_MAX (16 * 1024 * 1048576ULL)
+// default max: 16 GB
+#define BIGARY_DEFAULT_MAX (16 * 1024 * 1024 * 1024ULL)
 #define BIGARY_PAGESIZE 2097152
 
 static void die(const char *fmt, ...)
@@ -17,7 +18,8 @@ static void die(const char *fmt, ...)
     va_start(args, fmt);
     int len = vsnprintf(buf, sizeof(buf), fmt, args);
     va_end(args);
-    if (write(2, buf, len));
+    // TODO refactor/remove this exit function
+    if (write(STDERR_FILENO, buf, len));
     exit(1);
 }
 
@@ -28,7 +30,13 @@ void bigary_init(bigary *restrict ba, int fd, int flags, size_t max)
 {
     if (!max)
         max = BIGARY_DEFAULT_MAX;
-    int ret = pthread_mutex_init(&ba->enlargement, 0);
+    // round *max* up to pagesize
+    size_t last_page_size = max%BIGARY_PAGESIZE;
+    if (last_page_size) {
+        size_t pages = max/BIGARY_PAGESIZE+1;
+        max = pages*BIGARY_PAGESIZE;
+    }
+    int ret = pthread_mutex_init(&ba->enlargement, NULL);
     if (ret != 0)
         die("mutex init failed\n");
     ba->declared = max;
@@ -42,6 +50,14 @@ void bigary_init(bigary *restrict ba, int fd, int flags, size_t max)
         die("bigary alloc of %zd failed: %m\n", BIGARY_PAGESIZE);
     }
     ba->top = BIGARY_PAGESIZE;
+}
+
+void bigary_destroy(bigary *restrict ba)
+{
+    int ret1 = pthread_mutex_destroy(&ba->enlargement);
+    int ret2 = munmap(ba->area, ba->declared);
+    assert(ret1 == 0 && "mutex destruction failed!");
+    assert(ret2 == 0 && "unmap failed!");
 }
 
 /********************************************************************/
@@ -67,10 +83,4 @@ void bigary_alloc(bigary *restrict ba, size_t top)
     ba->top = top;
 done:
     pthread_mutex_unlock(&ba->enlargement);
-}
-
-void bigary_free(bigary *restrict ba)
-{
-    pthread_mutex_destroy(&ba->enlargement);
-    munmap(ba->area, ba->declared);
 }

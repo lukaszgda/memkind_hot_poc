@@ -104,6 +104,12 @@
 #define THRESHOLD_CHECK_CNT 20
 #define THRESHOLD_STEP      1024
 
+//PEBS
+double old_time_window_hotness_weight;
+double pebs_freq_hz;
+double sample_frequency;
+unsigned long long hotness_measure_window;
+
 // Macro to get number of thresholds from parent object
 #define THRESHOLD_NUM(obj) ((obj->cfg_size) - 1)
 
@@ -159,10 +165,22 @@ struct memtier_memory {
 // clang-format on
 
 #define THREAD_BUCKETS  (256U)
-#define FLUSH_THRESHOLD (51200)
+// #define FLUSH_THRESHOLD (51200)
+#define FLUSH_THRESHOLD (0)
+#define MEMKIND_TOTAL_IDX (MEMKIND_MAX_KIND)
 
 static MEMKIND_ATOMIC long long t_alloc_size[MEMKIND_MAX_KIND][THREAD_BUCKETS];
-static MEMKIND_ATOMIC size_t g_alloc_size[MEMKIND_MAX_KIND];
+// MEMKIND_MAX_KIND+1 for MEMKIND_TOTAL_IDX
+static MEMKIND_ATOMIC size_t g_alloc_size[MEMKIND_MAX_KIND+1];
+
+// FIXME multiple memory builders might exist, but each one of them might
+// have different hot tier ID; right now, we permit creating multiple memories,
+// but we keep one, global hotTierId, g_hotTotalDesiredRatio
+// and statistics (t_alloc_size and g_alloc_size)!
+static MEMKIND_ATOMIC size_t g_totalTiers=0; // TODO use it for stats acquisition
+static MEMKIND_ATOMIC size_t g_hotTierId=0;
+static MEMKIND_ATOMIC double g_hotTotalDesiredRatio=0;
+static MEMKIND_ATOMIC double g_hotTotalActualRatio=0;
 
 /* Declare weak symbols for allocator decorators */
 extern void memtier_kind_malloc_post(struct memkind *, size_t, void **)
@@ -197,26 +215,49 @@ static inline unsigned t_hash_64(void)
     return (x ^ (x >> 31)) & (THREAD_BUCKETS - 1);
 }
 
+static void update_actual_ratios(size_t total_size) {
+    double hot_tier_size = g_alloc_size[g_hotTierId];
+        if (hot_tier_size>total_size)
+            // handle race condition gracefully, without repetitions
+            // and mutexes; this code should not have visible, negative effect
+            // TODO make sure it's ok!
+            total_size = hot_tier_size;
+        g_hotTotalActualRatio=hot_tier_size/total_size;
+
+        tachanka_set_dram_total_ratio(
+            g_hotTotalDesiredRatio, g_hotTotalActualRatio);
+}
+
+static inline void
+apply_temporary_buffer_alloc_size(size_t kind_id,size_t bucket_id)
+{
+    // please note that size_f might be negative
+    long long size_f =
+        memkind_atomic_get_and_zeroing(t_alloc_size[kind_id][bucket_id]);
+    memkind_atomic_increment(g_alloc_size[kind_id], size_f);
+    size_t old_total_size = memkind_atomic_increment(
+        g_alloc_size[MEMKIND_TOTAL_IDX], size_f);
+    // total_size is, by definition, positive
+    size_t total_size = (size_t)(size_f + (long long)old_total_size);
+    update_actual_ratios(total_size);
+}
+
 static inline void increment_alloc_size(unsigned kind_id, size_t size)
 {
     unsigned bucket_id = t_hash_64();
-    if ((memkind_atomic_increment(t_alloc_size[kind_id][bucket_id], size) +
-         size) > FLUSH_THRESHOLD) {
-        size_t size_f =
-            memkind_atomic_get_and_zeroing(t_alloc_size[kind_id][bucket_id]);
-        memkind_atomic_increment(g_alloc_size[kind_id], size_f);
-    }
+    long long old_talloc =
+        memkind_atomic_increment(t_alloc_size[kind_id][bucket_id], size);
+    if ((old_talloc + size) > FLUSH_THRESHOLD)
+        apply_temporary_buffer_alloc_size(kind_id, bucket_id);
 }
 
 static inline void decrement_alloc_size(unsigned kind_id, size_t size)
 {
     unsigned bucket_id = t_hash_64();
-    if ((memkind_atomic_decrement(t_alloc_size[kind_id][bucket_id], size) -
-         size) < -FLUSH_THRESHOLD) {
-        long long size_f =
-            memkind_atomic_get_and_zeroing(t_alloc_size[kind_id][bucket_id]);
-        memkind_atomic_increment(g_alloc_size[kind_id], size_f);
-    }
+    long long old_talloc =
+        memkind_atomic_decrement(t_alloc_size[kind_id][bucket_id], size);
+    if (old_talloc - size < -FLUSH_THRESHOLD)
+        apply_temporary_buffer_alloc_size(kind_id, bucket_id);
 }
 
 static memkind_t memtier_single_get_kind(struct memtier_memory *memory,
@@ -373,10 +414,13 @@ memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
             dest_tier = memory->cold_tier_id;
             break;
         case HOTNESS_NOT_FOUND:
-            // type not registered yet, fallback to static ratio
+#if FALLBACK_TO_STATIC
             // TODO add static ratio handling in other places !!!
-//             return memtier_policy_static_ratio_get_kind(memory, size, NULL);
+            log_info("fallback to static!!!");
+            return memtier_policy_static_ratio_get_kind(memory, size, NULL);
+#else
             dest_tier = memory->hot_tier_id;
+#endif
             break; // unreachable
         case HOTNESS_HOT:
             dest_tier = memory->hot_tier_id;
@@ -392,19 +436,6 @@ memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
 static void
 memtier_policy_data_hotness_post_alloc(uint64_t hash, void *addr, size_t size)
 {
-//     static atomic_uint_fast16_t counter=0;
-//     const uint64_t interval=1000;
-//     if (++counter > interval) {
-//         struct timespec t;
-//         int ret = clock_gettime(CLOCK_MONOTONIC, &t);
-//         if (ret != 0) {
-//             printf("ASSERT TOUCH COUNTER FAILURE!\n");
-//         }
-//         assert(ret == 0);
-//         printf("touch counter %lu hit, [seconds, nanoseconds]: [%ld, %ld]\n",
-//             interval, t.tv_sec, t.tv_nsec);
-//         counter=0u;
-//     }
     // TODO: there are 2 lookups in hash_to_block - one from "get_kind" and
     // second here - this could be easily optimized
 //     register_block(hash, addr, size);
@@ -429,6 +460,7 @@ memtier_policy_data_hotness_post_alloc(uint64_t hash, void *addr, size_t size)
     } else {
         g_failed_adds++;
         g_failed_adds_malloc++;
+        log_info("!!!!! g_failed_adds_malloc++");
     }
 #else
     (void)success;
@@ -498,11 +530,25 @@ static void print_builder(struct memtier_builder *builder)
 
 static void
 memtier_policy_static_ratio_update_config(struct memtier_memory *memory)
-{}
+{
+#if PRINT_POLICY_LOG_STATISTICS_INFO
+    static atomic_uint_fast16_t counter=0;
+    const uint64_t interval=1000;
+    if (++counter > interval)
+        print_memtier_memory(memory);
+#endif
+}
 
 static void
 memtier_policy_data_hotness_update_config(struct memtier_memory *memory)
-{}
+{
+#if PRINT_POLICY_LOG_STATISTICS_INFO
+    static atomic_uint_fast16_t counter=0;
+    const uint64_t interval=1000;
+    if (++counter > interval)
+        print_memtier_memory(memory);
+#endif
+}
 
 static void
 memtier_empty_post_alloc(uint64_t data, void *addr, size_t size)
@@ -630,7 +676,8 @@ builder_static_create_memory(struct memtier_builder *builder)
     }
     memory->cfg[0].kind = builder->cfg[0].kind;
     memory->cfg[0].kind_ratio = 1.0;
-
+    for (i = 0; i < memory->cfg_size; ++i)
+        log_info("RATIO: tier %d, ratio %f", i, memory->cfg[i].kind_ratio);
     return memory;
 }
 
@@ -799,14 +846,121 @@ failure:
     return NULL;
 }
 
+/*
+ * parse_double -- parses string and returns a double
+ */
+static int parse_double(const char *str, double *dest)
+{
+    char *endptr;
+    int olderrno = errno;
+    errno = 0;
+    double val_ul = strtod(str, &endptr);
+
+    if (endptr == str || errno != 0) {
+        errno = olderrno;
+        return -1;
+    }
+
+    errno = olderrno;
+    *dest = val_ul;
+    return 0;
+}
+
+/*
+ * parse_ull -- parses string and returns an unsigned long long
+ */
+static int parse_ull(const char *str, unsigned long long *dest)
+{
+    if (str[0] == '-') {
+        return -1;
+    }
+
+    char *endptr;
+    int olderrno = errno;
+    errno = 0;
+    unsigned long long val_ul = strtoull(str, &endptr, 0);
+
+    if (endptr == str || errno != 0) {
+        errno = olderrno;
+        return -1;
+    }
+
+    errno = olderrno;
+    *dest = val_ul;
+    return 0;
+}
+
 extern pthread_t pebs_thread;
 
 static struct memtier_memory *
 builder_hot_create_memory(struct memtier_builder *builder)
 {
-    int i;
+    // TODO this function is convoluted and needs simplification!
+    int i, ret;
+    old_time_window_hotness_weight =
+        0.4; // should not stay like this... only for tests and POC
+    // smaller value -> more frequent sampling
+    // 10000 = around 100 samples on *my machine* / sec in matmul test
+    sample_frequency = 10000;
+    pebs_freq_hz = 5.0;
+    // hotness calculation
+    hotness_measure_window = 1000000000; // time window is 1s
+    char *env_var = memkind_get_env("HOTNESS_MEASURE_WINDOW");
+    if (env_var) {
+        ret = parse_ull(env_var, &hotness_measure_window);
+        if (ret) {
+            log_fatal("Wrong value of HOTNESS_MEASURE_WINDOW: %s", env_var);
+            abort();
+        }
+    }
+    env_var = memkind_get_env("SAMPLE_FREQUENCY");
+    if (env_var) {
+        if (env_var[0] == '-') {
+            log_fatal("SAMPLE_FREQUENCY can't be a negative number: %s",
+                      env_var);
+            abort();
+        }
+        ret = parse_double(env_var, &sample_frequency);
+        if (ret) {
+            log_fatal("Wrong value of SAMPLE_FREQUENCY: %s", env_var);
+            abort();
+        }
+    }
+    env_var = memkind_get_env("PEBS_FREQ_HZ");
+    if (env_var) {
+        if (env_var[0] == '-') {
+            log_fatal("PEBS_FREQ_HZ can't be a negative number: %s", env_var);
+            abort();
+        }
+        ret = parse_double(env_var, &pebs_freq_hz);
+        if (ret || pebs_freq_hz == 0) {
+            log_fatal("Wrong value of PEBS_FREQ_HZ: %s", env_var);
+            abort();
+        }
+    }
+    env_var = memkind_get_env("OLD_TIME_WINDOW_HOTNESS_WEIGHT");
+    if (env_var) {
+        if (env_var[0] == '-') {
+            log_fatal(
+                "OLD_TIME_WINDOW_HOTNESS_WEIGHT can't be a negative number: %s",
+                env_var);
+            abort();
+        }
+        ret = parse_double(env_var, &old_time_window_hotness_weight);
+        if (ret) {
+            log_fatal("Wrong value of OLD_TIME_WINDOW_HOTNESS_WEIGHT: %s",
+                      env_var);
+            abort();
+        }
+    }
+    log_info("sample_frequency = %.1f", sample_frequency);
+    log_info("pebs_freq_hz = %.1f", pebs_freq_hz);
+    log_info("hotness_measure_window = %llu", hotness_measure_window);
+    log_info("old_time_window_hotness_weight = %.1f",
+             old_time_window_hotness_weight);
+
     // TODO use some properties? hotness weight should be configurable
-    tachanka_init(OLD_TIME_WINDOW_HOTNESS_WEIGHT, RANKING_BUFFER_SIZE_ELEMENTS);
+    tachanka_init(old_time_window_hotness_weight, RANKING_BUFFER_SIZE_ELEMENTS);
     pebs_init(getpid());
 
     struct memtier_memory *memory =
@@ -835,20 +989,35 @@ builder_hot_create_memory(struct memtier_builder *builder)
         log_fatal("No tier suitable for HOT memory defined.");
         exit(-1);
     }
-    double dram_total_ratio=memory->cfg[memory->hot_tier_id].kind_ratio;
-
+    double hot_total_ratio=memory->cfg[memory->hot_tier_id].kind_ratio;
+    // FIXME multiple memories,
+    // but only single g_hotTierId and g_hotTotalDesiredRatio!
+    g_hotTotalDesiredRatio = hot_total_ratio;
+    g_hotTierId = memory->hot_tier_id;
+    g_totalTiers = memory->cfg_size;
 #if PRINT_POLICY_CREATE_MEMORY_INFO
     struct timespec t;
-    int ret = clock_gettime(CLOCK_MONOTONIC, &t);
+    ret = clock_gettime(CLOCK_MONOTONIC, &t);
     if (ret != 0) {
         log_fatal("Create Memory: ASSERT CREATE FAILURE!\n");
     }
 
     log_info("creates memory [ratio %f], timespec [seconds, nanoseconds]: [%ld, %ld]",
-        dram_total_ratio, t.tv_sec, t.tv_nsec);
+        hot_total_ratio, t.tv_sec, t.tv_nsec);
 #endif
 
-    tachanka_set_dram_total_ratio(dram_total_ratio);
+    tachanka_set_dram_total_ratio(hot_total_ratio, hot_total_ratio);
+
+    // EDIT prepare fallback to static - calculate ratios differently
+    double temp = memory->cfg[0].kind_ratio;
+    memory->cfg[0].kind_ratio = 1;
+    for (i = 1; i < memory->cfg_size; ++i) {
+        memory->cfg[i].kind_ratio = temp / memory->cfg[i].kind_ratio;
+    }
+    // eof prepare fallback to static
+    for (i = 0; i < memory->cfg_size; ++i)
+        log_info("RATIO: tier %d, ratio %f", i, memory->cfg[i].kind_ratio);
+
     return memory;
 }
 
@@ -1095,8 +1264,12 @@ MEMKIND_EXPORT void *memtier_realloc(struct memtier_memory *memory, void *ptr,
         struct memkind *kind = memkind_detect_kind(ptr);
         ptr = memtier_kind_realloc(kind, ptr, size);
         memory->update_cfg(memory);
-
+        // NOTE: new ptr == NULL if size == 0
         return ptr;
+    }
+
+    if (size == 0) {
+        return NULL;
     }
 
     return memtier_malloc(memory, size);
@@ -1105,16 +1278,14 @@ MEMKIND_EXPORT void *memtier_realloc(struct memtier_memory *memory, void *ptr,
 MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
                                           size_t size)
 {
-    size_t old_size = 0u;
     if (size == 0 && ptr != NULL) {
-        old_size = jemk_malloc_usable_size(ptr);
 #ifdef MEMKIND_DECORATION_ENABLED
         if (memtier_kind_free_pre)
             memtier_kind_free_pre(&ptr);
 #endif
-
+        size_t old_size = jemk_malloc_usable_size(ptr);
         if (pol == MEMTIER_POLICY_DATA_HOTNESS) {
-//             unregister_block(ptr);
+    //      unregister_block(ptr);
             EventEntry_t entry = {
                 .type = EVENT_DESTROY_REMOVE,
                 .data.destroyRemoveData = {
@@ -1122,6 +1293,12 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
                 .size = old_size,
                 }
             };
+
+#if CHECK_ADDED_SIZE
+            if (old_size == 0) {
+                log_info("memtier_kind_realloc old_size == 0");
+            }
+#endif
 
             bool success = tachanka_ranking_event_push(&entry);
 #if PRINT_POLICY_LOG_STATISTICS_INFO
@@ -1131,6 +1308,7 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
             } else {
                 g_failed_adds++;
                 g_failed_adds_realloc0++;
+                log_info("!!!!! g_failed_adds_realloc0++");
             }
 #else
             (void)success;
@@ -1140,6 +1318,7 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
         memkind_free(kind, ptr);
         return NULL;
     } else if (ptr == NULL) {
+        if (pol == MEMTIER_POLICY_DATA_HOTNESS) {
             EventEntry_t entry = {
                 .type = EVENT_CREATE_ADD,
                 .data.createAddData = {
@@ -1147,6 +1326,12 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
                     .size = size,
                 }
             };
+
+#if CHECK_ADDED_SIZE
+            if (size == 0) {
+                log_info("memtier_kind_realloc ptr == NULL, new size == 0");
+            }
+#endif
 
             bool success = tachanka_ranking_event_push(&entry);
 #if PRINT_POLICY_LOG_STATISTICS_INFO
@@ -1160,9 +1345,10 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
 #else
         (void)success;
 #endif
+        }
         return memtier_kind_malloc(kind, size);
     }
-    decrement_alloc_size(kind->partition, old_size);
+    decrement_alloc_size(kind->partition, jemk_malloc_usable_size(ptr));
 
     void *n_ptr = memkind_realloc(kind, ptr, size);
     if (pol == MEMTIER_POLICY_DATA_HOTNESS) {
@@ -1177,6 +1363,13 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
                 .sizeNew = size,
             }
         };
+
+#if CHECK_ADDED_SIZE
+        if (size == 0) {
+            log_info("memtier_kind_realloc size == 0");
+        }
+#endif
+
         bool success = tachanka_ranking_event_push(&entry);
 #if PRINT_POLICY_LOG_STATISTICS_INFO
         if (success) {
@@ -1247,7 +1440,9 @@ MEMKIND_EXPORT void memtier_kind_free(memkind_t kind, void *ptr)
             return;
     }
 
+#if PRINT_POLICY_LOG_STATISTICS_INFO
     g_memtier_free_called++;
+#endif
     if (pol == MEMTIER_POLICY_DATA_HOTNESS) {
         // TODO offload to PEBS (ranking_queue) !!! Currently contains race conditions
 //         unregister_block(ptr);
@@ -1267,6 +1462,7 @@ MEMKIND_EXPORT void memtier_kind_free(memkind_t kind, void *ptr)
         } else {
             g_failed_adds++;
             g_failed_adds_free++;
+            log_info("!!!! g_failed_adds_free++");
         }
 #else
         (void)success;
@@ -1291,4 +1487,14 @@ MEMKIND_EXPORT size_t memtier_kind_allocated_size(memkind_t kind)
     size_ret =
         memkind_atomic_increment(g_alloc_size[kind->partition], size_all);
     return (size_ret + size_all);
+}
+
+MEMKIND_EXPORT double
+memtier_kind_get_actual_hot_to_total_allocated_ratio(void) {
+    return g_hotTotalActualRatio;
+}
+
+MEMKIND_EXPORT double
+memtier_kind_get_actual_hot_to_total_desired_ratio(void) {
+    return g_hotTotalDesiredRatio;
 }

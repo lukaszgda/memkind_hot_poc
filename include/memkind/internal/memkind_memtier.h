@@ -228,15 +228,15 @@ int memtier_ctl_set(struct memtier_builder *builder, const char *name,
                     const void *val);
 
 
+double memtier_kind_get_actual_hot_to_total_allocated_ratio(void);
+double memtier_kind_get_actual_hot_to_total_desired_ratio(void);
+
 // DEBUG
 // float get_obj_hotness(int size);
 
 // PEBS
-// smaller value -> more frequent sampling
-// 10000 = around 100 samples on *my machine* / sec in matmul test
-#define SAMPLE_FREQUENCY 10000
-// #define PEBS_FREQ_HZ     20.0
-#define PEBS_FREQ_HZ     5.0
+extern double sample_frequency;
+extern double pebs_freq_hz;
 #define MMAP_DATA_SIZE   8
 
 // critnib
@@ -254,12 +254,10 @@ int memtier_ctl_set(struct memtier_builder *builder, const char *name,
 #define FINALIZE_HASH 0
 
 // hotness calculation
-#define HOTNESS_MEASURE_WINDOW 1000000000ULL
-// time window is 1s
-// #define OLD_TIME_WINDOW_HOTNESS_WEIGHT 0.999
-#define OLD_TIME_WINDOW_HOTNESS_WEIGHT 0.4 // should not stay like this... only for tests and POC
-// #define OLD_TIME_WINDOW_HOTNESS_WEIGHT  0.9 // should not stay like this... only for tests and POC
+extern unsigned long long hotness_measure_window;
+extern double old_time_window_hotness_weight;
 #define RANKING_BUFFER_SIZE_ELEMENTS    1000000 // TODO make tests, add error handling and come up with some sensible value
+#define RANKING_TOUCH_ALL 0
 
 // logging
 #define PEBS_LOG_TO_FILE 0
@@ -270,8 +268,10 @@ int memtier_ctl_set(struct memtier_builder *builder, const char *name,
 #define PRINT_PEBS_NEW_DATA_INFO 0
 #define PRINT_PEBS_TOUCH_INFO 0
 #define PRINT_PEBS_SAMPLES_NUM_INFO 1
+#define PRINT_PEBS_EVENT_INFO 0
 
 #define PRINT_CRITNIB_NEW_BLOCK_REGISTERED_INFO 0
+#define PRINT_CRITNIB_UNREGISTER_BLOCK_INFO 0
 #define PRINT_CRITNIB_TOUCH_INFO 0
 #define PRINT_CRITNIB_REALLOC_INFO 0
 #define PRINT_CRITNIB_NOT_FOUND_ON_TOUCH_WARNING 0
@@ -288,6 +288,14 @@ int memtier_ctl_set(struct memtier_builder *builder, const char *name,
 #define CHECK_ADDED_SIZE 0
 
 #define QUANTIFICATION_ENABLED 0
+#define RANKING_FIXER_ENABLED 1
+#define INTERPOLATED_THRESH 1
+#define FALLBACK_TO_STATIC 1
+
+// when buffer is full, waits until it can re-add elements
+// this feature can negativly impact performance!
+#define ASSURE_RANKING_DELIVERY 0
+#define OFFLOAD_RANKING_OPS_TO_BACKGROUD_THREAD 0
 
 #if QUANTIFICATION_ENABLED
 typedef int quantified_hotness_t;
