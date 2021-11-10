@@ -506,6 +506,7 @@ static void print_memory_statistics(struct memtier_memory *memory) {
     static atomic_uint_fast16_t counter=0;
     if (++counter > PRINT_MEMDUMP_INTERVAL) {
         print_memtier_memory(memory);
+        log_info("g_hotTotalActualRatio: %f", g_hotTotalActualRatio);
         counter=0;
     }
 #endif

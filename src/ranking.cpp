@@ -163,14 +163,12 @@ static double ranking_dequantify_hotness(quantified_hotness_t quantified_hotness
 #endif
 }
 
-#if 1
-// #define TOTAL_COUNTER_POLICY // TODO added for debugging purposes
 // old touch entry definition - as described in design doc
 void ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry,
                                   uint64_t timestamp, double add_hotness)
 {
     //     printf("touches internal internal, timestamp: [%lu]\n", timestamp);
-#ifdef TOTAL_COUNTER_POLICY
+#if TOTAL_COUNTER_POLICY
     if (entry->touchCb)
         entry->touchCb(entry->touchCbArg);
 
@@ -226,17 +224,6 @@ void ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry,
 #endif
 }
 
-#else
-
-void touch_entry(struct ttype *entry, uint64_t timestamp, uint64_t add_hotness)
-{
-    if (entry->touchCb)
-        entry->touchCb(entry->touchCbArg);
-
-    hotness(entry) += add_hotness;
-}
-
-#endif
 
 void ranking_create_internal(ranking_t **ranking, double old_weight)
 {

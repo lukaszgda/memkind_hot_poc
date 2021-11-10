@@ -19,6 +19,7 @@ AWAITING_TIER1=1
 
 state = -1
 values = [[], []]
+g_actuals = []
 
 def print_help():
     print('sample usage:')
@@ -42,6 +43,10 @@ for line in open(filename).read().split('\n'):
         state = AWAITING_TIER0
     elif line == 'MEMKIND_INFO: Tier 1 - memory kind memkind_regular':
         state = AWAITING_TIER1
+    mo = re.findall('g_hotTotalActualRatio: ([0-9\.]+)', line)
+    if mo:
+        val = float(mo[0])
+        g_actuals.append(val)
     mo = re.findall('MEMKIND_INFO: Tier allocated size ([0-9]+)', line)
     if mo:
         val = int(mo[0])
@@ -52,9 +57,9 @@ tier1 = values[1]
 
 ratios = []
 
-for t0, t1 in zip(values[0], values[1]):
+for t0, t1, act in zip(values[0], values[1], g_actuals):
     if t0 != 0 and t1 != 0:
-        ratios.append(t0/(t0+t1))
+        ratios.append((t0/(t0+t1), act))
 
 
 plt.plot(ratios)

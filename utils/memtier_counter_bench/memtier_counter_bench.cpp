@@ -98,8 +98,9 @@ public:
     virtual ~counter_bench_alloc() = default;
 
 protected:
-    static constexpr size_t M_SIZES_SIZE=10;
-    const size_t m_sizes[M_SIZES_SIZE] = { 20, 40, 80, 25, 50, 100, 90, 70, 30, 28};
+    static constexpr size_t M_SIZES_SIZE=5;
+    const size_t m_sizes[M_SIZES_SIZE] = { 20, 40, 80, 25, 50};
+//     const size_t m_sizes[M_SIZES_SIZE] = { 20, 40, 80, 25, 50, 100, 90, 70, 30, 28};
 //     const size_t m_sizes[M_SIZES_SIZE] = { 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024};
     virtual void *bench_alloc(size_t) const = 0;
     virtual void bench_free(void *) const = 0;
@@ -286,7 +287,7 @@ static struct argp_option options[] = {
     {"memkind", 'm', 0, 0, "Benchmark memkind."},
     {"memtier_kind", 'k', 0, 0, "Benchmark memtier_memkind."},
     {"memtier", 'x', 0, 0, "Benchmark memtier_memory - single tier."},
-    {"memtier_multiple", 's', 0, 0, "Benchmark memtier_memory - two tiers, static ratio."},
+    {"memtier_multiple", 's', "int", 0, "Benchmark memtier_memory - two tiers, static ratio."},
     {"memtier_multiple", 'd', "int", 0, "Benchmark memtier_memory - two tiers, dynamic threshold, pmem/dram ratio."},
     {"memtier_multiple", 'p', "int", 0, "Benchmark memtier_memory - two tiers, data hotness, pmem/dram ratio."},
     {"thread", 't', "int", 0, "Threads numbers."},

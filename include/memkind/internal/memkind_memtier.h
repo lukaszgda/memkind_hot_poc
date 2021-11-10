@@ -257,7 +257,7 @@ extern double pebs_freq_hz;
 extern unsigned long long hotness_measure_window;
 extern double old_time_window_hotness_weight;
 #define RANKING_BUFFER_SIZE_ELEMENTS    1000000 // TODO make tests, add error handling and come up with some sensible value
-#define RANKING_TOUCH_ALL 0
+#define RANKING_TOUCH_ALL 1
 
 // logging
 #define PEBS_LOG_TO_FILE 0
@@ -279,7 +279,7 @@ extern double old_time_window_hotness_weight;
 #define PRINT_CRITNIB_NOT_FOUND_ON_REALLOC_WARNING 0
 
 #define PRINT_POLICY_LOG_STATISTICS_INFO 1
-#define PRINT_MEMDUMP_INTERVAL 100
+#define PRINT_MEMDUMP_INTERVAL 0
 #define CRASH_ON_BLOCK_NOT_FOUND 0
 #define PRINT_POLICY_BACKTRACE_INFO 0
 #define PRINT_POLICY_CREATE_MEMORY_INFO 1
@@ -300,6 +300,9 @@ extern double old_time_window_hotness_weight;
 // this feature can negativly impact performance!
 #define ASSURE_RANKING_DELIVERY 0
 #define OFFLOAD_RANKING_OPS_TO_BACKGROUD_THREAD 0
+
+#define TOTAL_COUNTER_POLICY 0 // might be set to 1 for debugging purposes
+
 
 #if QUANTIFICATION_ENABLED
 typedef int quantified_hotness_t;
