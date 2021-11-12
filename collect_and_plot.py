@@ -57,9 +57,12 @@ tier1 = values[1]
 
 ratios = []
 
-for t0, t1, act in zip(values[0], values[1], g_actuals):
-    if t0 != 0 and t1 != 0:
-        ratios.append((t0/(t0+t1), act))
+if len(values[0]) > 0:
+    for t0, t1, act in zip(values[0], values[1], g_actuals):
+        if t0 != 0 and t1 != 0:
+            ratios.append((t0/(t0+t1), act))
+else:
+    ratios = g_actuals
 
 
 plt.plot(ratios)

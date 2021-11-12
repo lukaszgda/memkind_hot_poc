@@ -415,8 +415,9 @@ memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
             break;
         case HOTNESS_NOT_FOUND:
 #if FALLBACK_TO_STATIC
-            // TODO add static ratio handling in other places !!!
+#if PRINT_POLICY_LOG_FALLBACK_TO_STATIC
             log_info("fallback to static!!!");
+#endif
             return memtier_policy_static_ratio_get_kind(memory, size, NULL);
 #else
             dest_tier = memory->hot_tier_id;
@@ -505,7 +506,9 @@ static void print_memory_statistics(struct memtier_memory *memory) {
 #if PRINT_POLICY_LOG_STATISTICS_INFO
     static atomic_uint_fast16_t counter=0;
     if (++counter > PRINT_MEMDUMP_INTERVAL) {
+#if PRINT_POLICY_LOG_DETAILED_MEMORY_INFO
         print_memtier_memory(memory);
+#endif
         log_info("g_hotTotalActualRatio: %f", g_hotTotalActualRatio);
         counter=0;
     }

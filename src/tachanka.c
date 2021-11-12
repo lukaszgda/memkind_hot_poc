@@ -105,11 +105,13 @@ void register_block(uint64_t hash, void *addr, size_t size)
             }
             t = &ttypes[nt];
         }
+#if PRINT_POLICY_LOG_STATISTICS_INFO && PRINT_POLICY_LOG_DETAILED_TYPE_INFO
+        // TODO use memset
         t->n1=0u;
         t->n2=0u;
         t->touchCb = NULL;
         t->touchCbArg = NULL;
-#if PRINT_POLICY_LOG_STATISTICS_INFO
+        // eof TODO
         static atomic_uint_fast64_t counter=0;
         counter++;
         log_info("new type created, total types: %lu", counter);
@@ -345,7 +347,9 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
             ret = HOTNESS_COLD;
         }
     }
+#if PRINT_POLICY_LOG_DETAILED_TYPE_INFO
     else log_info("not found, hash %lu", hash);
+#endif
 
     return ret;
 }
