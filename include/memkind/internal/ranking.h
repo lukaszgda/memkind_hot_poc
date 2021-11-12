@@ -80,3 +80,8 @@ extern void ranking_set_touch_callback(ranking_t *ranking,
                                        struct ttype *type);
 
 size_t ranking_calculate_total_size(ranking_t *ranking);
+
+/// @note should probably be static, but exported for unit tests
+extern double
+ranking_update_coeffs(double *hotness_history_coeffs, double seconds_diff,
+                      double add_hotness);

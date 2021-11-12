@@ -10,6 +10,8 @@ extern "C" {
 #include "asm-generic/int-ll64.h"
 #include "ranking_queue.h"
 
+#include "memkind_memtier.h" // only for config macros
+
 typedef enum TimestampState {
     TIMESTAMP_NOT_SET,
     TIMESTAMP_INIT,
@@ -66,8 +68,6 @@ struct ttype {
     __u64 t1;   // start of current window
     __u64 t0;   // timestamp of last processed data
 
-    double n2;   // add hotness in prev window
-    double n1;   // add hotness in current window
 
     tachanka_touch_callback touchCb;
     void *touchCbArg;
@@ -76,6 +76,15 @@ struct ttype {
     // incorrect hot/cold classification (read without a mutex in ranking_is_hot)
     double f;  // frequency - current
     TimestampState_t timestamp_state;
+#if HOTNESS_POLICY == HOTNESS_POLICY_EXPONENTIAL_COEFFS
+    double hotness_history_coeffs[EXPONENTIAL_COEFFS_NUMBER];
+#elif HOTNESS_POLICY == HOTNESS_POLICY_TIME_WINDOW
+    double n2;   // add hotness in prev window
+    double n1;   // add hotness in current window
+#elif HOTNESS_POLICY == HOTNESS_POLICY_TOTAL_COUNTER
+#else
+#error "Unknown hotness policy!"
+#endif
 };
 
 struct tblock

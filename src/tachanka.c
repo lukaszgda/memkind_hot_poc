@@ -19,6 +19,7 @@
 #include <errno.h>
 #include <stdatomic.h>
 #include <assert.h>
+#include <string.h>
 #include "unistd.h"
 #include <fcntl.h>
 #include <signal.h>
@@ -86,7 +87,9 @@ void register_block(uint64_t hash, void *addr, size_t size)
     if (nt == -1) {
         nt = __sync_fetch_and_add(&ntypes, 1);
         t = &ttypes[nt];
-        bigary_alloc(&ba_ttypes, nt*sizeof(struct ttype));
+        memset(t, 0, sizeof(t[0]));
+
+//         bigary_alloc(&ba_ttypes, nt*sizeof(struct ttype));
         if (nt >= MAXTYPES)
         {
             log_fatal("Too many distinct alloc types");
@@ -108,12 +111,6 @@ void register_block(uint64_t hash, void *addr, size_t size)
         // initialize hotness
         t->f = EXPONENTIAL_COEFFS_NUMBER*HOTNESS_INITIAL_SINGLE_VALUE;
 #if PRINT_POLICY_LOG_STATISTICS_INFO && PRINT_POLICY_LOG_DETAILED_TYPE_INFO
-        // TODO use memset
-        t->n1=0u;
-        t->n2=0u;
-        t->touchCb = NULL;
-        t->touchCbArg = NULL;
-        // eof TODO
         static atomic_uint_fast64_t counter=0;
         counter++;
         log_info("new type created, total types: %lu", counter);
@@ -407,8 +404,6 @@ MEMKIND_EXPORT void touch(void *addr, __u64 timestamp, int from_malloc)
 //             ranking_add(ranking, bl); // first of all, add
     //         hotness=INIT_MALLOC_HOTNESS; TODO this does not work, for now
         } else {
-//             double hotness = 1./total_size ;
-            // TODO init hotness should be adaptive!!!
             // make sth like value * whole size / total size?? this would probably be much better
             // what if new types won't stop appearing?
             // we should adjust for 1. total size of all types and for total number of types
