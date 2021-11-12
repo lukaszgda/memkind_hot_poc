@@ -108,7 +108,6 @@ void register_block(uint64_t hash, void *addr, size_t size)
             }
             t = &ttypes[nt];
         }
-        // initialize hotness
         t->f = EXPONENTIAL_COEFFS_NUMBER*HOTNESS_INITIAL_SINGLE_VALUE;
 #if PRINT_POLICY_LOG_STATISTICS_INFO && PRINT_POLICY_LOG_DETAILED_TYPE_INFO
         static atomic_uint_fast64_t counter=0;
