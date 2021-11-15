@@ -184,7 +184,11 @@ ranking_update_coeffs(double *hotness_history_coeffs, double seconds_diff,
                 EXPONENTIAL_COEFFS_CONMPENSATION_COEFFS[i]*add_hotness;
         else
             hotness_history_coeffs[i] = MAX_DBL;
-        ret += hotness_history_coeffs[i];
+        // check for double overflow - again
+        if (MAX_DBL-ret > hotness_history_coeffs[i])
+            ret += hotness_history_coeffs[i];
+        else
+            ret = MAX_DBL;
     }
 
     return ret;
