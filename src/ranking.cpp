@@ -278,8 +278,14 @@ ranking_calculate_hot_threshold_dram_total_internal(
     double fixed_dram_total_ratio =
         ranking_controller_calculate_fixed_thresh(&ranking->controller,
                                                   dram_total_used_ratio);
-    log_info("controller: ratio adjusted [%f to %f]",
-             dram_total_ratio, fixed_dram_total_ratio);
+#if PRINT_ADJUSTED_RATIO_INFO
+    uint32_t counter=0;
+    if (++counter > PRINT_RATIO_ADJUSTED_INTERVAL) {
+        log_info("controller: ratio adjusted [%f to %f]",
+            dram_total_ratio, fixed_dram_total_ratio);
+        counter = 0;
+    }
+#endif
     dram_total_ratio = fixed_dram_total_ratio;
 
 #endif

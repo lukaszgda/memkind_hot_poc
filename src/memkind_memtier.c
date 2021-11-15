@@ -504,7 +504,7 @@ static void print_memtier_memory(struct memtier_memory *memory)
 
 static void print_memory_statistics(struct memtier_memory *memory) {
 #if PRINT_POLICY_LOG_STATISTICS_INFO
-    static atomic_uint_fast16_t counter=0;
+    static atomic_uint_fast32_t counter=0;
     if (++counter > PRINT_MEMDUMP_INTERVAL) {
 #if PRINT_POLICY_LOG_DETAILED_MEMORY_INFO
         print_memtier_memory(memory);
