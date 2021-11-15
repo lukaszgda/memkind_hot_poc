@@ -181,6 +181,7 @@ static MEMKIND_ATOMIC size_t g_totalTiers=0; // TODO use it for stats acquisitio
 static MEMKIND_ATOMIC size_t g_hotTierId=0;
 static MEMKIND_ATOMIC double g_hotTotalDesiredRatio=0;
 static MEMKIND_ATOMIC double g_hotTotalActualRatio=0;
+static MEMKIND_ATOMIC size_t g_totalSize=0;
 
 /* Declare weak symbols for allocator decorators */
 extern void memtier_kind_malloc_post(struct memkind *, size_t, void **)
@@ -222,6 +223,7 @@ static void update_actual_ratios(size_t total_size) {
             // and mutexes; this code should not have visible, negative effect
             // TODO make sure it's ok!
             total_size = hot_tier_size;
+        g_totalSize=total_size;
         g_hotTotalActualRatio=hot_tier_size/total_size;
 
         tachanka_set_dram_total_ratio(
@@ -313,7 +315,7 @@ static Hotness_e memtier_policy_data_hotness_calculate_hotness_type(uint64_t has
     static atomic_uint_fast16_t counter=0;
     static atomic_uint_fast64_t hotness_counter[3]= { 0 };
     static atomic_uint_fast64_t hotness_alloc_counter[3]= { 0 };
-    const uint64_t interval=1000;
+    const uint64_t interval=PRINT_POLICY_LOG_STATISTICS_INTERVAL;
     if (++counter > interval) {
         struct timespec t;
         int ret = clock_gettime(CLOCK_MONOTONIC, &t);
@@ -903,8 +905,8 @@ builder_hot_create_memory(struct memtier_builder *builder)
         0.4; // should not stay like this... only for tests and POC
     // smaller value -> more frequent sampling
     // 10000 = around 100 samples on *my machine* / sec in matmul test
-    sample_frequency = 10000;
-    pebs_freq_hz = 5.0;
+    sample_frequency = HOTNESS_PEBS_SAMPLING_FREQUENCY;
+    pebs_freq_hz = HOTNESS_PEBS_TREAD_FREQUENCY;
     // hotness calculation
     hotness_measure_window = 1000000000; // time window is 1s
     char *env_var = memkind_get_env("HOTNESS_MEASURE_WINDOW");
@@ -1504,4 +1506,9 @@ memtier_kind_get_actual_hot_to_total_allocated_ratio(void) {
 MEMKIND_EXPORT double
 memtier_kind_get_actual_hot_to_total_desired_ratio(void) {
     return g_hotTotalDesiredRatio;
+}
+
+MEMKIND_EXPORT size_t
+memtier_kind_get_total_size(void) {
+    return g_totalSize;
 }

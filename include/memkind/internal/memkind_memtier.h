@@ -231,6 +231,8 @@ int memtier_ctl_set(struct memtier_builder *builder, const char *name,
 double memtier_kind_get_actual_hot_to_total_allocated_ratio(void);
 double memtier_kind_get_actual_hot_to_total_desired_ratio(void);
 
+size_t memtier_kind_get_total_size(void);
+
 // DEBUG
 // float get_obj_hotness(int size);
 
@@ -279,6 +281,7 @@ extern double old_time_window_hotness_weight;
 #define PRINT_CRITNIB_NOT_FOUND_ON_REALLOC_WARNING 0
 
 #define PRINT_POLICY_LOG_STATISTICS_INFO 1
+#define PRINT_POLICY_LOG_STATISTICS_INTERVAL 80000
 #define PRINT_POLICY_LOG_DETAILED_MEMORY_INFO 0
 #define PRINT_POLICY_LOG_DETAILED_TYPE_INFO 0
 #define PRINT_POLICY_LOG_FALLBACK_TO_STATIC 0
@@ -300,16 +303,68 @@ extern double old_time_window_hotness_weight;
 #define FALLBACK_TO_STATIC 1
 
 #define RANKING_CONTROLLER_ENABLED 1
-#define CONTROLLER_PROPORTIONAL_GAIN 8
-#define CONTROLLER_INTEGRAL_GAIN 0.01
+#define CONTROLLER_PROPORTIONAL_GAIN 20
+// TODO decouple integral gain from HOTNESS_PEBS_TREAD_FREQUENCY !!!!!
+#define CONTROLLER_INTEGRAL_GAIN 5
 
 // when buffer is full, waits until it can re-add elements
 // this feature can negativly impact performance!
 #define ASSURE_RANKING_DELIVERY 0
 #define OFFLOAD_RANKING_OPS_TO_BACKGROUD_THREAD 0
 
-#define TOTAL_COUNTER_POLICY 0 // might be set to 1 for debugging purposes
+// TODO maybe hotness should be recalculated more often than all other
+// pebs operations? add some kind of simple sub-scheduler for this thread?
+#define HOTNESS_PEBS_TREAD_FREQUENCY 50.0
+// #define HOTNESS_PEBS_SAMPLING_FREQUENCY 10000
+#define HOTNESS_PEBS_SAMPLING_FREQUENCY 1000
 
+// ENUM-LIKE #defs
+#define HOTNESS_POLICY_TOTAL_COUNTER 0
+#define HOTNESS_POLICY_TIME_WINDOW 1
+#define HOTNESS_POLICY_EXPONENTIAL_COEFFS 2
+// might be set to 1 for debugging purposes
+
+/// initial hotness equal 0 gives bias
+/// the initial value should be equal to average, long term hotness,
+/// but this one is not known at the moemnt of start
+/// we have to either deal with inaccuracies at the beginning
+/// or find a better way to get rid of the bias
+#define HOTNESS_INITIAL_SINGLE_VALUE 10.0
+/// touch value: its significance is limited to preventing buffer overflow
+#define HOTNESS_TOUCH_SINGLE_VALUE 1.0
+
+static const double EXPONENTIAL_COEFFS_VALS[] = { 0.9, 0.99, 0.999, 0.9999};
+
+#define EXPONENTIAL_COEFFS_NUMBER \
+    ((sizeof(EXPONENTIAL_COEFFS_VALS)/(sizeof(EXPONENTIAL_COEFFS_VALS[0]))))
+
+/// Precalculated coeffs;
+/// delta_hotness_value = touch_hotness*compensation coeff
+/// Goal: to compensate for longer "retention" times
+///
+/// Formulae (in python):
+///
+/// def calculate_t10(c):
+///    return -1/np.log10(c)
+///
+/// def calculate_compensation_coeffs(coeffs):
+///     compensations=[]
+///     for coeff in coeffs:
+///         compensations.append(1/calculate_t10(coeff))
+///     return compensations
+///
+/// compensation coeff:
+///     1/T_10; T10 is the time after which value decreases by 90%
+///
+/// only relative compensation coeff values are relavent,
+/// all coeffs can be multiplied by any arbitrary value, in this case:
+///     21.854345326782836
+static const double
+EXPONENTIAL_COEFFS_CONMPENSATION_COEFFS[EXPONENTIAL_COEFFS_NUMBER] = {
+    1.00000000e+0, 9.53899645e-02, 9.49597036e-03, 9.49169617e-04};
+
+
+#define HOTNESS_POLICY HOTNESS_POLICY_EXPONENTIAL_COEFFS
 
 #if QUANTIFICATION_ENABLED
 typedef int quantified_hotness_t;
