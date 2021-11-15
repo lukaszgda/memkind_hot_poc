@@ -303,8 +303,8 @@ extern double old_time_window_hotness_weight;
 #define FALLBACK_TO_STATIC 1
 
 #define RANKING_CONTROLLER_ENABLED 1
-#define CONTROLLER_PROPORTIONAL_GAIN 20
-#define CONTROLLER_INTEGRAL_GAIN_PER_SECOND 5
+#define CONTROLLER_PROPORTIONAL_GAIN 200
+#define CONTROLLER_INTEGRAL_GAIN_PER_SECOND 50
 
 // when buffer is full, waits until it can re-add elements
 // this feature can negativly impact performance!
