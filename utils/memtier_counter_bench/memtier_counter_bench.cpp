@@ -113,7 +113,7 @@ private:
         v.reserve(arguments.iter_no);
         for (size_t i = 0; i < arguments.iter_no; i++) {
             v.emplace_back(arguments.test_tiering ?
-                bench_alloc_touch(m_sizes[i%M_SIZES_SIZE], (i%5)*(i%5)*(i%5))
+                bench_alloc_touch(m_sizes[i%M_SIZES_SIZE], (i%5)*(i%5)*(i%5), i)
                 : bench_alloc(m_sizes[i%M_SIZES_SIZE]));
         }
         double ratio = memtier_kind_get_actual_hot_to_total_allocated_ratio();
@@ -125,12 +125,12 @@ private:
         return ratio;
     }
 
-    void *bench_alloc_touch(size_t size, size_t touches) const
+    void *bench_alloc_touch(size_t size, size_t touches, size_t step) const
     {
         void *ptr = bench_alloc(size);
         const long long one_second = 1000000000;
         for (size_t i=0; i<touches; ++i)
-            touch(ptr, i*one_second, 0);
+            touch(ptr, (step*touches+i)*one_second/100, 0);
         return ptr;
     }
 };
