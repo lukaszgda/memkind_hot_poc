@@ -304,8 +304,7 @@ extern double old_time_window_hotness_weight;
 
 #define RANKING_CONTROLLER_ENABLED 1
 #define CONTROLLER_PROPORTIONAL_GAIN 20
-// TODO decouple integral gain from HOTNESS_PEBS_TREAD_FREQUENCY !!!!!
-#define CONTROLLER_INTEGRAL_GAIN 5
+#define CONTROLLER_INTEGRAL_GAIN_PER_SECOND 5
 
 // when buffer is full, waits until it can re-add elements
 // this feature can negativly impact performance!
@@ -317,6 +316,9 @@ extern double old_time_window_hotness_weight;
 #define HOTNESS_PEBS_TREAD_FREQUENCY 50.0
 // #define HOTNESS_PEBS_SAMPLING_FREQUENCY 10000
 #define HOTNESS_PEBS_SAMPLING_FREQUENCY 1000
+
+#define CONTROLLER_INTEGRAL_GAIN \
+    (CONTROLLER_INTEGRAL_GAIN_PER_SECOND/HOTNESS_PEBS_TREAD_FREQUENCY)
 
 // ENUM-LIKE #defs
 #define HOTNESS_POLICY_TOTAL_COUNTER 0
