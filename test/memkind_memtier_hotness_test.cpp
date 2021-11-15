@@ -434,11 +434,12 @@ TEST_F(RankingTest, check_hotness_50_50) {
     }
     ASSERT_EQ(BLOCKS_SIZE, 100u);
 #else
-    ASSERT_EQ(thresh_equal, 29);
-    for (size_t i=0; i<30; ++i) {
+    ASSERT_GE(thresh_equal, 27);
+    ASSERT_LE(thresh_equal, 29);
+    for (size_t i=0; i<29; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
     }
-    for (size_t i=30; i<100; ++i) {
+    for (size_t i=29; i<100; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
     }
     ASSERT_EQ(BLOCKS_SIZE, 100u);
@@ -474,12 +475,13 @@ TEST_F(RankingTest, check_hotness_50_50_removed) {
     ASSERT_EQ(BLOCKS_SIZE, 100u);
     ASSERT_EQ(SUBSIZE, 10u);
 #else
-    ASSERT_EQ(thresh_equal, 4);
+    ASSERT_GE(thresh_equal, 3);
+    ASSERT_LE(thresh_equal, 4);
     ASSERT_EQ(thresh_equal, thresh_equal_pmem);
-    for (size_t i=0; i<5; ++i) {
+    for (size_t i=0; i<4; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
     }
-    for (size_t i=5; i<10; ++i) {
+    for (size_t i=4; i<10; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
     }
     ASSERT_EQ(BLOCKS_SIZE, 100u);
@@ -599,18 +601,19 @@ TEST_F(RankingTestSameHotness, check_hotness_50_50) {
     }
     ASSERT_EQ(BLOCKS_SIZE, 100u);
 #else
-    ASSERT_EQ(thresh_equal, 19);
+    ASSERT_GE(thresh_equal, 17);
+    ASSERT_LE(thresh_equal, 19);
     ASSERT_EQ(thresh_equal, thresh_equal_pmem);
-    for (size_t i=0; i<20; ++i) {
+    for (size_t i=0; i<18; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
     }
-    for (size_t i=20; i<50; ++i) {
+    for (size_t i=18; i<50; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
     }
-    for (size_t i=50; i<70; ++i) {
+    for (size_t i=50; i<68; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
     }
-    for (size_t i=70; i<100; ++i) {
+    for (size_t i=68; i<100; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
     }
     ASSERT_EQ(BLOCKS_SIZE, 100u);
@@ -646,12 +649,13 @@ TEST_F(RankingTestSameHotness, check_hotness_50_50_removed) {
     ASSERT_EQ(BLOCKS_SIZE, 100u);
     ASSERT_EQ(SUBSIZE, 10u);
 #else
-    ASSERT_EQ(thresh_equal, 4);
+    ASSERT_GE(thresh_equal, 3);
+    ASSERT_LE(thresh_equal, 4);
     ASSERT_EQ(thresh_equal, thresh_equal_pmem);
-    for (size_t i=0; i<5; ++i) {
+    for (size_t i=0; i<4; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
     }
-    for (size_t i=5; i<10; ++i) {
+    for (size_t i=4; i<10; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), true);
     }
     ASSERT_EQ(BLOCKS_SIZE, 100u);
@@ -1293,10 +1297,10 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
                 memkind_t b_kind = mb.DetectKind();
                 memkind_t c_kind = mc.DetectKind();
 
-                // check that all are on DRAM: initial allocation
+                // initial allocations
                 ASSERT_EQ(a_kind, MEMKIND_DEFAULT);
-                ASSERT_EQ(b_kind, MEMKIND_DEFAULT);
-                ASSERT_EQ(c_kind, MEMKIND_DEFAULT);
+                ASSERT_EQ(b_kind, MEMKIND_REGULAR);
+                ASSERT_EQ(c_kind, MEMKIND_REGULAR);
 
                 for (iterations=0; millis_elapsed < LIMIT_MILLIS; ++iterations) {
                     ma.DoSomeWork();
