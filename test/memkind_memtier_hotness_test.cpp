@@ -24,6 +24,8 @@
 #include "common.h"
 #include "zipf.h"
 
+#define ASSERT_RANGE(x, min, max) ASSERT_GE(x, min); ASSERT_LE(x, max)
+
 void naive_matrix_multiply(int matrix_size, int mul_step,
                                             double *a, double *b, double *c) {
     double s;
@@ -434,8 +436,7 @@ TEST_F(RankingTest, check_hotness_50_50) {
     }
     ASSERT_EQ(BLOCKS_SIZE, 100u);
 #else
-    ASSERT_GE(thresh_equal, 27);
-    ASSERT_LE(thresh_equal, 29);
+    ASSERT_RANGE(thresh_equal, 27, 29);
     for (size_t i=0; i<29; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
     }
@@ -475,8 +476,7 @@ TEST_F(RankingTest, check_hotness_50_50_removed) {
     ASSERT_EQ(BLOCKS_SIZE, 100u);
     ASSERT_EQ(SUBSIZE, 10u);
 #else
-    ASSERT_GE(thresh_equal, 3);
-    ASSERT_LE(thresh_equal, 4);
+    ASSERT_RANGE(thresh_equal, 3, 4);
     ASSERT_EQ(thresh_equal, thresh_equal_pmem);
     for (size_t i=0; i<4; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
@@ -601,8 +601,7 @@ TEST_F(RankingTestSameHotness, check_hotness_50_50) {
     }
     ASSERT_EQ(BLOCKS_SIZE, 100u);
 #else
-    ASSERT_GE(thresh_equal, 17);
-    ASSERT_LE(thresh_equal, 19);
+    ASSERT_RANGE(thresh_equal, 17, 19);
     ASSERT_EQ(thresh_equal, thresh_equal_pmem);
     for (size_t i=0; i<18; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
@@ -649,8 +648,7 @@ TEST_F(RankingTestSameHotness, check_hotness_50_50_removed) {
     ASSERT_EQ(BLOCKS_SIZE, 100u);
     ASSERT_EQ(SUBSIZE, 10u);
 #else
-    ASSERT_GE(thresh_equal, 3);
-    ASSERT_LE(thresh_equal, 4);
+    ASSERT_RANGE(thresh_equal, 3, 4);
     ASSERT_EQ(thresh_equal, thresh_equal_pmem);
     for (size_t i=0; i<4; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
