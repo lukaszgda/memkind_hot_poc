@@ -1943,6 +1943,11 @@ const double ACCURACY=1e-9; /* arbitrary value */ \
     ASSERT_LE(abs_diff, ACCURACY); \
 } while(0)
 
+#define assert_close_array_picewise(a, b, elements) do { \
+    for (size_t i=0; i<elements; ++i) \
+        assert_close(a[i], b[i]); \
+} while(0)
+
 TEST(RankingController, Basic) {
     ranking_controller controller;
     ranking_controller_init_ranking_controller(&controller, 0.7, 1, 0);
@@ -1996,3 +2001,53 @@ TEST(RankingController, Gain) {
 }
 
 // TODO write a test for integral part of controller
+
+TEST(ExponentialCoeffs, SimpleTest) {
+    double values[] = { 1, 1, 1, 1 };
+
+    double t1[] = { 1, 1, 1, 1 };
+    assert_close_array_picewise(values, t1, 4);
+
+    ranking_update_coeffs(values, 1, 0);
+    double t2[] = { 0.9, 0.99, 0.999, 0.9999 };
+    assert_close_array_picewise(values, t2, 4);
+
+    ranking_update_coeffs(values, 1, 0);
+    double t3[] = {
+        0.9*0.9,
+        0.99*0.99,
+        0.999*0.999,
+        0.9999*0.9999
+    };
+    assert_close_array_picewise(values, t3, 4);
+
+    ranking_update_coeffs(values, 1, 0);
+    double t4[] = {
+        0.9*0.9*0.9,
+        0.99*0.99*0.99,
+        0.999*0.999*0.999,
+        0.9999*0.9999*0.9999
+    };
+    assert_close_array_picewise(values, t4, 4);
+
+    ranking_update_coeffs(values, 2, 0);
+    double t5[] = {
+        0.9*0.9*0.9*0.9*0.9,
+        0.99*0.99*0.99*0.99*0.99,
+        0.999*0.999*0.999*0.999*0.999,
+        0.9999*0.9999*0.9999*0.9999*0.9999
+    };
+    assert_close_array_picewise(values, t5, 4);
+
+    ranking_update_coeffs(values, 0, 0);
+    assert_close_array_picewise(values, t5, 4);
+
+    ranking_update_coeffs(values, 0, 1.25);
+    double t6[] = {
+        0.9*0.9*0.9*0.9*0.9+1.00000000e+0*1.25,
+        0.99*0.99*0.99*0.99*0.99+9.53899645e-02*1.25,
+        0.999*0.999*0.999*0.999*0.999+9.49597036e-03*1.25,
+        0.9999*0.9999*0.9999*0.9999*0.9999+9.49169617e-04*1.25
+    };
+    assert_close_array_picewise(values, t6, 4);
+}

@@ -313,6 +313,9 @@ extern double old_time_window_hotness_weight;
 
 // TODO maybe hotness should be recalculated more often than all other
 // pebs operations? add some kind of simple sub-scheduler for this thread?
+//
+// hotness threshold needs to be more up-to-date than pebs touches,
+// it has more influence on ratio
 #define HOTNESS_PEBS_TREAD_FREQUENCY 50.0
 // #define HOTNESS_PEBS_SAMPLING_FREQUENCY 10000
 #define HOTNESS_PEBS_SAMPLING_FREQUENCY 1000
@@ -364,7 +367,6 @@ static const double EXPONENTIAL_COEFFS_VALS[] = { 0.9, 0.99, 0.999, 0.9999};
 static const double
 EXPONENTIAL_COEFFS_CONMPENSATION_COEFFS[EXPONENTIAL_COEFFS_NUMBER] = {
     1.00000000e+0, 9.53899645e-02, 9.49597036e-03, 9.49169617e-04};
-
 
 #define HOTNESS_POLICY HOTNESS_POLICY_EXPONENTIAL_COEFFS
 

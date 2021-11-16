@@ -267,6 +267,9 @@ void *pebs_monitor(void *state)
                 switch (event->type) {
                     case PERF_RECORD_SAMPLE:
                     {
+                        // content of this struct is defined by
+                        // "pe.sample_type = PERF_SAMPLE_ADDR | PERF_SAMPLE_TIME"
+                        // in pebs_init()
                         timestamp = *(__u64*)(data_mmap + sizeof(struct perf_event_header));
                         // 'addr' is the acessed address
                         __u64 addr = *(__u64*)(data_mmap + sizeof(struct perf_event_header) + sizeof(__u64));

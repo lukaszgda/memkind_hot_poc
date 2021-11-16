@@ -163,24 +163,58 @@ static double ranking_dequantify_hotness(quantified_hotness_t quantified_hotness
 #endif
 }
 
+#include <limits>
+
+// TODO should probably be static; exported only for tests
+MEMKIND_EXPORT double
+ranking_update_coeffs(double *hotness_history_coeffs, double seconds_diff,
+                      double add_hotness) {
+    assert(seconds_diff >= 0 && "timestamps are not monotonic!");
+    double ret = 0;
+    for (size_t i=0; i<EXPONENTIAL_COEFFS_NUMBER; ++i) {
+        double temp = pow(EXPONENTIAL_COEFFS_VALS[i], seconds_diff);
+        assert(temp <= 1 && temp >= 0 && "exponential coeff is incorrect!");
+        hotness_history_coeffs[i] *= temp;
+        double add = EXPONENTIAL_COEFFS_CONMPENSATION_COEFFS[i]*add_hotness;
+        assert(add>=0);
+        const double MAX_DBL = std::numeric_limits<double>::max();
+        // check for double overflow CAUTION: don't overflow in checking code!
+        if (MAX_DBL - add > hotness_history_coeffs[i])
+            hotness_history_coeffs[i] +=
+                EXPONENTIAL_COEFFS_CONMPENSATION_COEFFS[i]*add_hotness;
+        else
+            hotness_history_coeffs[i] = MAX_DBL;
+        // check for double overflow - again
+        if (MAX_DBL-ret > hotness_history_coeffs[i])
+            ret += hotness_history_coeffs[i];
+        else
+            ret = MAX_DBL;
+    }
+
+    return ret;
+}
+
 // old touch entry definition - as described in design doc
-void ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry,
+static void
+ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry,
                                   uint64_t timestamp, double add_hotness)
 {
-    //     printf("touches internal internal, timestamp: [%lu]\n", timestamp);
-#if TOTAL_COUNTER_POLICY
-    if (entry->touchCb)
-        entry->touchCb(entry->touchCbArg);
-
-    entry->n1 += add_hotness;
-    entry->f = entry->n1;
-#else
     if (entry->touchCb)
         entry->touchCb(entry->touchCbArg);
 
     assert(add_hotness>=0);
+
+#if HOTNESS_POLICY == HOTNESS_POLICY_TOTAL_COUNTER
+
+    entry->f += add_hotness;
+
+#elif HOTNESS_POLICY == HOTNESS_POLICY_TIME_WINDOW
+
     assert(entry->n1>=0);
     assert(entry->n2>=0);
+    if (entry->touchCb)
+        entry->touchCb(entry->touchCbArg);
+
     entry->n1 += add_hotness;
     entry->t0 = timestamp;
     if (timestamp != 0) {
@@ -221,6 +255,15 @@ void ranking_touch_entry_internal(ranking_t *ranking, struct ttype *entry,
     assert(entry->f >= 0);
     assert(entry->n1 >= 0);
 //     assert(entry->n0 >= 0);
+#elif HOTNESS_POLICY == HOTNESS_POLICY_EXPONENTIAL_COEFFS
+    double seconds_diff = (timestamp - entry->t0)/1000000000.0;
+    entry->t0 = timestamp;
+    assert(seconds_diff >= 0 && "timestamps are not monotonic!");
+    entry->f =
+        ranking_update_coeffs(entry->hotness_history_coeffs, seconds_diff,
+                              add_hotness);
+#else
+    assert(false && "Unknown policy");
 #endif
 }
 
@@ -699,3 +742,4 @@ size_t ranking_calculate_total_size(ranking_t *ranking)
 {
     return wre_calculate_total_size(ranking->entries);
 }
+
