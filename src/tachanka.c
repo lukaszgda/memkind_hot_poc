@@ -105,11 +105,15 @@ void register_block(uint64_t hash, void *addr, size_t size)
             }
             t = &ttypes[nt];
         }
+        // initialize hotness
+        t->f = EXPONENTIAL_COEFFS_NUMBER*HOTNESS_INITIAL_SINGLE_VALUE;
+#if PRINT_POLICY_LOG_STATISTICS_INFO && PRINT_POLICY_LOG_DETAILED_TYPE_INFO
+        // TODO use memset
         t->n1=0u;
         t->n2=0u;
         t->touchCb = NULL;
         t->touchCbArg = NULL;
-#if PRINT_POLICY_LOG_STATISTICS_INFO
+        // eof TODO
         static atomic_uint_fast64_t counter=0;
         counter++;
         log_info("new type created, total types: %lu", counter);
@@ -345,7 +349,9 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
             ret = HOTNESS_COLD;
         }
     }
+#if PRINT_POLICY_LOG_DETAILED_TYPE_INFO
     else log_info("not found, hash %lu", hash);
+#endif
 
     return ret;
 }
@@ -401,14 +407,29 @@ MEMKIND_EXPORT void touch(void *addr, __u64 timestamp, int from_malloc)
 //             ranking_add(ranking, bl); // first of all, add
     //         hotness=INIT_MALLOC_HOTNESS; TODO this does not work, for now
         } else {
-            double hotness = 1e10/total_size ;
+//             double hotness = 1./total_size ;
+            // TODO init hotness should be adaptive!!!
+            // make sth like value * whole size / total size?? this would probably be much better
+            // what if new types won't stop appearing?
+            // we should adjust for 1. total size of all types and for total number of types
+            //
+            // init_value * total_all_types_size * number_of_types/total_size_of_current_type
+            //
+            // this will keep values in range!
+
+            // total_size_all_types: factor that accounts for total allocation
+            // size; used in order to avoid making hotness **0**
+            size_t total_size_all_types = memtier_kind_get_total_size();
+            double hotness =
+                HOTNESS_TOUCH_SINGLE_VALUE*total_size_all_types
+                /(double)total_size ;
             ranking_touch(ranking, t, timestamp, hotness);
         }
     }
 
 #if PRINT_CRITNIB_TOUCH_INFO
     static atomic_uint_fast16_t counter=0;
-    const uint64_t interval=1000;
+    const uint64_t interval=PRINT_POLICY_LOG_STATISTICS_INTERVAL;
     if (++counter > interval) {
         struct timespec t;
         int ret = clock_gettime(CLOCK_MONOTONIC, &t);
