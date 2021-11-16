@@ -313,6 +313,9 @@ extern double old_time_window_hotness_weight;
 
 // TODO maybe hotness should be recalculated more often than all other
 // pebs operations? add some kind of simple sub-scheduler for this thread?
+//
+// hotness threshold needs to be more up-to-date than pebs touches,
+// it has more influence on ratio
 #define HOTNESS_PEBS_TREAD_FREQUENCY 50.0
 // #define HOTNESS_PEBS_SAMPLING_FREQUENCY 10000
 #define HOTNESS_PEBS_SAMPLING_FREQUENCY 1000

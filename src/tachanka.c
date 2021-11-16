@@ -86,10 +86,10 @@ void register_block(uint64_t hash, void *addr, size_t size)
     int nt = critnib_get(hash_to_type, hash);
     if (nt == -1) {
         nt = __sync_fetch_and_add(&ntypes, 1);
+        bigary_alloc(&ba_ttypes, nt*sizeof(struct ttype));
         t = &ttypes[nt];
         memset(t, 0, sizeof(t[0]));
 
-//         bigary_alloc(&ba_ttypes, nt*sizeof(struct ttype));
         if (nt >= MAXTYPES)
         {
             log_fatal("Too many distinct alloc types");
