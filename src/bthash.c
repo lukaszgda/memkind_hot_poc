@@ -228,10 +228,12 @@ static bool is_on_stack(const void* ptr) {
     return ptr >= stack_start && ptr < stack_end;
 }
 
-#if REDUCED_STACK_SEARCH
-static const size_t max_searchable_stack_size=16u;// TODO move
-#else
+#if STACK_RANGE_OPTION == STACK_RANGE_REGULAR
 static const size_t max_searchable_stack_size=160u;// TODO move
+#elif STACK_RANGE_OPTION == STACK_RANGE_REDUCED
+static const size_t max_searchable_stack_size=16u;// TODO move
+#elif STACK_RANGE_OPTION == STACK_RANGE_NO_SEARCH
+static const size_t max_searchable_stack_size=8;// TODO move
 #endif
 static size_t max_diff=0;
 

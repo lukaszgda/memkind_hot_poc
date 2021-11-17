@@ -463,7 +463,9 @@ memtier_policy_data_hotness_post_alloc(uint64_t hash, void *addr, size_t size)
     } else {
         g_failed_adds++;
         g_failed_adds_malloc++;
-        log_info("!!!!! g_failed_adds_malloc++");
+#if PRINT_POLICY_LOG_IMMEDIATE_ADD_FAILURE
+    log_info("!!!!! g_failed_adds_malloc++");
+#endif
     }
 #else
     (void)success;
@@ -1317,7 +1319,9 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
             } else {
                 g_failed_adds++;
                 g_failed_adds_realloc0++;
+#if PRINT_POLICY_LOG_IMMEDIATE_ADD_FAILURE
                 log_info("!!!!! g_failed_adds_realloc0++");
+#endif
             }
 #else
             (void)success;
@@ -1471,7 +1475,9 @@ MEMKIND_EXPORT void memtier_kind_free(memkind_t kind, void *ptr)
         } else {
             g_failed_adds++;
             g_failed_adds_free++;
+#if PRINT_POLICY_LOG_IMMEDIATE_ADD_FAILURE
             log_info("!!!! g_failed_adds_free++");
+#endif
         }
 #else
         (void)success;

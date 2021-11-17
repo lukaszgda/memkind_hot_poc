@@ -250,7 +250,10 @@ extern double pebs_freq_hz;
 // bthash
 #define CUSTOM_BACKTRACE 1
 #define STACK_RANGE 1
-#define REDUCED_STACK_SEARCH 1
+#define STACK_RANGE_NO_SEARCH 0
+#define STACK_RANGE_REDUCED 1
+#define STACK_RANGE_REGULAR 2
+#define STACK_RANGE_OPTION STACK_RANGE_NO_SEARCH
 #define SIMD_INSTRUCTIONS 0
 #define LIB_BINSEARCH 0
 #define FINALIZE_HASH 0
@@ -281,6 +284,7 @@ extern double old_time_window_hotness_weight;
 #define PRINT_CRITNIB_NOT_FOUND_ON_REALLOC_WARNING 0
 
 #define PRINT_POLICY_LOG_STATISTICS_INFO 1
+#define PRINT_POLICY_LOG_IMMEDIATE_ADD_FAILURE 0
 #define PRINT_POLICY_LOG_STATISTICS_INTERVAL 80000
 #define PRINT_POLICY_LOG_DETAILED_MEMORY_INFO 0
 #define PRINT_POLICY_LOG_DETAILED_TYPE_INFO 0
@@ -309,7 +313,7 @@ extern double old_time_window_hotness_weight;
 // when buffer is full, waits until it can re-add elements
 // this feature can negativly impact performance!
 #define ASSURE_RANKING_DELIVERY 0
-#define OFFLOAD_RANKING_OPS_TO_BACKGROUD_THREAD 0
+#define OFFLOAD_RANKING_OPS_TO_BACKGROUD_THREAD 1
 
 // TODO maybe hotness should be recalculated more often than all other
 // pebs operations? add some kind of simple sub-scheduler for this thread?
