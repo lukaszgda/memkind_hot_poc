@@ -50,14 +50,12 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <stddef.h>
-
+#include <sys/mman.h>
+#include "memkind/internal/memkind_arena.h"
 #include "memkind/internal/critnib.h"
+#include "memkind/internal/bigary.h"
 
-// eof pmdk-compat.h
-#include <jemalloc/jemalloc.h>
-#include "memkind/internal/slab_allocator.h"
-#include <assert.h>
-
+// pmdk-compat
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -65,15 +63,6 @@
 #include <pthread.h>
 
 typedef pthread_mutex_t os_mutex_t;
-
-
-// static void *Zalloc(size_t s)
-// {
-// 	void *m = Malloc(s);
-// 	if (m)
-// 		memset(m, 0, s);
-// 	return m;
-// }
 
 #define ERR(x) do fprintf(stderr, x); while(0)
 
@@ -95,8 +84,6 @@ typedef pthread_mutex_t os_mutex_t;
 #define util_fetch_and_or64	__sync_fetch_and_or
 #define util_lssb_index64(x)	((unsigned char)__builtin_ctzll(x))
 #define util_mssb_index64(x)	((unsigned char)(63 - __builtin_clzll(x)))
-#define util_lssb_index32(x)	((unsigned char)__builtin_ctzl(x))
-#define util_mssb_index32(x)	((unsigned char)(31 - __builtin_clzl(x)))
 
 
 #define NOFUNCTION do ; while(0)
@@ -106,7 +93,8 @@ typedef pthread_mutex_t os_mutex_t;
 #define ASSERTne(x, y) ASSERT(x != y)
 #define VALGRIND_ANNOTATE_NEW_MEMORY(p, s) NOFUNCTION
 #define VALGRIND_HG_DRD_DISABLE_CHECKING(p, s) NOFUNCTION
-// eof pmdk-compat.h
+// pmdk-compat end
+
 
 /*
  * A node that has been deleted is left untouched for this many delete
@@ -128,11 +116,18 @@ typedef pthread_mutex_t os_mutex_t;
 #define DELETED_LIFE 16
 
 #define SLICE 4
-#define NIB ((1UL << SLICE) - 1)
+#define NIB ((1ULL << SLICE) - 1)
 #define SLNODES (1 << SLICE)
 
-typedef uintptr_t word;
 typedef unsigned char sh_t;
+typedef uint64_t cind_t;
+typedef cind_t cn_t, cl_t;
+#define LEAF_BIT (1ULL<<(sizeof(cind_t)*8-1))
+
+#define ARRAYSZ(x) (sizeof(x)/sizeof((x)[0]))
+
+#define N(i) (c->nodes[i])
+#define L(i) (c->leaves[(i) * (size_t)c->leaf_stride])
 
 struct critnib_node {
 	/*
@@ -150,83 +145,82 @@ struct critnib_node {
 	 *              +-----+
 	 *               shift
 	 */
-	struct critnib_node *child[SLNODES];
-	word path;
+	cn_t child[SLNODES];
+	uint64_t path;
 	sh_t shift;
 };
 
 struct critnib_leaf {
-	word key;
-	void *value;
+	uint64_t key;
 };
 
 struct critnib {
-	struct critnib_node *root;
+	cn_t root;
 
 	/* pool of freed nodes: singly linked list, next at child[0] */
-	struct critnib_node *deleted_node;
-	struct critnib_leaf *deleted_leaf;
-
+	cn_t deleted_node;
+	const uint64_t *leaves;
+	int leaf_stride;
 	/* nodes removed but not yet eligible for reuse */
-	struct critnib_node *pending_del_nodes[DELETED_LIFE];
-	struct critnib_leaf *pending_del_leaves[DELETED_LIFE];
+	cn_t pending_del_nodes[DELETED_LIFE];
 
 	uint64_t remove_count;
 
+	bigary ba_critnib;
 	os_mutex_t mutex; /* writes/removes */
-	slab_alloc_t allocator_leaves;
-	slab_alloc_t allocator_nodes;
+
+	cn_t unall_node;
+	struct critnib_node nodes[];
 };
 
 /*
  * atomic load
  */
 static void
-load(void *src, void *dst)
+load64(void *src, void *dst)
 {
-	__atomic_load((word *)src, (word *)dst,
+	util_atomic_load_explicit64((uint64_t *)src, (uint64_t *)dst,
 		memory_order_acquire);
 }
 
 static void
-load64(uint64_t *src, uint64_t *dst)
+load_ind(cind_t *src, cind_t *dst)
 {
-	__atomic_load(src, dst, memory_order_acquire);
+	__atomic_load(src, dst,	memory_order_acquire);
 }
 
 /*
  * atomic store
  */
 static void
-store(void *dst, void *src)
+store_ind(cind_t *dst, cind_t src)
 {
-	__atomic_store_n((word *)dst, (word)src,
-		memory_order_release);
+	__atomic_store_n(dst, src, memory_order_release);
 }
 
 /*
  * internal: is_leaf -- check tagged pointer for leafness
  */
 static inline bool
-is_leaf(struct critnib_node *n)
+is_leaf(cn_t n)
 {
-	return (word)n & 1;
+	return n & LEAF_BIT;
 }
 
 /*
  * internal: to_leaf -- untag a leaf pointer
  */
-static inline struct critnib_leaf *
-to_leaf(struct critnib_node *n)
+static cl_t
+to_leaf(cn_t n)
 {
-	return (void *)((word)n & ~1UL);
+	return n & ~LEAF_BIT;
 }
 
 /*
  * internal: path_mask -- return bit mask of a path above a subtree [shift]
  * bits tall
  */
-static inline word
+static inline uint64_t
 path_mask(sh_t shift)
 {
 	return ~NIB << shift;
@@ -236,7 +230,7 @@ path_mask(sh_t shift)
  * internal: slice_index -- return index of child at the given nib
  */
 static inline unsigned
-slice_index(word key, sh_t shift)
+slice_index(uint64_t key, sh_t shift)
 {
 	return (unsigned)((key >> shift) & NIB);
 }
@@ -245,18 +239,18 @@ slice_index(word key, sh_t shift)
  * critnib_new -- allocates a new critnib structure
  */
 struct critnib *
-critnib_new(void)
+critnib_new(const uint64_t *leaves, int leaf_stride)
 {
-// 	struct critnib *c = Zalloc(sizeof(struct critnib)); // TODO jemalloc??
-	struct critnib *c = jemk_malloc(sizeof(struct critnib));
-    memset(c, 0, sizeof(struct critnib));
-	if (!c)
-		return NULL;
+	bigary ba;
+	bigary_init(&ba, BIGARY_DRAM, 0);
+// 	bigary_init(&ba, -1, MAP_ANONYMOUS | MAP_PRIVATE, 0);
+	struct critnib *c = ba.area;
+	c->ba_critnib = ba;
 
-    int ret =
-        slab_alloc_init(&c->allocator_leaves, sizeof(struct critnib_leaf), 0);
-        slab_alloc_init(&c->allocator_nodes, sizeof(struct critnib_node), 0);
-    assert(ret == 0);
+	c->unall_node = 1;
+	c->leaves = leaves;
+	c->leaf_stride = leaf_stride;
+
 	util_mutex_init(&c->mutex);
 
 	VALGRIND_HG_DRD_DISABLE_CHECKING(&c->root, sizeof(c->root));
@@ -267,53 +261,13 @@ critnib_new(void)
 }
 
 /*
- * internal: delete_node -- recursively free (to malloc) a subtree
- */
-static void
-delete_node(struct critnib_node *__restrict n)
-{
-	if (!is_leaf(n)) {
-		for (int i = 0; i < SLNODES; i++) {
-			if (n->child[i])
-				delete_node(n->child[i]);
-		}
-
-		slab_alloc_free(n);
-	} else {
-		slab_alloc_free(to_leaf(n));
-	}
-}
-
-/*
  * critnib_delete -- destroy and free a critnib struct
  */
 void
 critnib_delete(struct critnib *c)
 {
-	if (c->root)
-		delete_node(c->root);
-    slab_alloc_destroy(&c->allocator_leaves);
-    slab_alloc_destroy(&c->allocator_nodes);
 	util_mutex_destroy(&c->mutex);
-
-	for (struct critnib_node *m = c->deleted_node; m; ) {
-		struct critnib_node *mm = m->child[0];
-		slab_alloc_free(m);
-		m = mm;
-	}
-
-	for (struct critnib_leaf *k = c->deleted_leaf; k; ) {
-		struct critnib_leaf *kk = k->value;
-		slab_alloc_free(k);
-		k = kk;
-	}
-
-	for (int i = 0; i < DELETED_LIFE; i++) {
-		slab_alloc_free(c->pending_del_nodes[i]);
-		slab_alloc_free(c->pending_del_leaves[i]);
-	}
-
-	jemk_free(c);
+	bigary_destroy(&c->ba_critnib);
 }
 
 /*
@@ -325,73 +279,35 @@ critnib_delete(struct critnib *c)
  * to within the critnib structure.
  */
 static void
-free_node(struct critnib *__restrict c, struct critnib_node *__restrict n)
+free_node(struct critnib *__restrict c, cn_t n)
 {
 	if (!n)
 		return;
 
 	ASSERT(!is_leaf(n));
-	n->child[0] = c->deleted_node;
+	N(n).child[0] = c->deleted_node;
 	c->deleted_node = n;
 }
 
 /*
  * internal: alloc_node -- allocate a node from our pool or from malloc
  */
-static struct critnib_node *
+static cn_t
 alloc_node(struct critnib *__restrict c)
 {
-	if (!c->deleted_node) {
-		struct critnib_node *n = slab_alloc_malloc(&c->allocator_nodes);
-		if (n == NULL)
-			ERR("!Malloc");
+	cn_t n = c->deleted_node;
 
+	if (!n) {
+		cn_t n = c->unall_node++;
+		bigary_alloc(&c->ba_critnib, ((void*)&c->nodes[n+1]) - (void*)c);
+		//if (n >= ARRAYSZ(c->nodes))
+		//	return 0;
 		return n;
 	}
 
-	struct critnib_node *n = c->deleted_node;
-
-	c->deleted_node = n->child[0];
-	VALGRIND_ANNOTATE_NEW_MEMORY(n, sizeof(*n));
+	c->deleted_node = N(n).child[0];
 
 	return n;
-}
-
-/*
- * internal: free_leaf -- free (to internal pool, not malloc) a leaf.
- *
- * See free_node().
- */
-static void
-free_leaf(struct critnib *__restrict c, struct critnib_leaf *__restrict k)
-{
-	if (!k)
-		return;
-
-	k->value = c->deleted_leaf;
-	c->deleted_leaf = k;
-}
-
-/*
- * internal: alloc_leaf -- allocate a leaf from our pool or from malloc
- */
-static struct critnib_leaf *
-alloc_leaf(struct critnib *__restrict c)
-{
-	if (!c->deleted_leaf) {
-		struct critnib_leaf *k = slab_alloc_malloc(&c->allocator_leaves);
-		if (k == NULL)
-			ERR("!Malloc");
-
-		return k;
-	}
-
-	struct critnib_leaf *k = c->deleted_leaf;
-
-	c->deleted_leaf = k->value;
-	VALGRIND_ANNOTATE_NEW_MEMORY(k, sizeof(*k));
-
-	return k;
 }
 
 /*
@@ -405,25 +321,15 @@ alloc_leaf(struct critnib *__restrict c)
  * Takes a global write lock but doesn't stall any readers.
  */
 int
-critnib_insert(struct critnib *c, word key, void *value, int update)
+critnib_insert(struct critnib *c, int leaf)
 {
 	util_mutex_lock(&c->mutex);
 
-	struct critnib_leaf *k = alloc_leaf(c);
-	if (!k) {
-		util_mutex_unlock(&c->mutex);
+	uint64_t key = L(leaf);
 
-		return ENOMEM;
-	}
+	cn_t kn = leaf | LEAF_BIT;
 
-	VALGRIND_HG_DRD_DISABLE_CHECKING(k, sizeof(struct critnib_leaf));
-
-	k->key = key;
-	k->value = value;
-
-	struct critnib_node *kn = (void *)((word)k | 1);
-
-	struct critnib_node *n = c->root;
+	cn_t n = c->root;
 	if (!n) {
 		c->root = kn;
 
@@ -432,66 +338,51 @@ critnib_insert(struct critnib *c, word key, void *value, int update)
 		return 0;
 	}
 
-	struct critnib_node **parent = &c->root;
-	struct critnib_node *prev = c->root;
+	cn_t *parent = &c->root;
+	cn_t prev = c->root;
 
-	while (n && !is_leaf(n) && (key & path_mask(n->shift)) == n->path) {
+	while (n && !is_leaf(n) && (key & path_mask(N(n).shift)) == N(n).path) {
 		prev = n;
-		parent = &n->child[slice_index(key, n->shift)];
+		parent = &N(n).child[slice_index(key, N(n).shift)];
 		n = *parent;
 	}
 
 	if (!n) {
 		n = prev;
-		store(&n->child[slice_index(key, n->shift)], kn);
+		store_ind(&N(n).child[slice_index(key, N(n).shift)], kn);
 
 		util_mutex_unlock(&c->mutex);
 
 		return 0;
 	}
 
-	word path = is_leaf(n) ? to_leaf(n)->key : n->path;
+	uint64_t path = is_leaf(n) ? L(to_leaf(n)) : N(n).path;
 	/* Find where the path differs from our key. */
-	word at = path ^ key;
+	uint64_t at = path ^ key;
 	if (!at) {
-		ASSERT(is_leaf(n));
-		free_leaf(c, to_leaf(kn));
-
-		if (update) {
-			to_leaf(n)->value = value;
-			util_mutex_unlock(&c->mutex);
-			return 0;
-		} else {
-			util_mutex_unlock(&c->mutex);
-			return EEXIST;
-		}
+		util_mutex_unlock(&c->mutex);
+		return EEXIST;
 	}
 
 	/* and convert that to an index. */
-#if __SIZEOF_SIZE_T__ == 8
 	sh_t sh = util_mssb_index64(at) & (sh_t)~(SLICE - 1);
-#else
-	sh_t sh = util_mssb_index32(at) & (sh_t)~(SLICE - 1);
-#endif
 
-	struct critnib_node *m = alloc_node(c);
+	cn_t m = alloc_node(c);
 	if (!m) {
-		free_leaf(c, to_leaf(kn));
-
 		util_mutex_unlock(&c->mutex);
 
 		return ENOMEM;
 	}
-	VALGRIND_HG_DRD_DISABLE_CHECKING(m, sizeof(struct critnib_node));
+	//VALGRIND_HG_DRD_DISABLE_CHECKING(m, sizeof(struct critnib_node));
 
 	for (int i = 0; i < SLNODES; i++)
-		m->child[i] = NULL;
+		N(m).child[i] = 0;
 
-	m->child[slice_index(key, sh)] = kn;
-	m->child[slice_index(path, sh)] = n;
-	m->shift = sh;
-	m->path = key & path_mask(sh);
-	store(parent, m);
+	N(m).child[slice_index(key, sh)] = kn;
+	N(m).child[slice_index(path, sh)] = n;
+	N(m).shift = sh;
+	N(m).path = key & path_mask(sh);
+	store_ind(parent, m);
 
 	util_mutex_unlock(&c->mutex);
 
@@ -499,30 +390,27 @@ critnib_insert(struct critnib *c, word key, void *value, int update)
 }
 
 /*
- * critnib_remove -- delete a key from the critnib structure, return its value
+ * critnib_remove -- delete a key from the critnib structure, return its index
  */
-void *
-critnib_remove(struct critnib *c, word key)
+int
+critnib_remove(struct critnib *c, uint64_t key)
 {
-	struct critnib_leaf *k;
-	void *value = NULL;
+	cl_t k;
 
 	util_mutex_lock(&c->mutex);
 
-	struct critnib_node *n = c->root;
+	cn_t n = c->root;
 	if (!n)
 		goto not_found;
 
-	word del = util_fetch_and_add64(&c->remove_count, 1) % DELETED_LIFE;
+	uint64_t del = util_fetch_and_add64(&c->remove_count, 1) % DELETED_LIFE;
 	free_node(c, c->pending_del_nodes[del]);
-	free_leaf(c, c->pending_del_leaves[del]);
-	c->pending_del_nodes[del] = NULL;
-	c->pending_del_leaves[del] = NULL;
+	c->pending_del_nodes[del] = 0;
 
 	if (is_leaf(n)) {
 		k = to_leaf(n);
-		if (k->key == key) {
-			store(&c->root, NULL);
+		if (L(k) == key) {
+			store_ind(&c->root, 0);
 			goto del_leaf;
 		}
 
@@ -532,14 +420,14 @@ critnib_remove(struct critnib *c, word key)
 	 * n and k are a parent:child pair (after the first iteration); k is the
 	 * leaf that holds the key we're deleting.
 	 */
-	struct critnib_node **k_parent = &c->root;
-	struct critnib_node **n_parent = &c->root;
-	struct critnib_node *kn = n;
+	cn_t *k_parent = &c->root;
+	cn_t *n_parent = &c->root;
+	cn_t kn = n;
 
 	while (!is_leaf(kn)) {
 		n_parent = k_parent;
 		n = kn;
-		k_parent = &kn->child[slice_index(key, kn->shift)];
+		k_parent = &N(kn).child[slice_index(key, N(kn).shift)];
 		kn = *k_parent;
 
 		if (!kn)
@@ -547,15 +435,15 @@ critnib_remove(struct critnib *c, word key)
 	}
 
 	k = to_leaf(kn);
-	if (k->key != key)
+	if (L(k) != key)
 		goto not_found;
 
-	store(&n->child[slice_index(key, n->shift)], NULL);
+	store_ind(&N(n).child[slice_index(key, N(n).shift)], 0);
 
 	/* Remove the node if there's only one remaining child. */
 	int ochild = -1;
 	for (int i = 0; i < SLNODES; i++) {
-		if (n->child[i]) {
+		if (N(n).child[i]) {
 			if (ochild != -1)
 				goto del_leaf;
 
@@ -565,16 +453,16 @@ critnib_remove(struct critnib *c, word key)
 
 	ASSERTne(ochild, -1);
 
-	store(n_parent, n->child[ochild]);
+	store_ind(n_parent, N(n).child[ochild]);
 	c->pending_del_nodes[del] = n;
 
 del_leaf:
-	value = k->value;
-	c->pending_del_leaves[del] = k;
+	util_mutex_unlock(&c->mutex);
+	return k;
 
 not_found:
 	util_mutex_unlock(&c->mutex);
-	return value;
+	return -1;
 }
 
 /*
@@ -587,17 +475,17 @@ not_found:
  * Counterintuitively, it's pointless to return the most current answer,
  * we need only one that was valid at any point after the call started.
  */
-void *
-critnib_get(struct critnib *c, word key)
+int
+critnib_get(struct critnib *__restrict c, uint64_t key)
 {
 	uint64_t wrs1, wrs2;
-	void *res;
+	int res;
 
 	do {
-		struct critnib_node *n;
+		cn_t n;
 
 		load64(&c->remove_count, &wrs1);
-		load(&c->root, &n);
+		load_ind(&c->root, &n);
 
 		/*
 		 * critbit algorithm: dive into the tree, looking at nothing but
@@ -605,11 +493,14 @@ critnib_get(struct critnib *c, word key)
 		 * going wrong way if our path is missing, but that's ok...
 		 */
 		while (n && !is_leaf(n))
-			load(&n->child[slice_index(key, n->shift)], &n);
+		{
+			struct critnib_node *node = &N(n);
+			load_ind(&node->child[slice_index(key, node->shift)], &n);
+		}
 
 		/* ... as we check it at the end. */
-		struct critnib_leaf *k = to_leaf(n);
-		res = (n && k->key == key) ? k->value : NULL;
+		cl_t k = to_leaf(n);
+		res = (n && L(k) == key) ? k : -1;
 		load64(&c->remove_count, &wrs2);
 	} while (wrs1 + DELETED_LIFE <= wrs2);
 
@@ -617,21 +508,21 @@ critnib_get(struct critnib *c, word key)
 }
 
 /*
- * internal: find_predecessor -- return the rightmost leaf in a subtree
+ * internal: find_successor -- return the rightmost value in a subtree
  */
-static struct critnib_leaf *
-find_predecessor(struct critnib_node *__restrict n)
+static int
+find_successor(struct critnib *__restrict c, cn_t n)
 {
 	while (1) {
 		int nib;
 		for (nib = NIB; nib >= 0; nib--)
-			if (n->child[nib])
+			if (N(n).child[nib])
 				break;
 
 		if (nib < 0)
-			return NULL;
+			return -1;
 
-		n = n->child[nib];
+		n = N(n).child[nib];
 		if (is_leaf(n))
 			return to_leaf(n);
 	}
@@ -640,16 +531,16 @@ find_predecessor(struct critnib_node *__restrict n)
 /*
  * internal: find_le -- recursively search <= in a subtree
  */
-static struct critnib_leaf *
-find_le(struct critnib_node *__restrict n, word key)
+static int
+find_le(struct critnib *__restrict c, cn_t n, uint64_t key)
 {
 	if (!n)
-		return NULL;
+		return -1;
 
-	if (is_leaf(n))
-	{
-		struct critnib_leaf *k = to_leaf(n);
-		return (k->key <= key) ? k : NULL;
+	if (is_leaf(n)) {
+		cl_t k = to_leaf(n);
+
+		return (L(k) <= key) ? k : -1;
 	}
 
 	/*
@@ -659,28 +550,28 @@ find_le(struct critnib_node *__restrict n, word key)
 	 * that shift points at the nib's lower rather than upper edge, so it
 	 * needs to be masked away as well.
 	 */
-	if ((key ^ n->path) >> (n->shift) & ~NIB) {
+	if ((key ^ N(n).path) >> (N(n).shift) & ~NIB) {
 		/*
 		 * subtree is too far to the left?
 		 * -> its rightmost value is good
 		 */
-		if (n->path < key)
-			return find_predecessor(n);
+		if (N(n).path < key)
+			return find_successor(c, n);
 
 		/*
 		 * subtree is too far to the right?
 		 * -> it has nothing of interest to us
 		 */
-		return NULL;
+		return -1;
 	}
 
-	unsigned nib = slice_index(key, n->shift);
+	unsigned nib = slice_index(key, N(n).shift);
 	/* recursive call: follow the path */
 	{
-		struct critnib_node *m;
-		load(&n->child[nib], &m);
-		struct critnib_leaf *k = find_le(m, key);
-		if (k)
+		cn_t m;
+		load_ind(&N(n).child[nib], &m);
+		int k = find_le(c, m, key);
+		if (k != -1)
 			return k;
 	}
 
@@ -690,18 +581,18 @@ find_le(struct critnib_node *__restrict n, word key)
 	 * need to dive into any but the first non-null, though.
 	 */
 	for (; nib > 0; nib--) {
-		struct critnib_node *m;
-		load(&n->child[nib - 1], &m);
+		cn_t m;
+		load_ind(&N(n).child[nib - 1], &m);
 		if (m) {
 			n = m;
 			if (is_leaf(n))
 				return to_leaf(n);
 
-			return find_predecessor(n);
+			return find_successor(c, n);
 		}
 	}
 
-	return NULL;
+	return -1;
 }
 
 /*
@@ -709,144 +600,48 @@ find_le(struct critnib_node *__restrict n, word key)
  *
  * Same guarantees as critnib_get().
  */
-void *
-critnib_find_le(struct critnib *c, word key)
+int
+critnib_find_le(struct critnib *c, uint64_t key)
 {
 	uint64_t wrs1, wrs2;
-	void *res;
+	int res;
 
 	do {
 		load64(&c->remove_count, &wrs1);
-		struct critnib_node *n; /* avoid a subtle TOCTOU */
-		load(&c->root, &n);
-		struct critnib_leaf *k = n ? find_le(n, key) : NULL;
-		res = k ? k->value : NULL;
+		cn_t n; /* avoid a subtle TOCTOU */
+		load_ind(&c->root, &n);
+		res = n ? find_le(c, n, key) : -1;
 		load64(&c->remove_count, &wrs2);
 	} while (wrs1 + DELETED_LIFE <= wrs2);
 
 	return res;
 }
 
-/*
- * internal: find_successor -- return the rightmost leaf in a subtree
- */
-static struct critnib_leaf *
-find_successor(struct critnib_node *__restrict n)
+static int
+iter(struct critnib *c, cn_t n, int (*func)(int k))
 {
-	while (1) {
-		int nib;
-		for (nib = 0; nib <= NIB; nib++)
-			if (n->child[nib])
-				break;
-
-		if (nib > NIB)
-			return NULL;
-
-		n = n->child[nib];
-		if (is_leaf(n))
-			return to_leaf(n);
-	}
-}
-
-/*
- * internal: find_ge -- recursively search >= in a subtree
- */
-static struct critnib_leaf *
-find_ge(struct critnib_node *__restrict n, word key)
-{
-	if (!n)
-		return NULL;
-
 	if (is_leaf(n))
-	{
-		struct critnib_leaf *k = to_leaf(n);
-		return (k->key >= key) ? k : NULL;
+		return func(to_leaf(n));
+
+	for (int i=0; i < SLNODES; i++) {
+		cn_t m = N(n).child[i];
+		if (m)
+			if (iter(c, m, func))
+				return 1;
 	}
-
-	if ((key ^ n->path) >> (n->shift) & ~NIB) {
-		if (n->path > key)
-			return find_successor(n);
-
-		return NULL;
-	}
-
-	unsigned nib = slice_index(key, n->shift);
-	{
-		struct critnib_node *m;
-		load(&n->child[nib], &m);
-		struct critnib_leaf *k = find_ge(m, key);
-		if (k)
-			return k;
-	}
-
-	for (; nib < NIB; nib++) {
-		struct critnib_node *m;
-		load(&n->child[nib + 1], &m);
-		if (m) {
-			n = m;
-			if (is_leaf(n))
-				return to_leaf(n);
-
-			return find_successor(n);
-		}
-	}
-
-	return NULL;
+	return 0;
 }
 
 /*
- * critnib_find -- parametrized query, returns 1 if found
+ * critnib_iter -- visit the whole struct, calling func() for every leaf
+ *
+ * If func() returns 1, the walk is aborted.
  */
-int
-critnib_find(struct critnib *c, uintptr_t key, enum find_dir_t dir,
-	uintptr_t *rkey, void **rvalue)
+void
+critnib_iter(struct critnib *c, int (*func)(int leaf))
 {
-	uint64_t wrs1, wrs2;
-	struct critnib_leaf *k;
-	uintptr_t _rkey;
-	void **_rvalue;
-
-	/* <42 ≡ ≤41 */
-	if (dir < -1) {
-		if (!key)
-			return 0;
-		key--;
-	} else if (dir > +1) {
-		if (key == -1)
-			return 0;
-		key++;
-	}
-
-	do {
-		load64(&c->remove_count, &wrs1);
-		struct critnib_node *n;
-		load(&c->root, &n);
-
-		if (dir < 0)
-			k = find_le(n, key);
-		else if (dir > 0)
-			k = find_ge(n, key);
-		else {
-			while (n && !is_leaf(n))
-				load(&n->child[slice_index(key, n->shift)], &n);
-
-			struct critnib_leaf *kk = to_leaf(n);
-			k = (n && kk->key == key) ? kk : NULL;
-		}
-		if (k) {
-			_rkey = k->key;
-			_rvalue = k->value;
-		}
-		load64(&c->remove_count, &wrs2);
-	} while (wrs1 + DELETED_LIFE <= wrs2);
-
-	if (k) {
-		if (rkey)
-			*rkey = _rkey;
-		if (rvalue)
-		*rvalue = _rvalue;
-		return 1;
-	}
-
-	return 0;
+	util_mutex_lock(&c->mutex);
+	if (c->root)
+		iter(c, c->root, func);
+	util_mutex_unlock(&c->mutex);
 }
