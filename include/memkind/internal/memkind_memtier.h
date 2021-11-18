@@ -261,6 +261,9 @@ extern double pebs_freq_hz;
 // hotness calculation
 extern unsigned long long hotness_measure_window;
 extern double old_time_window_hotness_weight;
+
+#define DEFAULT_HOTNESS_MEASURE_WINDOW  1000000000 // time window is 1s
+#define DEFAULT_OLD_HOTNESS_WINDOW_WEIGHT  0.4 // time window is 1s
 #define RANKING_BUFFER_SIZE_ELEMENTS    1000000 // TODO make tests, add error handling and come up with some sensible value
 #define RANKING_TOUCH_ALL 0
 
@@ -321,6 +324,8 @@ extern double old_time_window_hotness_weight;
 // hotness threshold needs to be more up-to-date than pebs touches,
 // it has more influence on ratio
 #define HOTNESS_PEBS_TREAD_FREQUENCY 50.0
+// smaller value -> more frequent sampling
+// 10000 = around 100 samples on *my machine* / sec in matmul test
 // #define HOTNESS_PEBS_SAMPLING_FREQUENCY 10000
 #define HOTNESS_PEBS_SAMPLING_FREQUENCY 1000
 

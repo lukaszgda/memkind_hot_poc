@@ -904,13 +904,11 @@ builder_hot_create_memory(struct memtier_builder *builder)
     // TODO this function is convoluted and needs simplification!
     int i, ret;
     old_time_window_hotness_weight =
-        0.4; // should not stay like this... only for tests and POC
-    // smaller value -> more frequent sampling
-    // 10000 = around 100 samples on *my machine* / sec in matmul test
+        DEFAULT_OLD_HOTNESS_WINDOW_WEIGHT;
     sample_frequency = HOTNESS_PEBS_SAMPLING_FREQUENCY;
     pebs_freq_hz = HOTNESS_PEBS_TREAD_FREQUENCY;
     // hotness calculation
-    hotness_measure_window = 1000000000; // time window is 1s
+    hotness_measure_window = DEFAULT_HOTNESS_MEASURE_WINDOW;
     char *env_var = memkind_get_env("HOTNESS_MEASURE_WINDOW");
     if (env_var) {
         ret = parse_ull(env_var, &hotness_measure_window);
@@ -965,7 +963,6 @@ builder_hot_create_memory(struct memtier_builder *builder)
     log_info("old_time_window_hotness_weight = %.1f",
              old_time_window_hotness_weight);
 
-    // TODO use some properties? hotness weight should be configurable
     tachanka_init(old_time_window_hotness_weight, RANKING_BUFFER_SIZE_ELEMENTS);
     pebs_init(getpid());
 
