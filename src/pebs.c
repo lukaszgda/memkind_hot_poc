@@ -158,7 +158,7 @@ void *pebs_monitor(void *state)
 
         EventEntry_t event;
         bool pop_success;
-        while (true) {
+        for (int i=0; i<HOTNESS_RANKING_EVENT_ITERATIONS_PER_CYCLE; ++i) {
             pop_success = tachanka_ranking_event_pop(&event);
             if (!pop_success)
                 break;
