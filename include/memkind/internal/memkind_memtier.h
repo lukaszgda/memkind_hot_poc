@@ -261,7 +261,7 @@ extern double pebs_freq_hz;
 // hotness calculation
 extern unsigned long long hotness_measure_window;
 extern double old_time_window_hotness_weight;
-#define RANKING_BUFFER_SIZE_ELEMENTS    1000000 // TODO make tests, add error handling and come up with some sensible value
+#define RANKING_BUFFER_SIZE_ELEMENTS    1000 // TODO make tests, add error handling and come up with some sensible value
 #define RANKING_TOUCH_ALL 0
 
 // logging
@@ -312,6 +312,12 @@ extern double old_time_window_hotness_weight;
 #define CONTROLLER_PROPORTIONAL_GAIN 200
 #define CONTROLLER_INTEGRAL_GAIN_PER_SECOND 50
 
+// TODO temporary fix for issue - background thread overload
+// as a result of overload, threshold was not calculated
+// value is arbitrary and is only here until a better fix is proposed
+// (e.g. based on time)
+#define MAX_RANKING_EVENTS_PER_NOMINAL_SECOND (RANKING_BUFFER_SIZE_ELEMENTS*2)
+
 // when buffer is full, waits until it can re-add elements
 // this feature can negativly impact performance!
 #define ASSURE_RANKING_DELIVERY 0
@@ -323,6 +329,8 @@ extern double old_time_window_hotness_weight;
 // hotness threshold needs to be more up-to-date than pebs touches,
 // it has more influence on ratio
 #define HOTNESS_PEBS_TREAD_FREQUENCY 10.0
+#define HOTNESS_RANKING_EVENT_ITERATIONS_PER_CYCLE \
+    (MAX_RANKING_EVENTS_PER_NOMINAL_SECOND/HOTNESS_PEBS_TREAD_FREQUENCY)
 // #define HOTNESS_PEBS_SAMPLING_FREQUENCY 10000
 #define HOTNESS_PEBS_SAMPLING_FREQUENCY 1000
 
