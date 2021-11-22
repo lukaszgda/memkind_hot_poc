@@ -16,6 +16,8 @@
 #include <vector>
 #include <atomic>
 #include <iomanip>
+#include <random>
+#include "../test/zipf.h"
 
 class counter_bench_alloc;
 
@@ -288,60 +290,110 @@ static int parse_opt(int key, char *arg, struct argp_state *state)
     return 0;
 }
 
-static struct argp_option options[] = {
-    {"memkind", 'm', 0, 0, "Benchmark memkind."},
-    {"memtier_kind", 'k', 0, 0, "Benchmark memtier_memkind."},
-    {"memtier", 'x', 0, 0, "Benchmark memtier_memory - single tier."},
-    {"memtier_multiple", 's', "int", 0, "Benchmark memtier_memory - two tiers, static ratio."},
-    {"memtier_multiple", 'd', "int", 0, "Benchmark memtier_memory - two tiers, dynamic threshold, pmem/dram ratio."},
-    {"memtier_multiple", 'p', "int", 0, "Benchmark memtier_memory - two tiers, data hotness, pmem/dram ratio."},
-    {"thread", 't', "int", 0, "Threads numbers."},
-    {"runs", 'r', "int", 0, "Benchmark run numbers."},
-    {"iterations", 'i', "int", 0, "Benchmark iteration numbers."},
-    {"test_tiering", 'g', 0, 0, "Test tiering in addition to malloc overhead."},
-    {0}};
+// static struct argp_option options[] = {
+//     {"memkind", 'm', 0, 0, "Benchmark memkind."},
+//     {"memtier_kind", 'k', 0, 0, "Benchmark memtier_memkind."},
+//     {"memtier", 'x', 0, 0, "Benchmark memtier_memory - single tier."},
+//     {"memtier_multiple", 's', "int", 0, "Benchmark memtier_memory - two tiers, static ratio."},
+//     {"memtier_multiple", 'd', "int", 0, "Benchmark memtier_memory - two tiers, dynamic threshold, pmem/dram ratio."},
+//     {"memtier_multiple", 'p', "int", 0, "Benchmark memtier_memory - two tiers, data hotness, pmem/dram ratio."},
+//     {"thread", 't', "int", 0, "Threads numbers."},
+//     {"runs", 'r', "int", 0, "Benchmark run numbers."},
+//     {"iterations", 'i', "int", 0, "Benchmark iteration numbers."},
+//     {"test_tiering", 'g', 0, 0, "Test tiering in addition to malloc overhead."},
+//     {0}};
 // clang-format on
 
-static struct argp argp = {options, parse_opt, nullptr, nullptr};
+// static struct argp argp = {options, parse_opt, nullptr, nullptr};
+
+class Type {
+public:
+    Type(size_t size, double accessProbability) :
+        size(size), accessProbability(accessProbability) {}
+    size_t size;
+    double accessProbability; // should be distributed 0-1
+};
+
+class TypeFactory {
+    size_t maxSize, prob_coeff; // TODO upgrade prob_coeff
+public:
+    TypeFactory(size_t maxSize) : maxSize(maxSize) {
+//         std::random_device rd;
+//         std::mt19937 gen(rd());
+//         zipf_distribution<> zipf(max_val);
+    }
+    Type CreateType() {
+//         TODO optimize it - create what can be created in constructor
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        zipf_distribution<> zipf_size(maxSize);
+        double max_prob=1e6;
+        zipf_distribution<> zipf_prob((size_t)max_prob); // round max_prob down
+        size_t size = zipf_size(gen);
+        double probability = zipf_prob(gen)/max_prob;
+
+        return Type(size, probability);
+    }
+};
+
+class GetVsSetAccess {
+    double getPercentage;
+    enum class GetSet {
+        GET,
+        SET
+    };
+public:
+    GetVsSetAccess(double get_percentage) : getPercentage(get_percentage) {}
+    GetSet Generate() {
+        // TODO generate random variables
+    }
+}
 
 int main(int argc, char *argv[])
 {
-    struct BenchArgs arguments = {
-        .bench = nullptr,
-        .thread_no = 0,
-        .run_no = 1,
-        .iter_no = 10000000 };
 
-    argp_parse(&argp, argc, argv, 0, 0, &arguments);
-    RunRet run_ret =
-        arguments.bench->run(arguments);
-    double time_per_op = run_ret.averageTime;
-    double actual_ratio = run_ret.averageDramToTotalRatio;
-    std::cout << "Mean milliseconds per operation:" << time_per_op << std::endl;
-
-    for (auto &d : run_ret.singleRatios) {
-        // FIXME the ratio history is weird and incorrect!!!!
-        // there MUST be an error in how the allocated memory is tracked
+    int n=100;
+    size_t iterations_multiplier = 10000;
+//     TypeFactory factory(256);
+    TypeFactory factory(1024);
+    // TODO handle somehow max number of types
+    std::vector<Type> types;
+    types.reserve(n);
+    for (int i=0; i<n; ++i) {
+        types.push_back(factory.CreateType());
         std::cout
-            << "Single run ratio:  "
-            << std::fixed << std::setprecision(6) << d << std::endl;
+            << "Type [size/probability] : [" << types.back().size
+            << "/" << types.back().accessProbability << "]" << std::endl;
     }
-    std::cout
-        << "actual|desired DRAM/TOTAL ratio: "
-        << std::fixed << std::setprecision(6) << actual_ratio
-        << " | "
-        << memtier_kind_get_actual_hot_to_total_desired_ratio()
-        << std::endl;
+
+
+//     struct BenchArgs arguments = {
+//         .bench = nullptr,
+//         .thread_no = 0,
+//         .run_no = 1,
+//         .iter_no = 10000000 };
+//
+//     argp_parse(&argp, argc, argv, 0, 0, &arguments);
+//     RunRet run_ret =
+//         arguments.bench->run(arguments);
+//     double time_per_op = run_ret.averageTime;
+//     double actual_ratio = run_ret.averageDramToTotalRatio;
+//     std::cout << "Mean milliseconds per operation:" << time_per_op << std::endl;
+//
+//     for (auto &d : run_ret.singleRatios) {
+//         FIXME the ratio history is weird and incorrect!!!!
+//         there MUST be an error in how the allocated memory is tracked
+//         std::cout
+//             << "Single run ratio:  "
+//             << std::fixed << std::setprecision(6) << d << std::endl;
+//     }
+//     std::cout
+//         << "actual|desired DRAM/TOTAL ratio: "
+//         << std::fixed << std::setprecision(6) << actual_ratio
+//         << " | "
+//         << memtier_kind_get_actual_hot_to_total_desired_ratio()
+//         << std::endl;
 
     return 0;
 }
 
-class Type {
-    //
-    size_t size;
-    double probability; // should be distributed 0-1
-};
-
-class TypeFactory {
-    //
-};
