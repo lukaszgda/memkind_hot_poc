@@ -98,8 +98,8 @@ typedef struct AggregatedHotness {
 
 static bool is_hotter_agg_hot(const void *a, const void *b)
 {
-    int a_hot = ((AggregatedHotness_t *)a)->quantifiedHotness;
-    int b_hot = ((AggregatedHotness_t *)b)->quantifiedHotness;
+    quantified_hotness_t a_hot = ((AggregatedHotness_t *)a)->quantifiedHotness;
+    quantified_hotness_t b_hot = ((AggregatedHotness_t *)b)->quantifiedHotness;
     return a_hot > b_hot;
 }
 
