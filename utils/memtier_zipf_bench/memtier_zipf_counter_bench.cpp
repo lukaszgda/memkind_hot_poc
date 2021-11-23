@@ -306,23 +306,50 @@ static int parse_opt(int key, char *arg, struct argp_state *state)
 
 // static struct argp argp = {options, parse_opt, nullptr, nullptr};
 
-class Type {
+// Interface for data generation
+class DataGenerator {
 public:
-    Type(size_t size, double accessProbability) :
-        size(size), accessProbability(accessProbability) {}
-    size_t size;
-    double accessProbability; // should be distributed 0-1
+    virtual char Generate() = 0;
 };
 
-class TypeFactory {
+class DataSink {
+public:
+    virtual void Sink(char c) = 0;
+};
+
+class AllocationType {
+    char *data;
+    size_t size;
+    double accessProbability; // should be distributed 0-1
+public:
+    AllocationType(size_t size, double accessProbability) :
+        data(nullptr), size(size), accessProbability(accessProbability) {}
+    void Reallocate() {
+        if (data)
+            free(data);
+        data = static_cast<char*>(malloc(size));
+        memset(data, 0, size);
+    }
+    void GenerateSet(DataGenerator &gen) {
+        assert(data && "data not initialized!");
+        for (size_t i=0; i < size; ++i)
+            data[i] = gen.Generate();
+    }
+    void GenerateGet(DataSink &sink) {
+        for (size_t i=0; i < size; ++i)
+            sink.Sink(data[i]);
+    }
+};
+
+class AllocationTypeFactory {
     size_t maxSize, prob_coeff; // TODO upgrade prob_coeff
 public:
-    TypeFactory(size_t maxSize) : maxSize(maxSize) {
+    AllocationTypeFactory(size_t maxSize) : maxSize(maxSize) {
 //         std::random_device rd;
 //         std::mt19937 gen(rd());
 //         zipf_distribution<> zipf(max_val);
     }
-    Type CreateType() {
+    AllocationType CreateType() {
 //         TODO optimize it - create what can be created in constructor
         std::random_device rd;
         std::mt19937 gen(rd());
@@ -332,22 +359,30 @@ public:
         size_t size = zipf_size(gen);
         double probability = zipf_prob(gen)/max_prob;
 
-        return Type(size, probability);
+        return AllocationType(size, probability);
     }
 };
 
-class GetVsSetAccess {
+class AccessType {
     double getPercentage;
-    enum class GetSet {
+public:
+    enum class Type {
         GET,
         SET
     };
-public:
-    GetVsSetAccess(double get_percentage) : getPercentage(get_percentage) {}
-    GetSet Generate() {
+    AccessType(double get_percentage) : getPercentage(get_percentage) {}
+    Type Generate() {
         // TODO generate random variables
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_real_distribution<double> dist(1);
+        double val = dist(gen);
+
+        return val > getPercentage ? Type::SET : Type::GET;
     }
-}
+};
+
+#define CHECK_TEST 1
 
 int main(int argc, char *argv[])
 {
@@ -355,17 +390,58 @@ int main(int argc, char *argv[])
     int n=100;
     size_t iterations_multiplier = 10000;
 //     TypeFactory factory(256);
-    TypeFactory factory(1024);
+    AllocationTypeFactory factory(1024);
     // TODO handle somehow max number of types
-    std::vector<Type> types;
+    std::vector<AllocationType> types;
     types.reserve(n);
     for (int i=0; i<n; ++i) {
         types.push_back(factory.CreateType());
+#if CHECK_TEST
         std::cout
             << "Type [size/probability] : [" << types.back().size
             << "/" << types.back().accessProbability << "]" << std::endl;
+#endif
     }
+    AccessType accessType(0.8);
+#if CHECK_TEST
+    const int ITERATIONS = 1000;
+    // TEST GetVsSetAccess
+    size_t gets=0, sets=0;
+    for (int i=0; i<ITERATIONS; ++i) {
+        switch (accessType.Generate()) {
+            case AccessType::Type::GET:
+                ++gets;
+            case AccessType::Type::SET:
+                ++sets;
+        }
+    }
+    std::cout
+        << "gets/sets|total: " << gets << "/" << sets << "|" << ITERATIONS
+        << std::endl;
+#endif
+    // all data printed
 
+    // try generating accesses
+    // TODO when reallocs?????
+    size_t TEST_ITERATIONS = 3000;
+    size_t PER_TYPE_ITERATIONS = 100;
+//     size_t TYPES = 3000;
+    for (size_t i=0; i<TEST_ITERATIONS; ++i)
+        for (auto &type : types) {
+            // TODO reallocate
+            for (size_t j = 0; j < PER_TYPE_ITERATIONS; ++j) {
+                // TODO generate access
+                switch (accessType.Generate()) {
+                    case AccessType::Type::GET:
+                        // TODO
+                        break;
+                    case AccessType::Type::SET:
+                        // TODO
+                        break;
+                }
+            }
+                // TODO realloc
+        }
 
 //     struct BenchArgs arguments = {
 //         .bench = nullptr,
