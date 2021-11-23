@@ -290,22 +290,6 @@ static int parse_opt(int key, char *arg, struct argp_state *state)
     return 0;
 }
 
-// static struct argp_option options[] = {
-//     {"memkind", 'm', 0, 0, "Benchmark memkind."},
-//     {"memtier_kind", 'k', 0, 0, "Benchmark memtier_memkind."},
-//     {"memtier", 'x', 0, 0, "Benchmark memtier_memory - single tier."},
-//     {"memtier_multiple", 's', "int", 0, "Benchmark memtier_memory - two tiers, static ratio."},
-//     {"memtier_multiple", 'd', "int", 0, "Benchmark memtier_memory - two tiers, dynamic threshold, pmem/dram ratio."},
-//     {"memtier_multiple", 'p', "int", 0, "Benchmark memtier_memory - two tiers, data hotness, pmem/dram ratio."},
-//     {"thread", 't', "int", 0, "Threads numbers."},
-//     {"runs", 'r', "int", 0, "Benchmark run numbers."},
-//     {"iterations", 'i', "int", 0, "Benchmark iteration numbers."},
-//     {"test_tiering", 'g', 0, 0, "Test tiering in addition to malloc overhead."},
-//     {0}};
-// clang-format on
-
-// static struct argp argp = {options, parse_opt, nullptr, nullptr};
-
 // Interface for data generation
 class DataGenerator {
 public:
@@ -317,37 +301,121 @@ public:
     virtual void Sink(char c) = 0;
 };
 
+/// The purpose of this class is to avoid optimising out calculations
+/// by providing a simple way to use data
+class SummatorSink : public DataSink {
+    size_t sum=0;
+public:
+    void Sink(char c) {
+        sum += (size_t)c;
+    }
+    ~SummatorSink() {
+        std::cout << "Sink sum: " << sum << std::endl;
+    }
+};
+
+/// The purpose of this class is to avoid optimising out calculations
+/// by providing a simple way to use data
+class RandomInitializedGenerator : public DataGenerator {
+
+    std::vector<char> data;
+    size_t idx;
+
+public:
+
+    RandomInitializedGenerator(size_t len) : idx(0) {
+        data.reserve(len);
+        std::random_device rd;
+//         std::uniform_int_distribution<char> uniform_char(0, 0xFF);
+        std::uniform_int_distribution<char> uniform_char;
+        for (size_t i=0; i<len; ++i) {
+            data.push_back(uniform_char(rd));
+        }
+    }
+
+    char Generate() {
+        size_t nidx = (idx+1)%data.size();
+        return data[nidx];
+    }
+};
+
+// What now: add two child classes that allocate data using different policies
+// data should be allocated from memory,
+// single memory should be created for all types
+
+// how to account for operations common for static ratio
+//
+// TODO right now, there are singletons in memkind_memtier
+// and actually creating multiple memories would use common structures
+// underneath, making all results worthless
+//
+// THIS SHOULD BE FIXED!
+
+#include <memory>
+
 class AllocationType {
     char *data;
     size_t size;
     double accessProbability; // should be distributed 0-1
+    std::shared_ptr<memtier_memory> memory;
+
 public:
-    AllocationType(size_t size, double accessProbability) :
-        data(nullptr), size(size), accessProbability(accessProbability) {}
+
+    AllocationType(size_t size,
+                   double accessProbability,
+                   std::shared_ptr<memtier_memory> memory) :
+        data(nullptr),
+        size(size),
+        accessProbability(accessProbability),
+        memory(memory) {}
+
     void Reallocate() {
         if (data)
-            free(data);
-        data = static_cast<char*>(malloc(size));
+            memtier_free(data);
+        data = static_cast<char*>(memtier_malloc(memory.get(), size));
         memset(data, 0, size);
     }
+
     void GenerateSet(DataGenerator &gen) {
         assert(data && "data not initialized!");
         for (size_t i=0; i < size; ++i)
             data[i] = gen.Generate();
     }
+
     void GenerateGet(DataSink &sink) {
         for (size_t i=0; i < size; ++i)
             sink.Sink(data[i]);
+    }
+
+    size_t GetSize() {
+        return size;
+    }
+
+    double GetAccessProbability() {
+        return accessProbability;
     }
 };
 
 class AllocationTypeFactory {
     size_t maxSize, prob_coeff; // TODO upgrade prob_coeff
+    std::shared_ptr<memtier_memory> memory; // TODO initialize memory
 public:
-    AllocationTypeFactory(size_t maxSize) : maxSize(maxSize) {
-//         std::random_device rd;
-//         std::mt19937 gen(rd());
-//         zipf_distribution<> zipf(max_val);
+    AllocationTypeFactory(
+        size_t maxSize, memtier_policy_t policy, size_t pmem_dram_ratio) :
+            maxSize(maxSize) {
+        struct memtier_builder *m_tier_builder = memtier_builder_new(policy);
+
+        memtier_builder_add_tier(m_tier_builder, MEMKIND_DEFAULT, 1);
+        memtier_builder_add_tier(m_tier_builder,
+                                 MEMKIND_REGULAR,
+                                 pmem_dram_ratio);
+        memory =
+            std::shared_ptr<memtier_memory>(
+                memtier_builder_construct_memtier_memory(m_tier_builder),
+                [](struct memtier_memory *m) {
+                    memtier_delete_memtier_memory(m);
+                });
+        memtier_builder_delete(m_tier_builder);
     }
     AllocationType CreateType() {
 //         TODO optimize it - create what can be created in constructor
@@ -359,47 +427,47 @@ public:
         size_t size = zipf_size(gen);
         double probability = zipf_prob(gen)/max_prob;
 
-        return AllocationType(size, probability);
+        return AllocationType(size, probability, memory);
     }
 };
 
 class AccessType {
     double getPercentage;
+    std::random_device rd;
+    std::shared_ptr<std::mt19937> gen;// TODO fixme
+    std::shared_ptr<std::uniform_real_distribution<double>> dist;
 public:
     enum class Type {
         GET,
         SET
     };
-    AccessType(double get_percentage) : getPercentage(get_percentage) {}
+    AccessType(double get_percentage) : getPercentage(get_percentage) {
+        gen = std::make_shared<std::mt19937>(rd());
+        dist = std::make_shared<std::uniform_real_distribution<double>>(0, 1);
+    }
     Type Generate() {
-        // TODO generate random variables
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_real_distribution<double> dist(1);
-        double val = dist(gen);
-
+        double val = (*dist)(*gen);
         return val > getPercentage ? Type::SET : Type::GET;
     }
 };
 
 #define CHECK_TEST 1
 
-int main(int argc, char *argv[])
-{
+struct RunInfo {
+    size_t nTypes;
+};
 
-    int n=100;
-    size_t iterations_multiplier = 10000;
-//     TypeFactory factory(256);
-    AllocationTypeFactory factory(1024);
+/// @return duration of allocations and accesses in milliseconds
+uint64_t run_test(AllocationTypeFactory &factory, const RunInfo &info) {
     // TODO handle somehow max number of types
     std::vector<AllocationType> types;
-    types.reserve(n);
-    for (int i=0; i<n; ++i) {
+    types.reserve(info.nTypes);
+    for (size_t i=0; i<info.nTypes; ++i) {
         types.push_back(factory.CreateType());
 #if CHECK_TEST
         std::cout
-            << "Type [size/probability] : [" << types.back().size
-            << "/" << types.back().accessProbability << "]" << std::endl;
+            << "Type [size/probability] : [" << types.back().GetSize()
+            << "/" << types.back().GetAccessProbability() << "]" << std::endl;
 #endif
     }
     AccessType accessType(0.8);
@@ -411,8 +479,10 @@ int main(int argc, char *argv[])
         switch (accessType.Generate()) {
             case AccessType::Type::GET:
                 ++gets;
+                break;
             case AccessType::Type::SET:
                 ++sets;
+                break;
         }
     }
     std::cout
@@ -426,24 +496,70 @@ int main(int argc, char *argv[])
     size_t TEST_ITERATIONS = 3000;
     size_t PER_TYPE_ITERATIONS = 100;
 //     size_t TYPES = 3000;
-    for (size_t i=0; i<TEST_ITERATIONS; ++i)
-        for (auto &type : types) {
-            // TODO reallocate
-            for (size_t j = 0; j < PER_TYPE_ITERATIONS; ++j) {
+    size_t AUX_BUFFER_SIZE=1024;
+    SummatorSink sink;
+    RandomInitializedGenerator gen(AUX_BUFFER_SIZE);
+
+    auto start = std::chrono::system_clock::now();
+
+    for (size_t i=0; i<TEST_ITERATIONS; ++i) {
+        // reallocate all types
+        for (auto &type : types)
+            type.Reallocate();
+        // touch all types TODO ideally, they should be touched at random...
+        for (size_t j = 0; j < PER_TYPE_ITERATIONS; ++j) {
+            for (auto &type : types) {
                 // TODO generate access
                 switch (accessType.Generate()) {
                     case AccessType::Type::GET:
-                        // TODO
+                        type.GenerateGet(sink);
                         break;
                     case AccessType::Type::SET:
-                        // TODO
+                        type.GenerateSet(gen);
                         break;
                 }
             }
                 // TODO realloc
         }
+    }
+    auto end = std::chrono::system_clock::now();
 
-//     struct BenchArgs arguments = {
+    using namespace std::chrono;
+    uint64_t execution_time_millis =
+        duration_cast<milliseconds>(end-start).count();
+
+    return execution_time_millis;
+}
+
+int main(int argc, char *argv[])
+{
+
+    RunInfo info;
+
+    // hardcoded test constants
+    info.nTypes = 1000;
+
+    assert(argc == 2 &&
+        "Incorrect number of arguments specified, "
+        "please specify 1 argument: [static|hotness]"); // FIXME temporary
+
+    // FIXME temporary arg parsing...
+    memtier_policy_t policy = argv[1] == std::string("static") ?
+        MEMTIER_POLICY_STATIC_RATIO
+        : argv[1] == std::string("hotness") ?
+            MEMTIER_POLICY_DATA_HOTNESS
+            : MEMTIER_POLICY_MAX_VALUE;
+
+    assert(policy != MEMTIER_POLICY_MAX_VALUE &&
+        "please specify a known policy [hotness|static]");
+
+    AllocationTypeFactory factory(1024, policy, 8);
+
+    uint64_t millis = run_test(factory, info);
+
+    std::cout << "Measured execution time: " << millis << std::endl;
+
+    //     struct BenchArgs arguments = {
 //         .bench = nullptr,
 //         .thread_no = 0,
 //         .run_no = 1,
