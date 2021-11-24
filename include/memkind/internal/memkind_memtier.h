@@ -294,7 +294,7 @@ extern double old_time_window_hotness_weight;
 
 #define PRINT_MEMDUMP_INTERVAL 10000
 #define PRINT_RATIO_ADJUSTED_INTERVAL 100
-#define PRINT_TOUCH_STATISTICS_INTERVAL 1000
+#define PRINT_TOUCH_STATISTICS_INTERVAL 100000
 #define CRASH_ON_BLOCK_NOT_FOUND 0
 #define PRINT_POLICY_BACKTRACE_INFO 0
 #define PRINT_POLICY_CREATE_MEMORY_INFO 1
@@ -309,8 +309,10 @@ extern double old_time_window_hotness_weight;
 #define FALLBACK_TO_STATIC 1
 
 #define RANKING_CONTROLLER_ENABLED 1
-#define CONTROLLER_PROPORTIONAL_GAIN 200
-#define CONTROLLER_INTEGRAL_GAIN_PER_SECOND 50
+// #define CONTROLLER_PROPORTIONAL_GAIN 200
+// #define CONTROLLER_INTEGRAL_GAIN_PER_SECOND 50
+#define CONTROLLER_PROPORTIONAL_GAIN 0.3
+#define CONTROLLER_INTEGRAL_GAIN_PER_SECOND 0.1
 
 // TODO temporary fix for issue - background thread overload
 // as a result of overload, threshold was not calculated

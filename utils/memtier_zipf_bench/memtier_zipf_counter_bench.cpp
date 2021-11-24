@@ -17,6 +17,7 @@
 #include <atomic>
 #include <iomanip>
 #include <random>
+#include <memkind/internal/pebs.h>
 #include "../test/zipf.h"
 
 class counter_bench_alloc;
@@ -417,11 +418,13 @@ public:
         assert(data && "data not initialized!");
         for (size_t i=0; i < size; ++i)
             data[i] = gen.Generate();
+         GenerateTouch();
     }
 
     void GenerateGet(DataSink &sink) {
         for (size_t i=0; i < size; ++i)
             sink.Sink(data[i]);
+         GenerateTouch();
     }
 
     size_t GetSize() {
@@ -464,7 +467,7 @@ public:
         size_t size = zipf_size(gen);
         double probability = zipf_prob(gen)/max_prob;
 
-        return AllocationType(size, probability, 0.5, memory);
+        return AllocationType(size, probability, 0.1, memory);
     }
 };
 
@@ -563,7 +566,7 @@ ExecResults run_test(AllocationTypeFactory &factory, const RunInfo &info) {
                         break;
                 }
             }
-                // TODO realloc
+            // TODO realloc
         }
     }
     auto end = std::chrono::system_clock::now();
@@ -583,10 +586,12 @@ ExecResults run_test(AllocationTypeFactory &factory, const RunInfo &info) {
 int main(int argc, char *argv[])
 {
 
+    // avoid interactions between manual touches and hardware touches
+    pebs_set_process_hardware_touches(false);
     RunInfo info;
 
     // hardcoded test constants
-    info.nTypes = 1000;
+    info.nTypes = 5000;
 
     assert(argc == 2 &&
         "Incorrect number of arguments specified, "

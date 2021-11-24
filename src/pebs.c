@@ -35,6 +35,8 @@ static size_t g_queue_counter_free=0;
 static size_t g_queue_counter_touch=0;
 extern struct ttype ttypes[];
 
+static bool shouldProcessTouches=true;
+
 // static uint64_t timespec_diff_millis(const struct timespec *tnew, const struct timespec *told) {
 //     uint64_t diff_s = tnew->tv_sec - told->tv_sec;
 //     uint64_t tnew_ns = tnew->tv_nsec;
@@ -307,9 +309,10 @@ void *pebs_monitor(void *state)
                         // losing single malloc should not cause issues,
                         // so we are just ignoring buffer overflows
 //                         (void)tachanka_ranking_event_push(&entry); // TODO
-                        touch(entry.data.touchData.address,
-                            entry.data.touchData.timestamp, 0 /*called from malloc*/);
-                            g_queue_counter_touch++;
+                        if (shouldProcessTouches)
+                            touch(entry.data.touchData.address,
+                                entry.data.touchData.timestamp, 0 /*called from malloc*/);
+                                g_queue_counter_touch++;
 
 //                         touch((void*)addr, timestamp, 0 /* from malloc */);
 //                         printf("touched, timestamp: [%llu], from malloc [0]\n", timestamp);
@@ -507,4 +510,9 @@ MEMKIND_EXPORT void pebs_fork(pid_t pid)
     log_info("PEBS: fork: %i", pid);
 #endif
     pebs_init(pid);
+}
+
+
+MEMKIND_EXPORT void pebs_set_process_hardware_touches(bool process) {
+    shouldProcessTouches = process;
 }

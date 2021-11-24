@@ -25,7 +25,8 @@ ranking_controller_set_expected_dram_total(ranking_controller *controller,
 MEMKIND_EXPORT double
 ranking_controller_calculate_fixed_thresh(ranking_controller *controller,
                                           double found_dram_total) {
-
+// #define TRANSFORM_ENABLED
+#ifdef TRANSFORM_ENABLED
     // case: found thresh too low
     // |---a----------|--------b--------------|
     // |---c--|----------------d--------------|
@@ -56,7 +57,11 @@ ranking_controller_calculate_fixed_thresh(ranking_controller *controller,
         // corner case - the formula below gives 0/0 (indeterminate form)
         return found_dram_total; // no need to fix ratio
     double e = (t>=0 ? b/a : a/b)*t;
-
+#else
+    double a=controller->coldTierSize;
+    double c = 1-found_dram_total;
+    double e=a-c;
+#endif
     // euler forward integration with timestep = 1
     controller->integrated_error += e;  // it's really this simple
 
