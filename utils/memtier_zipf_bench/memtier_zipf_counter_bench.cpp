@@ -354,6 +354,17 @@ public:
 
 #include <memory>
 
+static bool g_pushEvents=true;
+
+static uint64_t clock_bench_time() {
+    struct timespec tv;
+//     int ret = clock_gettime(CLOCK_THREAD_CPUTIME_ID, &tv);
+    int ret = clock_gettime(CLOCK_MONOTONIC, &tv);
+    assert (ret == 0);
+    return tv.tv_sec*1000 + tv.tv_nsec/1000000;
+}
+
+
 class Timestamp {
     uint64_t pebsTimesamp;
 public:
@@ -370,6 +381,10 @@ public:
 };
 
 static Timestamp g_timestamp;
+static uint64_t g_excludedTicks=0;
+static uint64_t g_totalAccessesX0xFFFF=0;
+static uint64_t g_totalMallocs=0;
+
 
 class AllocationType {
     char *data;
@@ -382,15 +397,25 @@ class AllocationType {
     std::shared_ptr<memtier_memory> memory;
 
     void GenerateTouch() {
+        static uint16_t accesses_0xFFFF=0;
+        if (((++accesses_0xFFFF) & 0xffff) == 0)
+            ++g_totalAccessesX0xFFFF;
         cumulatedTouchCoeff += touchFrequency;
-        while (cumulatedTouchCoeff>1) {
-            // touch - very important stuff
-            EventEntry_t entry;
-            entry.type = EVENT_TOUCH;
-            entry.data.touchData.address = data;
-            entry.data.touchData.timestamp = g_timestamp.GetPebsTimestamp();
-            (void)tachanka_ranking_event_push(&entry);
-            --cumulatedTouchCoeff;
+        if(cumulatedTouchCoeff>1) {
+            uint64_t start = clock_bench_time();
+            while (cumulatedTouchCoeff>1) {
+                // touch - very important stuff
+                EventEntry_t entry;
+                entry.type = EVENT_TOUCH;
+                entry.data.touchData.address = data;
+                entry.data.touchData.timestamp = g_timestamp.GetPebsTimestamp();
+                if (g_pushEvents)
+                    (void)tachanka_ranking_event_push(&entry);
+                --cumulatedTouchCoeff;
+            }
+            uint64_t end = clock_bench_time();
+            uint64_t excluded_span = end-start;
+            g_excludedTicks += excluded_span;
         }
     }
 
@@ -408,6 +433,7 @@ public:
         memory(memory) {}
 
     void Reallocate() {
+        ++g_totalMallocs;
         if (data)
             memtier_free(data);
         data = static_cast<char*>(memtier_malloc(memory.get(), size));
@@ -479,27 +505,36 @@ class AccessType {
 public:
     enum class Type {
         GET,
-        SET
+        SET,
+        NONE
     };
     AccessType(double get_percentage) : getPercentage(get_percentage) {
         gen = std::make_shared<std::mt19937>(rd());
         dist = std::make_shared<std::uniform_real_distribution<double>>(0, 1);
     }
-    Type Generate() {
-        double val = (*dist)(*gen);
-        return val > getPercentage ? Type::SET : Type::GET;
+    Type Generate(double access_probability) {
+        double val_access = (*dist)(*gen);
+        if (val_access <= access_probability) {
+            // generate random variable once, use twice!
+            double val = val_access/access_probability;
+            return val > getPercentage ? Type::SET : Type::GET;
+        }
+        return Type::NONE;
     }
 };
 
-#define CHECK_TEST 1
+#define CHECK_TEST 0
 
 struct RunInfo {
     size_t nTypes;
+    size_t iterations;
 };
 
 struct ExecResults {
-    uint64_t ticks;
-    uint64_t millis;
+    uint64_t threadMillis;
+    uint64_t systemMillis;
+    uint64_t totalSize;
+    uint64_t nofTypes;
 };
 
 /// @return duration of allocations and accesses in milliseconds
@@ -507,8 +542,10 @@ ExecResults run_test(AllocationTypeFactory &factory, const RunInfo &info) {
     // TODO handle somehow max number of types
     std::vector<AllocationType> types;
     types.reserve(info.nTypes);
+    size_t total_types_size=0;
     for (size_t i=0; i<info.nTypes; ++i) {
         types.push_back(factory.CreateType());
+        total_types_size += types.back().GetSize();
 #if CHECK_TEST
         std::cout
             << "Type [size/probability] : [" << types.back().GetSize()
@@ -538,15 +575,15 @@ ExecResults run_test(AllocationTypeFactory &factory, const RunInfo &info) {
 
     // try generating accesses
     // TODO when reallocs?????
-    size_t TEST_ITERATIONS = 3000;
-    size_t PER_TYPE_ITERATIONS = 100;
+    size_t TEST_ITERATIONS = 1000;
+    size_t PER_TYPE_ITERATIONS = info.iterations;
 //     size_t TYPES = 3000;
     size_t AUX_BUFFER_SIZE=1024;
     SummatorSink sink;
     RandomInitializedGenerator gen(AUX_BUFFER_SIZE);
 
     auto start = std::chrono::system_clock::now();
-    auto start_ticks = clock();
+    uint64_t start_thread_millis = clock_bench_time();
 
     for (size_t i=0; i<TEST_ITERATIONS; ++i) {
         // reallocate all types
@@ -557,12 +594,14 @@ ExecResults run_test(AllocationTypeFactory &factory, const RunInfo &info) {
             g_timestamp.AdvanceBy(15.0/PER_TYPE_ITERATIONS);
             for (auto &type : types) {
                 // TODO generate access
-                switch (accessType.Generate()) {
+                switch (accessType.Generate(type.GetAccessProbability())) {
                     case AccessType::Type::GET:
                         type.GenerateGet(sink);
                         break;
                     case AccessType::Type::SET:
                         type.GenerateSet(gen);
+                        break;
+                    case AccessType::Type::NONE:
                         break;
                 }
             }
@@ -570,15 +609,17 @@ ExecResults run_test(AllocationTypeFactory &factory, const RunInfo &info) {
         }
     }
     auto end = std::chrono::system_clock::now();
-    auto timespan_ticks = clock() - start_ticks;
+    uint64_t timespan_thread_millis = clock_bench_time() - start_thread_millis;
 
     using namespace std::chrono;
     uint64_t execution_time_millis =
         duration_cast<milliseconds>(end-start).count();
 
     ExecResults ret;
-    ret.millis = execution_time_millis;
-    ret.ticks = timespan_ticks;
+    ret.systemMillis = execution_time_millis;
+    ret.threadMillis = timespan_thread_millis;
+    ret.totalSize = total_types_size;
+    ret.nofTypes = info.nTypes;
 
     return ret;
 }
@@ -591,29 +632,40 @@ int main(int argc, char *argv[])
     RunInfo info;
 
     // hardcoded test constants
-    info.nTypes = 5000;
+    info.nTypes = 3000;
 
-    assert(argc == 2 &&
+    assert(argc == 3 &&
         "Incorrect number of arguments specified, "
-        "please specify 1 argument: [static|hotness]"); // FIXME temporary
-
+        "please specify 2 arguments: [static|hotness] [iterations]"); // FIXME temporary
     // FIXME temporary arg parsing...
     memtier_policy_t policy = argv[1] == std::string("static") ?
         MEMTIER_POLICY_STATIC_RATIO
         : argv[1] == std::string("hotness") ?
             MEMTIER_POLICY_DATA_HOTNESS
             : MEMTIER_POLICY_MAX_VALUE;
+    size_t iterations = atoi(argv[2]);
 
     assert(policy != MEMTIER_POLICY_MAX_VALUE &&
         "please specify a known policy [hotness|static]");
 
-    AllocationTypeFactory factory(1024, policy, 8);
+//     AllocationTypeFactory factory(2048, policy, 8);
+    AllocationTypeFactory factory(4096, policy, 8);
+
+    info.iterations = iterations;
+
+    if (policy != MEMTIER_POLICY_DATA_HOTNESS)
+        g_pushEvents=false;
 
     ExecResults stats = run_test(factory, info);
 
     std::cout
-        << "Measured execution time [ticks|millis]: ["
-        << stats.ticks << "|" << stats.millis << "]" << std::endl;
+        << "Measured execution time [millis_thread|millis_thread_adjusted|millis_system]: ["
+        << stats.threadMillis << "|"
+        << (stats.threadMillis - g_excludedTicks)
+        << "|" << stats.systemMillis << "]" << std::endl
+        << "Stats [accesses_per_malloc|average_size]: ["
+        << 0xFFFF*((double)g_totalAccessesX0xFFFF)/((double)g_totalMallocs) << "|"
+        << stats.totalSize/(double)stats.nofTypes << "]" << std::endl;
 
     //     struct BenchArgs arguments = {
 //         .bench = nullptr,
