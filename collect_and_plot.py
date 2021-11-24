@@ -68,4 +68,6 @@ plt.plot(ratios)
 plt.grid()
 plt.show()
 
+plt.plot(ratios)
+plt.grid()
 plt.savefig("run.png")
