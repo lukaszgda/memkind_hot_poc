@@ -1997,10 +1997,10 @@ TEST(RankingController, Gain) {
     // corner cases:
     // ALL PMEM
     fixed_thresh = ranking_controller_calculate_fixed_thresh(&controller, 1);
-    assert_close(fixed_thresh, -0.7);
+    ASSERT_EQ(fixed_thresh, 0.0);
     // ALL DRAM
     fixed_thresh = ranking_controller_calculate_fixed_thresh(&controller, 0);
-    assert_close(fixed_thresh, 1.3);
+    ASSERT_EQ(fixed_thresh, 1.0);
     // already correct
     fixed_thresh = ranking_controller_calculate_fixed_thresh(&controller, 0.7);
     assert_close(fixed_thresh, 0.7);
