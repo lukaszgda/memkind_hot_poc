@@ -353,20 +353,57 @@ public:
 
 #include <memory>
 
+class Timestamp {
+    uint64_t pebsTimesamp;
+public:
+    Timestamp() : pebsTimesamp(0) {}
+
+    uint64_t GetPebsTimestamp() {
+        return pebsTimesamp;
+    }
+
+    void AdvanceBy(double seconds) {
+        const uint64_t ONE_SECOND = 1000000000;
+        pebsTimesamp += (uint64_t)(ONE_SECOND*seconds);
+    }
+};
+
+static Timestamp g_timestamp;
+
 class AllocationType {
     char *data;
     size_t size;
-    double accessProbability; // should be distributed 0-1
+    double accessProbability;   /// should be distributed 0-1
+    /// probability that, given that access is performed,
+    /// a manual touch is triggered
+    const double touchFrequency;   /// should be distributed 0-1
+    double cumulatedTouchCoeff;    /// should be distributed 0-1
     std::shared_ptr<memtier_memory> memory;
+
+    void GenerateTouch() {
+        cumulatedTouchCoeff += touchFrequency;
+        while (cumulatedTouchCoeff>1) {
+            // touch - very important stuff
+            EventEntry_t entry;
+            entry.type = EVENT_TOUCH;
+            entry.data.touchData.address = data;
+            entry.data.touchData.timestamp = g_timestamp.GetPebsTimestamp();
+            (void)tachanka_ranking_event_push(&entry);
+            --cumulatedTouchCoeff;
+        }
+    }
 
 public:
 
     AllocationType(size_t size,
                    double accessProbability,
+                   double touchFrequency,
                    std::shared_ptr<memtier_memory> memory) :
         data(nullptr),
         size(size),
         accessProbability(accessProbability),
+        touchFrequency(touchFrequency),
+        cumulatedTouchCoeff(0.0),
         memory(memory) {}
 
     void Reallocate() {
@@ -422,12 +459,12 @@ public:
         std::random_device rd;
         std::mt19937 gen(rd());
         zipf_distribution<> zipf_size(maxSize);
-        double max_prob=1e6;
+        double max_prob=20;
         zipf_distribution<> zipf_prob((size_t)max_prob); // round max_prob down
         size_t size = zipf_size(gen);
         double probability = zipf_prob(gen)/max_prob;
 
-        return AllocationType(size, probability, memory);
+        return AllocationType(size, probability, 0.5, memory);
     }
 };
 
@@ -457,8 +494,13 @@ struct RunInfo {
     size_t nTypes;
 };
 
+struct ExecResults {
+    uint64_t ticks;
+    uint64_t millis;
+};
+
 /// @return duration of allocations and accesses in milliseconds
-uint64_t run_test(AllocationTypeFactory &factory, const RunInfo &info) {
+ExecResults run_test(AllocationTypeFactory &factory, const RunInfo &info) {
     // TODO handle somehow max number of types
     std::vector<AllocationType> types;
     types.reserve(info.nTypes);
@@ -501,6 +543,7 @@ uint64_t run_test(AllocationTypeFactory &factory, const RunInfo &info) {
     RandomInitializedGenerator gen(AUX_BUFFER_SIZE);
 
     auto start = std::chrono::system_clock::now();
+    auto start_ticks = clock();
 
     for (size_t i=0; i<TEST_ITERATIONS; ++i) {
         // reallocate all types
@@ -508,6 +551,7 @@ uint64_t run_test(AllocationTypeFactory &factory, const RunInfo &info) {
             type.Reallocate();
         // touch all types TODO ideally, they should be touched at random...
         for (size_t j = 0; j < PER_TYPE_ITERATIONS; ++j) {
+            g_timestamp.AdvanceBy(15.0/PER_TYPE_ITERATIONS);
             for (auto &type : types) {
                 // TODO generate access
                 switch (accessType.Generate()) {
@@ -523,12 +567,17 @@ uint64_t run_test(AllocationTypeFactory &factory, const RunInfo &info) {
         }
     }
     auto end = std::chrono::system_clock::now();
+    auto timespan_ticks = clock() - start_ticks;
 
     using namespace std::chrono;
     uint64_t execution_time_millis =
         duration_cast<milliseconds>(end-start).count();
 
-    return execution_time_millis;
+    ExecResults ret;
+    ret.millis = execution_time_millis;
+    ret.ticks = timespan_ticks;
+
+    return ret;
 }
 
 int main(int argc, char *argv[])
@@ -555,9 +604,11 @@ int main(int argc, char *argv[])
 
     AllocationTypeFactory factory(1024, policy, 8);
 
-    uint64_t millis = run_test(factory, info);
+    ExecResults stats = run_test(factory, info);
 
-    std::cout << "Measured execution time: " << millis << std::endl;
+    std::cout
+        << "Measured execution time [ticks|millis]: ["
+        << stats.ticks << "|" << stats.millis << "]" << std::endl;
 
     //     struct BenchArgs arguments = {
 //         .bench = nullptr,
