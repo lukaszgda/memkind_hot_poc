@@ -115,6 +115,7 @@ plt.ylabel('total execution time')
 plt.grid()
 plt.legend()
 plt.show()
+plt.clf()
 
 plt.loglog(accesses_per_malloc_static, execution_times_static, label='static')
 plt.loglog(accesses_per_malloc_hotness, execution_times_hotness, label='hotness')
