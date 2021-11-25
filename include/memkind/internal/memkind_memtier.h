@@ -237,7 +237,7 @@ size_t memtier_kind_get_total_size(void);
 // float get_obj_hotness(int size);
 
 // PEBS
-extern double sample_frequency;
+extern double sampling_interval;
 extern double pebs_freq_hz;
 #define MMAP_DATA_SIZE   8
 
@@ -261,6 +261,9 @@ extern double pebs_freq_hz;
 // hotness calculation
 extern unsigned long long hotness_measure_window;
 extern double old_time_window_hotness_weight;
+
+#define DEFAULT_HOTNESS_MEASURE_WINDOW  1000000000 // time window is 1s
+#define DEFAULT_OLD_HOTNESS_WINDOW_WEIGHT  0.4
 #define RANKING_BUFFER_SIZE_ELEMENTS    1000 // TODO make tests, add error handling and come up with some sensible value
 #define RANKING_TOUCH_ALL 0
 
@@ -328,14 +331,15 @@ extern double old_time_window_hotness_weight;
 //
 // hotness threshold needs to be more up-to-date than pebs touches,
 // it has more influence on ratio
-#define HOTNESS_PEBS_TREAD_FREQUENCY 10.0
+#define HOTNESS_PEBS_THREAD_FREQUENCY 10.0
 #define HOTNESS_RANKING_EVENT_ITERATIONS_PER_CYCLE \
-    (MAX_RANKING_EVENTS_PER_NOMINAL_SECOND/HOTNESS_PEBS_TREAD_FREQUENCY)
-// #define HOTNESS_PEBS_SAMPLING_FREQUENCY 10000
-#define HOTNESS_PEBS_SAMPLING_FREQUENCY 1000
+    (MAX_RANKING_EVENTS_PER_NOMINAL_SECOND/HOTNESS_PEBS_THREAD_FREQUENCY)
+// smaller value -> more frequent sampling
+// 10000 = around 100 samples on *my machine* / sec in matmul test
+#define HOTNESS_PEBS_SAMPLING_INTERVAL 1000
 
 #define CONTROLLER_INTEGRAL_GAIN \
-    (CONTROLLER_INTEGRAL_GAIN_PER_SECOND/HOTNESS_PEBS_TREAD_FREQUENCY)
+    (CONTROLLER_INTEGRAL_GAIN_PER_SECOND/HOTNESS_PEBS_THREAD_FREQUENCY)
 
 // ENUM-LIKE #defs
 #define HOTNESS_POLICY_TOTAL_COUNTER 0
