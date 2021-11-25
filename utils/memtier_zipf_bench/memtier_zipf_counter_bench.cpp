@@ -21,6 +21,8 @@
 #include "../test/zipf.h"
 
 
+#define ADJUST_FOR_RANKING_TOUCHES 0
+#define TOUCH_PROBABILITY 0.2
 
 // Interface for data generation
 class DataGenerator {
@@ -98,6 +100,14 @@ static uint64_t clock_bench_time() {
     return tv.tv_sec*1000 + tv.tv_nsec/1000000;
 }
 
+static uint64_t clock_bench_optional_time() {
+#if ADJUST_FOR_RANKING_TOUCHES
+    return clock_bench_time();
+#else
+    return 0;
+#endif
+}
+
 
 class Timestamp {
     uint64_t pebsTimesamp;
@@ -136,7 +146,7 @@ class AllocationType {
             ++g_totalAccessesX0xFFFF;
         cumulatedTouchCoeff += touchFrequency;
         if(cumulatedTouchCoeff>1) {
-            uint64_t start = clock_bench_time();
+            uint64_t start = clock_bench_optional_time();
             while (cumulatedTouchCoeff>1) {
                 // touch - very important stuff
                 EventEntry_t entry;
@@ -147,7 +157,7 @@ class AllocationType {
                     (void)tachanka_ranking_event_push(&entry);
                 --cumulatedTouchCoeff;
             }
-            uint64_t end = clock_bench_time();
+            uint64_t end = clock_bench_optional_time();
             uint64_t excluded_span = end-start;
             g_excludedTicks += excluded_span;
         }
@@ -196,14 +206,15 @@ public:
 };
 
 class AllocationTypeFactory {
-    size_t maxSize, prob_coeff; // TODO upgrade prob_coeff
+    size_t maxSize, minSize, prob_coeff; // TODO upgrade prob_coeff
     std::shared_ptr<memtier_memory> memory; // TODO initialize memory
 
 public:
 
     AllocationTypeFactory(
-        size_t maxSize, memtier_policy_t policy, size_t pmem_dram_ratio) :
-            maxSize(maxSize) {
+        size_t minSize, size_t maxSize, memtier_policy_t policy, size_t pmem_dram_ratio) :
+            maxSize(maxSize), minSize(minSize) {
+        assert(maxSize > minSize);
         struct memtier_builder *m_tier_builder = memtier_builder_new(policy);
 
         memtier_builder_add_tier(m_tier_builder, MEMKIND_DEFAULT, 1);
@@ -223,13 +234,14 @@ public:
 //         TODO optimize it - create what can be created in constructor
         std::random_device rd;
         std::mt19937 gen(rd());
-        zipf_distribution<> zipf_size(maxSize);
+        zipf_distribution<> zipf_size(maxSize-minSize);
         double max_prob=20;
         zipf_distribution<> zipf_prob((size_t)max_prob); // round max_prob down
-        size_t size = zipf_size(gen);
+        // increase alloc size granularirty and prevent objects with "0" size
+        size_t size = zipf_size(gen)+minSize;
         double probability = zipf_prob(gen)/max_prob;
 
-        return AllocationType(size, probability, 0.5, memory);
+        return AllocationType(size, probability, TOUCH_PROBABILITY, memory);
     }
 
     size_t GetMaxSize() {
@@ -238,22 +250,43 @@ public:
 };
 
 class AccessType {
+    size_t PRE_GENERATED_SIZE=8; // nof bytes in U64
     double getPercentage;
     std::random_device rd;
     std::shared_ptr<std::mt19937> gen;// TODO fixme
-    std::shared_ptr<std::uniform_real_distribution<double>> dist;
+    std::shared_ptr<std::uniform_int_distribution<uint64_t>> dist;
+    std::vector<double> generated;
+    size_t generatedIdx=PRE_GENERATED_SIZE;
+
+    void GenerateMultiple_() {
+        // this micro-optimisation is aimed at reducing
+        // mersenne_twister_engine load on cpu
+        uint64_t random_u64 = (*dist)(*gen);
+        for (size_t i=0; i<PRE_GENERATED_SIZE; ++i) {
+            generated[i]=(random_u64&0xFF)/(double)0xFF;
+            random_u64 >>= 8;
+        }
+        generatedIdx = 0;
+    }
+    double GenerateSingle_() {
+        if (generatedIdx >= PRE_GENERATED_SIZE) {
+            GenerateMultiple_();
+            assert(generatedIdx == 0);
+        }
+        return generated[generatedIdx++];
+    }
 public:
     enum class Type {
         GET,
         SET,
         NONE
     };
-    AccessType(double get_percentage) : getPercentage(get_percentage) {
+    AccessType(double get_percentage) : getPercentage(get_percentage), generated(PRE_GENERATED_SIZE) {
         gen = std::make_shared<std::mt19937>(rd());
-        dist = std::make_shared<std::uniform_real_distribution<double>>(0, 1);
+        dist = std::make_shared<std::uniform_int_distribution<uint64_t>>(0, 0xFFFFFFFFFFFFFFFF);
     }
     Type Generate(double access_probability) {
-        double val_access = (*dist)(*gen);
+        double val_access = GenerateSingle_();
         if (val_access <= access_probability) {
             // generate random variable once, use twice!
             double val = val_access/access_probability;
@@ -296,26 +329,29 @@ ExecResults run_test(AllocationTypeFactory &factory, const RunInfo &info) {
 #if CHECK_TEST
     const int ITERATIONS = 1000;
     // TEST GetVsSetAccess
-    size_t gets=0, sets=0;
+    size_t gets=0, sets=0, nones=0;
     for (int i=0; i<ITERATIONS; ++i) {
-        switch (accessType.Generate()) {
+        switch (accessType.Generate(0.6)) {
             case AccessType::Type::GET:
                 ++gets;
                 break;
             case AccessType::Type::SET:
                 ++sets;
+            case AccessType::Type::NONE:
+                ++nones;
                 break;
         }
     }
     std::cout
-        << "gets/sets|total: " << gets << "/" << sets << "|" << ITERATIONS
+        << "gets/sets/nones|total: " << gets << "/" << sets << "/" << nones << "|" << ITERATIONS
         << std::endl;
 #endif
     // all data printed
 
     // try generating accesses
     // TODO when reallocs?????
-    size_t TEST_ITERATIONS = 1000;
+    // weird formula - make it scale nicely (reduce dispersion in run times)
+    size_t TEST_ITERATIONS = 5000+500000/info.iterations;
     size_t PER_TYPE_ITERATIONS = info.iterations;
 //     size_t TYPES = 3000;
     SummatorSink sink;
@@ -330,7 +366,7 @@ ExecResults run_test(AllocationTypeFactory &factory, const RunInfo &info) {
             type.Reallocate();
         // touch all types TODO ideally, they should be touched at random...
         for (size_t j = 0; j < PER_TYPE_ITERATIONS; ++j) {
-            g_timestamp.AdvanceBy(15.0/PER_TYPE_ITERATIONS);
+            g_timestamp.AdvanceBy(10.0/PER_TYPE_ITERATIONS);
             for (auto &type : types) {
                 // TODO generate access
                 switch (accessType.Generate(type.GetAccessProbability())) {
@@ -371,7 +407,7 @@ int main(int argc, char *argv[])
     RunInfo info;
 
     // hardcoded test constants
-    info.nTypes = 1000;
+    info.nTypes = 100;
 
     assert(argc == 3 &&
         "Incorrect number of arguments specified, "
@@ -387,8 +423,7 @@ int main(int argc, char *argv[])
     assert(policy != MEMTIER_POLICY_MAX_VALUE &&
         "please specify a known policy [hotness|static]");
 
-//     AllocationTypeFactory factory(2048, policy, 8);
-    AllocationTypeFactory factory(4096, policy, 8);
+    AllocationTypeFactory factory(512, 1024, policy, 8);
 
     info.iterations = iterations;
 

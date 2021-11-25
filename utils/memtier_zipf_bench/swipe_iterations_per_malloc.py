@@ -10,7 +10,8 @@ import numpy as np
 STATIC=0
 HOTNESS=1
 
-iterations = 5*1.5**np.array(range(14))
+iterations = 5*1.25**np.array(range(23))
+#iterations = 5*1.5**np.array(range(3))
 
 
 re_exec_adjusted=re.compile('Measured execution time \[millis_thread\|millis_thread_adjusted\|millis_system\]: \[[0-9]*\|([0-9]*)\|[0-9]*\]')
@@ -108,21 +109,53 @@ def process_all_sync(iterations):
 accesses_per_malloc_static, execution_times_static, accesses_per_malloc_hotness, execution_times_hotness = process_all_sync(iterations) if 'sync' in sys.argv else process_all_async(iterations)
 
 
-plt.loglog(accesses_per_malloc_static, execution_times_static, label='static')
-plt.loglog(accesses_per_malloc_hotness, execution_times_hotness, label='hotness')
-plt.xlabel('accesses per allocation')
-plt.ylabel('total execution time')
-plt.grid()
-plt.legend()
+
+# interpolate
+maxval = np.min([np.max(accesses_per_malloc_static), np.max(accesses_per_malloc_hotness)])
+minval = np.max([np.min(accesses_per_malloc_static), np.min(accesses_per_malloc_hotness)])
+assert minval < maxval # might not be true in some corner cases - make sure they don't appear
+check_points = np.logspace(np.log10(minval), np.log10(maxval), 10)
+interp_hot = np.interp(check_points, accesses_per_malloc_hotness, execution_times_hotness)
+interp_static = np.interp(check_points, accesses_per_malloc_static, execution_times_static)
+hotness_overhead = (np.array(interp_hot)-np.array(interp_static))/np.array(interp_static)
+
+fig, axs = plt.subplots(1, 2)
+
+axs[0].plot(accesses_per_malloc_static, execution_times_static, label='static')
+axs[0].plot(accesses_per_malloc_hotness, execution_times_hotness, label='hotness')
+axs[0].set_xlabel('accesses per allocation')
+axs[0].set_ylabel('total execution time')
+axs[0].grid(True)
+axs[0].legend()
+axs[0].set_xscale('log')
+
+axs[1].plot(check_points, hotness_overhead, label='hotness policy overhead')
+axs[1].set_xlabel('accesses per allocation - interpolated')
+axs[1].set_ylabel('data_hotness vs static policy overhead, in %')
+axs[1].set_xscale('log')
+axs[1].grid(True)
+axs[1].legend()
+fig.tight_layout()
+
 plt.show()
 plt.clf()
 
-plt.loglog(accesses_per_malloc_static, execution_times_static, label='static')
-plt.loglog(accesses_per_malloc_hotness, execution_times_hotness, label='hotness')
-plt.xlabel('accesses per allocation')
-plt.ylabel('total execution time')
-plt.grid()
-plt.legend()
+axs[0].plot(accesses_per_malloc_static, execution_times_static, label='static')
+axs[0].plot(accesses_per_malloc_hotness, execution_times_hotness, label='hotness')
+axs[0].set_xlabel('accesses per allocation')
+axs[0].set_ylabel('total execution time')
+axs[0].grid(True)
+axs[0].legend()
+axs[0].set_xscale('log')
+
+axs[1].plot(check_points, hotness_overhead, label='hotness policy overhead')
+axs[1].set_xlabel('accesses per allocation - interpolated')
+axs[1].set_ylabel('data_hotness vs static policy overhead, in %')
+axs[1].set_xscale('log')
+axs[1].grid(True)
+axs[1].legend()
+fig.tight_layout()
+
 plt.savefig('stats.png')
 
 
