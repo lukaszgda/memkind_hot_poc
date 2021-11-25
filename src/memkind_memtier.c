@@ -107,7 +107,7 @@
 //PEBS
 double old_time_window_hotness_weight;
 double pebs_freq_hz;
-double sample_frequency;
+double sampling_interval;
 unsigned long long hotness_measure_window;
 
 // Macro to get number of thresholds from parent object
@@ -905,7 +905,7 @@ builder_hot_create_memory(struct memtier_builder *builder)
     int i, ret;
     old_time_window_hotness_weight =
         DEFAULT_OLD_HOTNESS_WINDOW_WEIGHT;
-    sample_frequency = HOTNESS_PEBS_SAMPLING_FREQUENCY;
+    sampling_interval = HOTNESS_PEBS_SAMPLING_INTERVAL;
     pebs_freq_hz = HOTNESS_PEBS_TREAD_FREQUENCY;
     // hotness calculation
     hotness_measure_window = DEFAULT_HOTNESS_MEASURE_WINDOW;
@@ -924,7 +924,7 @@ builder_hot_create_memory(struct memtier_builder *builder)
                       env_var);
             abort();
         }
-        ret = parse_double(env_var, &sample_frequency);
+        ret = parse_double(env_var, &sampling_interval);
         if (ret) {
             log_fatal("Wrong value of SAMPLE_FREQUENCY: %s", env_var);
             abort();
@@ -957,7 +957,7 @@ builder_hot_create_memory(struct memtier_builder *builder)
             abort();
         }
     }
-    log_info("sample_frequency = %.1f", sample_frequency);
+    log_info("sampling_interval = %.1f", sampling_interval);
     log_info("pebs_freq_hz = %.1f", pebs_freq_hz);
     log_info("hotness_measure_window = %llu", hotness_measure_window);
     log_info("old_time_window_hotness_weight = %.1f",
