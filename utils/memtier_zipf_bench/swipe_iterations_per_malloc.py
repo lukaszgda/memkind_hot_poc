@@ -140,6 +140,8 @@ fig.tight_layout()
 plt.show()
 plt.clf()
 
+fig, axs = plt.subplots(1, 2)
+
 axs[0].plot(accesses_per_malloc_static, execution_times_static, label='static')
 axs[0].plot(accesses_per_malloc_hotness, execution_times_hotness, label='hotness')
 axs[0].set_xlabel('accesses per allocation')
