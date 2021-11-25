@@ -906,7 +906,7 @@ builder_hot_create_memory(struct memtier_builder *builder)
     old_time_window_hotness_weight =
         DEFAULT_OLD_HOTNESS_WINDOW_WEIGHT;
     sampling_interval = HOTNESS_PEBS_SAMPLING_INTERVAL;
-    pebs_freq_hz = HOTNESS_PEBS_TREAD_FREQUENCY;
+    pebs_freq_hz = HOTNESS_PEBS_THREAD_FREQUENCY;
     // hotness calculation
     hotness_measure_window = DEFAULT_HOTNESS_MEASURE_WINDOW;
     char *env_var = memkind_get_env("HOTNESS_MEASURE_WINDOW");

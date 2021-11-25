@@ -331,15 +331,15 @@ extern double old_time_window_hotness_weight;
 //
 // hotness threshold needs to be more up-to-date than pebs touches,
 // it has more influence on ratio
-#define HOTNESS_PEBS_TREAD_FREQUENCY 10.0
+#define HOTNESS_PEBS_THREAD_FREQUENCY 10.0
 #define HOTNESS_RANKING_EVENT_ITERATIONS_PER_CYCLE \
-    (MAX_RANKING_EVENTS_PER_NOMINAL_SECOND/HOTNESS_PEBS_TREAD_FREQUENCY)
+    (MAX_RANKING_EVENTS_PER_NOMINAL_SECOND/HOTNESS_PEBS_THREAD_FREQUENCY)
 // smaller value -> more frequent sampling
 // 10000 = around 100 samples on *my machine* / sec in matmul test
 #define HOTNESS_PEBS_SAMPLING_INTERVAL 1000
 
 #define CONTROLLER_INTEGRAL_GAIN \
-    (CONTROLLER_INTEGRAL_GAIN_PER_SECOND/HOTNESS_PEBS_TREAD_FREQUENCY)
+    (CONTROLLER_INTEGRAL_GAIN_PER_SECOND/HOTNESS_PEBS_THREAD_FREQUENCY)
 
 // ENUM-LIKE #defs
 #define HOTNESS_POLICY_TOTAL_COUNTER 0
