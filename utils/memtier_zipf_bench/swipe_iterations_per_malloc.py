@@ -57,8 +57,8 @@ def get_adjusted_execution_time_exec_obj(iterations, static_hotness):
     ret = subprocess.Popen(['./utils/memtier_zipf_bench/.libs/memtier_zipf_bench'] + args, env=m_env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return ret
 
-def interpret_finished_exec_obj(ret):
-    stats = ret.stdout.read().decode()
+def interpret_finished_stdout(stdout_val):
+    stats = stdout_val.decode()
     adjusted_exec_time_millis = int(re_exec_adjusted.findall(stats)[0])
     accesses_per_malloc = float(re_accesses_per_malloc.findall(stats)[0])
     return adjusted_exec_time_millis, accesses_per_malloc
@@ -81,9 +81,10 @@ def process_all_async(iterations):
     accesses_per_malloc_hotness = []
     for stat_exec_obj, hot_exec_obj in zip(static_exec_objs, hotness_exec_objs):
         stat_exec_obj.wait()
-        hot_exec_obj.wait()
-        static_time, static_acc = interpret_finished_exec_obj(stat_exec_obj)
-        hotness_time, hotness_acc = interpret_finished_exec_obj(hot_exec_obj)
+        stat_stdout, stat_stderr = stat_exec_obj.communicate()
+        hot_stdout, hot_stderr = hot_exec_obj.communicate()
+        static_time, static_acc = interpret_finished_stdout(stat_stdout)
+        hotness_time, hotness_acc = interpret_finished_stdout(hot_stdout)
         execution_times_static.append(static_time)
         execution_times_hotness.append(hotness_time)
         accesses_per_malloc_static.append(static_acc)
