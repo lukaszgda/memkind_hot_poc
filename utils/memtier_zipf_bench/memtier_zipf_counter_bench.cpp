@@ -493,7 +493,7 @@ public:
         size_t size = zipf_size(gen);
         double probability = zipf_prob(gen)/max_prob;
 
-        return AllocationType(size, probability, 0.1, memory);
+        return AllocationType(size, probability, 0.5, memory);
     }
 };
 
@@ -632,7 +632,7 @@ int main(int argc, char *argv[])
     RunInfo info;
 
     // hardcoded test constants
-    info.nTypes = 3000;
+    info.nTypes = 1000;
 
     assert(argc == 3 &&
         "Incorrect number of arguments specified, "
