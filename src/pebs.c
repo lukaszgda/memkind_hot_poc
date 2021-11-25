@@ -440,7 +440,7 @@ void pebs_init(pid_t pid)
     }
 
     pe.size = sizeof(struct perf_event_attr);
-    pe.sample_period = sample_frequency;
+    pe.sample_period = sampling_interval;
     pe.sample_type = PERF_SAMPLE_ADDR | PERF_SAMPLE_TIME;
 
     pe.precise_ip = 2; // NOTE: this is reqired but was not set
