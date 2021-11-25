@@ -258,7 +258,7 @@ static inline void decrement_alloc_size(unsigned kind_id, size_t size)
     unsigned bucket_id = t_hash_64();
     long long old_talloc =
         memkind_atomic_decrement(t_alloc_size[kind_id][bucket_id], size);
-    if (old_talloc - size < -FLUSH_THRESHOLD)
+    if ((old_talloc - (long long)size) < -FLUSH_THRESHOLD)
         apply_temporary_buffer_alloc_size(kind_id, bucket_id);
 }
 

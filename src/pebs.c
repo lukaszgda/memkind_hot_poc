@@ -158,7 +158,7 @@ void *pebs_monitor(void *state)
 
         EventEntry_t event;
         bool pop_success;
-        while (true) {
+        for (int i=0; i<HOTNESS_RANKING_EVENT_ITERATIONS_PER_CYCLE; ++i) {
             pop_success = tachanka_ranking_event_pop(&event);
             if (!pop_success)
                 break;
@@ -212,14 +212,15 @@ void *pebs_monitor(void *state)
                     g_queue_counter_callback++;
                     break;
                 }
-                /*
+                // WARNING the touches that come from pebs are executed in-place
+                // this event was added to make the code testable (UT)
                 case EVENT_TOUCH: {
                     int fromMalloc = 0; // false
                     EventDataTouch *data = &event.data.touchData;
                     touch(data->address, data->timestamp, fromMalloc);
                     g_queue_counter_touch++;
                     break;
-                }*/
+                }
                 default: {
                     log_fatal("PEBS: event queue - case not implemented!");
                     exit(-1);

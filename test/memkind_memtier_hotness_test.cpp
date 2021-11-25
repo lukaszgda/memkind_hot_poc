@@ -291,6 +291,7 @@ TEST_F(MemkindMemtierHotnessTest, check_ranking_touch_all) {
     
     sleep(1); // wait for pebs_monitor() to register new types from memtier_mallocs
 
+#if HOTNESS_POLICY == HOTNESS_POLICY_TIME_WINDOW
     for (size_t i = 0; i < MALLOC_COUNT; ++i) {
         ASSERT_EQ(tachanka_get_timestamp_state(i), TIMESTAMP_NOT_SET);
     }
@@ -314,6 +315,20 @@ TEST_F(MemkindMemtierHotnessTest, check_ranking_touch_all) {
     for (size_t i = 0; i < MALLOC_COUNT; ++i) {
         ASSERT_GT(tachanka_get_frequency(i), 0);
     }
+#elif HOTNESS_POLICY == HOTNESS_POLICY_EXPONENTIAL_COEFFS
+    double freqs[MALLOC_COUNT];
+
+    tachanka_ranking_touch_all(wait_time, 1e6); // set f to non-zero value
+    for (size_t i = 0; i < MALLOC_COUNT; ++i) {
+        freqs[i] = tachanka_get_frequency(i);
+        ASSERT_GT(freqs[i], 0);
+    }
+
+    tachanka_ranking_touch_all(2 * wait_time, 0);  // touch all ttypes without adding the hotness
+    for (size_t i = 0; i < MALLOC_COUNT; ++i) {
+        ASSERT_LT(tachanka_get_frequency(i), freqs[i]);
+    }
+#endif
 
     for (auto const &ptr : malloc_vec) {
         memtier_free(ptr);
@@ -1190,7 +1205,7 @@ TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
     auto start_point = std::chrono::steady_clock::now();
     auto end_point = start_point;
     double millis_elapsed=0;
-    const double LIMIT_MILLIS=15000;
+    const double LIMIT_MILLIS=8000;
     size_t iterations=0u;
     for (iterations=0; millis_elapsed < LIMIT_MILLIS; ++iterations) {
         ma.DoSomeWork();
@@ -1218,7 +1233,7 @@ TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
     printf("Total sums: A [%lu], B [%lu], C [%lu]\n", asum, bsum, csum);
     printf("Total touches: A [%lu], B [%lu], C [%lu]\n", touches_a, touches_b, touches_c);
 
-    double ACCURACY = 0.6; // a little bit high... (bad, but seems code is ok)
+    double ACCURACY = 0.3;
     // check if sum ratio is as expected - a measure of work done
     double EXPECTED_RATIO = 2;
     double calculated_sum_ratio = ((double)asum)/bsum;
@@ -1247,18 +1262,18 @@ TEST_F(IntegrationHotnessSingleTest, test_random_hotness)
     Hotness_e b_type=mb.GetHotnessType();
     Hotness_e c_type=mc.GetHotnessType();
 
-    ASSERT_EQ(a_type, HOTNESS_HOT);
+    ASSERT_EQ(a_type, HOTNESS_NOT_FOUND); // when exactly equal thresh
     ASSERT_EQ(b_type, HOTNESS_COLD);
-    ASSERT_EQ(c_type, HOTNESS_NOT_FOUND); // when exactly equal thresh
+    ASSERT_EQ(c_type, HOTNESS_COLD);
 
     memkind_t a_kind = ma.DetectKind();
     memkind_t b_kind = mb.DetectKind();
-    memkind_t c_kind = mb.DetectKind();
+    memkind_t c_kind = mc.DetectKind();
 
     // first, unknown allocations
-    // check that all allocations were performed on DRAM
+    // check that all allocations were made where they should be
     ASSERT_EQ(a_kind, MEMKIND_DEFAULT);
-    ASSERT_EQ(b_kind, MEMKIND_DEFAULT);
+    ASSERT_EQ(b_kind, MEMKIND_REGULAR);
     ASSERT_EQ(c_kind, MEMKIND_DEFAULT);
     // TODO upgrade the test - this is not a good example, fallback to static
     // is same as detected kinds
@@ -1297,9 +1312,9 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
                 memkind_t b_kind = mb.DetectKind();
                 memkind_t c_kind = mc.DetectKind();
 
-                // initial allocations
-                ASSERT_EQ(a_kind, MEMKIND_DEFAULT);
-                ASSERT_EQ(b_kind, MEMKIND_REGULAR);
+                // initial reallocations, all fallback to static
+                ASSERT_EQ(a_kind, MEMKIND_REGULAR);
+                ASSERT_EQ(b_kind, MEMKIND_DEFAULT);
                 ASSERT_EQ(c_kind, MEMKIND_REGULAR);
 
                 for (iterations=0; millis_elapsed < LIMIT_MILLIS; ++iterations) {
@@ -1314,7 +1329,7 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
                 }
                 double hotness_a=ma.GetHotness();
                 double hotness_b=mb.GetHotness();
-            //     double hotness_c=mc.GetHotness(); not checked (yet)
+                double hotness_c=mc.GetHotness();
 
                 ASSERT_EQ(g_cbArgs.size(), 6u);
                 size_t touches_a = g_cbArgs[0]->counter;
@@ -1357,9 +1372,12 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
                 // check if address is known and hotness was calculated
                 ASSERT_GT(hotness_a, 0);
                 ASSERT_GT(hotness_b, 0);
+                ASSERT_GT(hotness_c, 0);
 
                 // rough check
                 ASSERT_GT(hotness_a, hotness_b);
+                ASSERT_GT(hotness_a, hotness_c);
+                ASSERT_GT(hotness_c, hotness_b);
 
                 // check if hotness ratio is as expected
                 double EXPECTED_HOTNESS_RATIO = 2;
@@ -1371,9 +1389,8 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
                 Hotness_e c_type=mc.GetHotnessType();
 
                 ASSERT_EQ(a_type, HOTNESS_HOT);
-                ASSERT_EQ(b_type, HOTNESS_COLD);
-                // exactly at thresh
-                ASSERT_EQ(c_type, HOTNESS_NOT_FOUND);
+                ASSERT_EQ(b_type, HOTNESS_NOT_FOUND);  // exactly at thresh
+                ASSERT_EQ(c_type, HOTNESS_HOT);
                 break;
             }
             case 1: {
@@ -1385,21 +1402,20 @@ TEST_F(IntegrationHotnessSingleTest, test_random_allocation_type)
                 //          (PEBS) thread, data races should either
                 //          not be a concern, or should be handled
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                // TODO: Fix the test so that on the second set of reallocs same types are used
                 Hotness_e a_type=ma.GetHotnessType();
                 Hotness_e b_type=mb.GetHotnessType();
                 Hotness_e c_type=mc.GetHotnessType();
                 ASSERT_EQ(a_type, HOTNESS_HOT);
-                ASSERT_EQ(b_type, HOTNESS_COLD);
-                // exactly at thresh
-                ASSERT_EQ(c_type, HOTNESS_NOT_FOUND);
-
+                ASSERT_EQ(b_type, HOTNESS_NOT_FOUND);  // exactly at thresh
+                ASSERT_EQ(c_type, HOTNESS_HOT);
 
                 memkind_t a_kind = ma.DetectKind();
                 memkind_t b_kind = mb.DetectKind();
-                memkind_t c_kind = mb.DetectKind();
+                memkind_t c_kind = mc.DetectKind();
                 ASSERT_EQ(a_kind, MEMKIND_DEFAULT); // DRAM
                 ASSERT_EQ(b_kind, MEMKIND_REGULAR); // PMEM
-                ASSERT_EQ(c_kind, MEMKIND_REGULAR); // PMEM
+                ASSERT_EQ(c_kind, MEMKIND_DEFAULT);
                 break;
             }
         }
@@ -1981,10 +1997,10 @@ TEST(RankingController, Gain) {
     // corner cases:
     // ALL PMEM
     fixed_thresh = ranking_controller_calculate_fixed_thresh(&controller, 1);
-    assert_close(fixed_thresh, -0.7);
+    ASSERT_EQ(fixed_thresh, 0.0);
     // ALL DRAM
     fixed_thresh = ranking_controller_calculate_fixed_thresh(&controller, 0);
-    assert_close(fixed_thresh, 1.3);
+    ASSERT_EQ(fixed_thresh, 1.0);
     // already correct
     fixed_thresh = ranking_controller_calculate_fixed_thresh(&controller, 0.7);
     assert_close(fixed_thresh, 0.7);

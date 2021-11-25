@@ -1338,3 +1338,30 @@ TEST_F(MemkindMemtierThresholdTest, test_various_alloc_size)
         memtier_free(ptr);
     }
 }
+
+TEST_F(MemkindMemtierMemoryTest, test_static_ratio_with_free)
+{
+    size_t size = 1e6;
+    std::vector<void *> allocs_regular;
+
+    void *ptr_default = memtier_malloc(m_tier_memory, size);
+    ASSERT_NE(ptr_default, nullptr);
+    ASSERT_EQ(memkind_detect_kind(ptr_default), MEMKIND_DEFAULT);
+    for (int i = 0; i < MEMKIND_REGULAR_ratio; ++i) {
+        void *ptr_regular = memtier_malloc(m_tier_memory, size);
+        ASSERT_NE(ptr_regular, nullptr);
+        ASSERT_EQ(memkind_detect_kind(ptr_regular), MEMKIND_REGULAR);
+        allocs_regular.push_back(ptr_regular);
+    }
+
+    memtier_free(allocs_regular.back());
+    allocs_regular.pop_back();
+    void *ptr_regular = memtier_malloc(m_tier_memory, size);
+    ASSERT_NE(ptr_regular, nullptr);
+    ASSERT_EQ(memkind_detect_kind(ptr_regular), MEMKIND_REGULAR);
+    allocs_regular.push_back(ptr_regular);
+    
+    for (auto const &ptr : allocs_regular) {
+        memtier_free(ptr);
+    }
+}

@@ -129,8 +129,13 @@ private:
     {
         void *ptr = bench_alloc(size);
         const long long one_second = 1000000000;
-        for (size_t i=0; i<touches; ++i)
-            touch(ptr, (step*touches+i)*one_second/100, 0);
+        for (size_t i=0; i<touches; ++i) {
+            EventEntry_t entry;
+            entry.type = EVENT_TOUCH;
+            entry.data.touchData.address = ptr;
+            entry.data.touchData.timestamp = (step*touches+i)*one_second/100;
+            (void)tachanka_ranking_event_push(&entry);
+        }
         return ptr;
     }
 };

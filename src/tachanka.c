@@ -360,8 +360,20 @@ MEMKIND_EXPORT void touch(void *addr, __u64 timestamp, int from_malloc)
 #if CHECK_ADDED_SIZE
     assert(g_total_ranking_size == ranking_calculate_total_size(ranking));
 #endif
-
     int bln = critnib_find_le(addr_to_block, (uint64_t)addr);
+#if PRINT_POLICY_LOG_TOUCH_STATISTICS
+    static uint64_t all_touches=0;
+    static uint64_t successful_touches=0;
+    static uint64_t counter=0;
+    ++all_touches;
+    if (bln != -1)
+        ++successful_touches;
+    if (++counter>PRINT_TOUCH_STATISTICS_INTERVAL) {
+        log_info("touches successful/all: [%lu/%lu]", successful_touches,
+                 all_touches);
+        counter=0;
+    }
+#endif
     if (bln == -1) {
 #if PRINT_CRITNIB_NOT_FOUND_ON_TOUCH_WARNING
         log_info("WARNING: Addr %p not in known tachanka range  %p - %p", (char*)addr,
