@@ -10,7 +10,7 @@ import numpy as np
 STATIC=0
 HOTNESS=1
 
-iterations = 5*1.5**np.array(range(12))
+iterations = 5*1.5**np.array(range(14))
 
 
 re_exec_adjusted=re.compile('Measured execution time \[millis_thread\|millis_thread_adjusted\|millis_system\]: \[[0-9]*\|([0-9]*)\|[0-9]*\]')
