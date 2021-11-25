@@ -108,14 +108,18 @@ def process_all_sync(iterations):
 accesses_per_malloc_static, execution_times_static, accesses_per_malloc_hotness, execution_times_hotness = process_all_sync(iterations) if 'sync' in sys.argv else process_all_async(iterations)
 
 
-plt.plot(accesses_per_malloc_static, execution_times_static, label='static')
-plt.plot(accesses_per_malloc_hotness, execution_times_hotness, label='hotness')
+plt.loglog(accesses_per_malloc_static, execution_times_static, label='static')
+plt.loglog(accesses_per_malloc_hotness, execution_times_hotness, label='hotness')
+plt.xlabel('accesses per allocation')
+plt.ylabel('total execution time')
 plt.grid()
 plt.legend()
 plt.show()
 
-plt.plot(accesses_per_malloc_static, execution_times_static, label='static')
-plt.plot(accesses_per_malloc_hotness, execution_times_hotness, label='hotness')
+plt.loglog(accesses_per_malloc_static, execution_times_static, label='static')
+plt.loglog(accesses_per_malloc_hotness, execution_times_hotness, label='hotness')
+plt.xlabel('accesses per allocation')
+plt.ylabel('total execution time')
 plt.grid()
 plt.legend()
 plt.savefig('stats.png')

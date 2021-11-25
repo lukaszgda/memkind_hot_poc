@@ -25,7 +25,7 @@
 // Interface for data generation
 class DataGenerator {
 public:
-    virtual char Generate() = 0;
+    virtual char *Generate(size_t size) = 0;
 };
 
 class DataSink {
@@ -65,9 +65,12 @@ public:
         }
     }
 
-    char Generate() {
-        size_t nidx = (idx+1)%data.size();
-        return data[nidx];
+    char *Generate(size_t size) {
+        assert(size < data.size() && "Generator's buffer is too small");
+        ++idx;
+        if (size+idx > data.size())
+            idx = 0;
+        return data.data()+idx;
     }
 };
 
@@ -173,9 +176,8 @@ public:
 
     void GenerateSet(DataGenerator &gen) {
         assert(data && "data not initialized!");
-        for (size_t i=0; i < size; ++i)
-            data[i] = gen.Generate();
-         GenerateTouch();
+        (void)memcpy(data, gen.Generate(size), size);
+        GenerateTouch();
     }
 
     void GenerateGet(DataSink &sink) {
@@ -196,7 +198,9 @@ public:
 class AllocationTypeFactory {
     size_t maxSize, prob_coeff; // TODO upgrade prob_coeff
     std::shared_ptr<memtier_memory> memory; // TODO initialize memory
+
 public:
+
     AllocationTypeFactory(
         size_t maxSize, memtier_policy_t policy, size_t pmem_dram_ratio) :
             maxSize(maxSize) {
@@ -214,6 +218,7 @@ public:
                 });
         memtier_builder_delete(m_tier_builder);
     }
+
     AllocationType CreateType() {
 //         TODO optimize it - create what can be created in constructor
         std::random_device rd;
@@ -225,6 +230,10 @@ public:
         double probability = zipf_prob(gen)/max_prob;
 
         return AllocationType(size, probability, 0.5, memory);
+    }
+
+    size_t GetMaxSize() {
+        return maxSize;
     }
 };
 
@@ -309,9 +318,8 @@ ExecResults run_test(AllocationTypeFactory &factory, const RunInfo &info) {
     size_t TEST_ITERATIONS = 1000;
     size_t PER_TYPE_ITERATIONS = info.iterations;
 //     size_t TYPES = 3000;
-    size_t AUX_BUFFER_SIZE=1024;
     SummatorSink sink;
-    RandomInitializedGenerator gen(AUX_BUFFER_SIZE);
+    RandomInitializedGenerator gen(factory.GetMaxSize()*2);
 
     auto start = std::chrono::system_clock::now();
     uint64_t start_thread_millis = clock_bench_time();
