@@ -5,9 +5,13 @@ import os
 import sys
 import re
 import matplotlib.pyplot as plt
+import numpy as np
 
 STATIC=0
 HOTNESS=1
+
+iterations = 5*1.5**np.array(range(12))
+
 
 re_exec_adjusted=re.compile('Measured execution time \[millis_thread\|millis_thread_adjusted\|millis_system\]: \[[0-9]*\|([0-9]*)\|[0-9]*\]')
 re_accesses_per_malloc=re.compile('Stats \[accesses_per_malloc\|average_size\]: \[([0-9\.]*)\|[0-9\.]*\]')
@@ -62,12 +66,6 @@ def interpret_finished_stdout(stdout_val):
     adjusted_exec_time_millis = int(re_exec_adjusted.findall(stats)[0])
     accesses_per_malloc = float(re_accesses_per_malloc.findall(stats)[0])
     return adjusted_exec_time_millis, accesses_per_malloc
-
-#iterations = [20, 40, 80, 160, 320, 640]
-#iterations = [10, 20, 40, 60]
-iterations = [5, 10, 20, 40, 80, 160, 320, 640]
-
-
 
 def process_all_async(iterations):
     static_exec_objs=[]
