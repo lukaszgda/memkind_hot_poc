@@ -203,6 +203,17 @@ public:
     double GetAccessProbability() {
         return accessProbability;
     }
+
+    AllocationType operator = (const AllocationType &other) = delete;
+
+    AllocationType(const AllocationType &other) :
+        data(nullptr),
+        size(other.size),
+        accessProbability(other.accessProbability),
+        touchFrequency(other.touchFrequency),
+        cumulatedTouchCoeff(0),
+        memory(other.memory)
+    {}
 };
 
 class AllocationTypeFactory {
@@ -313,9 +324,13 @@ struct ExecResults {
 /// @return duration of allocations and accesses in milliseconds
 ExecResults run_test(AllocationTypeFactory &factory, const RunInfo &info) {
     // TODO handle somehow max number of types
+
+    const uint64_t POWER_TYPES_MULTIPLIER = 14;
     std::vector<AllocationType> types;
     types.reserve(info.nTypes);
     size_t total_types_size=0;
+
+
     for (size_t i=0; i<info.nTypes; ++i) {
         types.push_back(factory.CreateType());
         total_types_size += types.back().GetSize();
@@ -325,6 +340,15 @@ ExecResults run_test(AllocationTypeFactory &factory, const RunInfo &info) {
             << "/" << types.back().GetAccessProbability() << "]" << std::endl;
 #endif
     }
+
+    for (size_t i=0; i<POWER_TYPES_MULTIPLIER; ++i) {
+        size_t start_size = types.size();
+        for (size_t j=0; j<start_size; ++j) {
+            types.push_back(AllocationType(types[j]));
+            total_types_size += types.back().GetSize();
+        }
+    }
+
     AccessType accessType(0.8);
 #if CHECK_TEST
     const int ITERATIONS = 1000;
@@ -351,7 +375,7 @@ ExecResults run_test(AllocationTypeFactory &factory, const RunInfo &info) {
     // try generating accesses
     // TODO when reallocs?????
     // weird formula - make it scale nicely (reduce dispersion in run times)
-    size_t TEST_ITERATIONS = 5000+500000/info.iterations;
+    size_t TEST_ITERATIONS = 5+500/info.iterations;
     size_t PER_TYPE_ITERATIONS = info.iterations;
 //     size_t TYPES = 3000;
     SummatorSink sink;
@@ -439,7 +463,8 @@ int main(int argc, char *argv[])
         << "|" << stats.systemMillis << "]" << std::endl
         << "Stats [accesses_per_malloc|average_size]: ["
         << 0xFFFF*((double)g_totalAccessesX0xFFFF)/((double)g_totalMallocs) << "|"
-        << stats.totalSize/(double)stats.nofTypes << "]" << std::endl;
+        << stats.totalSize/(double)stats.nofTypes << "]" << std::endl
+        << "Total size:" << stats.totalSize << std::endl;
 
     return 0;
 }
