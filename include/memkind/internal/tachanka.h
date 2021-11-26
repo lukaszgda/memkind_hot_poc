@@ -61,8 +61,8 @@ TimestampState_t tachanka_get_timestamp_state(size_t index);
 
 struct ttype {
     uint64_t hash;
-    int num_allocs; // TODO
-    int total_size; // TODO
+    size_t num_allocs; // TODO
+    size_t total_size; // TODO
 
     __u64 t2;   // start of previous measurement window
     __u64 t1;   // start of current window
