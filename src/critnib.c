@@ -52,8 +52,9 @@
 #include <stddef.h>
 
 #include "memkind/internal/critnib.h"
-
-// eof pmdk-compat.h
+// This file was taken from https://github.com/kilobyte/critnib
+// relevant contents of pmdk-compat.h were pasted here,
+// the file was not preserved as a whole
 #include <jemalloc/jemalloc.h>
 #include "memkind/internal/slab_allocator.h"
 #include <assert.h>
