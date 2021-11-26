@@ -13,14 +13,25 @@ extern "C" {
 struct critnib;
 typedef struct critnib critnib;
 
-struct critnib *critnib_new(const uint64_t *leaves, int leaf_stride);
-void critnib_delete(struct critnib *c);
+enum find_dir_t {
+	FIND_L  = -2,
+	FIND_LE = -1,
+	FIND_EQ =  0,
+	FIND_GE = +1,
+	FIND_G  = +2,
+};
 
-int critnib_insert(struct critnib *c, int leaf);
-int critnib_remove(struct critnib *c, uint64_t key);
-int critnib_get(struct critnib *c, uint64_t key);
-int critnib_find_le(struct critnib *c, uint64_t key);
-void critnib_iter(struct critnib *c, int (*func)(int leaf));
+critnib *critnib_new(void);
+void critnib_delete(critnib *c);
+
+int critnib_insert(critnib *c, uintptr_t key, void *value, int update);
+void *critnib_remove(critnib *c, uintptr_t key);
+void *critnib_get(critnib *c, uintptr_t key);
+void *critnib_find_le(critnib *c, uintptr_t key);
+int critnib_find(critnib *c, uintptr_t key, enum find_dir_t dir,
+	uintptr_t *rkey, void **rvalue);
+void critnib_iter(critnib *c, uintptr_t min, uintptr_t max,
+    int (*func)(uintptr_t key, void *value, void *privdata), void *privdata);
 
 #ifdef __cplusplus
 }
