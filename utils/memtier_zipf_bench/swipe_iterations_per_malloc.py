@@ -10,12 +10,12 @@ import numpy as np
 STATIC=0
 HOTNESS=1
 
-iterations = 5*1.25**np.array(range(23))
+iterations = 5*1.5**np.array(range(12))
 #iterations = 5*1.5**np.array(range(3))
 
 
 re_exec_adjusted=re.compile('Measured execution time \[millis_thread\|millis_thread_adjusted\|millis_system\]: \[[0-9]*\|([0-9]*)\|[0-9]*\]')
-re_accesses_per_malloc=re.compile('Stats \[accesses_per_malloc\|average_size\]: \[([0-9\.]*)\|[0-9\.]*\]')
+re_accesses_per_malloc=re.compile('Stats \[accesses_per_malloc\|average_size\]: \[([0-9\.]*)\|[0-9\.\+e]*\]')
 
 def get_adjusted_execution_time(iterations, static_hotness):
     '''
@@ -79,7 +79,6 @@ def process_all_async(iterations):
     accesses_per_malloc_static = []
     accesses_per_malloc_hotness = []
     for stat_exec_obj, hot_exec_obj in zip(static_exec_objs, hotness_exec_objs):
-        stat_exec_obj.wait()
         stat_stdout, stat_stderr = stat_exec_obj.communicate()
         hot_stdout, hot_stderr = hot_exec_obj.communicate()
         static_time, static_acc = interpret_finished_stdout(stat_stdout)

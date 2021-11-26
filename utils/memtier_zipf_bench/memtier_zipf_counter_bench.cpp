@@ -319,13 +319,14 @@ struct ExecResults {
     uint64_t systemMillis;
     uint64_t totalSize;
     uint64_t nofTypes;
+    uint64_t nofBlocks;
 };
 
 /// @return duration of allocations and accesses in milliseconds
 ExecResults run_test(AllocationTypeFactory &factory, const RunInfo &info) {
     // TODO handle somehow max number of types
 
-    const uint64_t POWER_TYPES_MULTIPLIER = 14;
+    const uint64_t POWER_TYPES_MULTIPLIER = 13;
     std::vector<AllocationType> types;
     types.reserve(info.nTypes);
     size_t total_types_size=0;
@@ -375,7 +376,7 @@ ExecResults run_test(AllocationTypeFactory &factory, const RunInfo &info) {
     // try generating accesses
     // TODO when reallocs?????
     // weird formula - make it scale nicely (reduce dispersion in run times)
-    size_t TEST_ITERATIONS = 5+500/info.iterations;
+    size_t TEST_ITERATIONS = 5+100/info.iterations;
     size_t PER_TYPE_ITERATIONS = info.iterations;
 //     size_t TYPES = 3000;
     SummatorSink sink;
@@ -419,6 +420,7 @@ ExecResults run_test(AllocationTypeFactory &factory, const RunInfo &info) {
     ret.threadMillis = timespan_thread_millis;
     ret.totalSize = total_types_size;
     ret.nofTypes = info.nTypes;
+    ret.nofBlocks = types.size();
 
     return ret;
 }
