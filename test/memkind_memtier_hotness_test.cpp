@@ -6,6 +6,8 @@
 #include <memkind/internal/slab_allocator.h>
 #include <memkind/internal/wre_avl_tree_internal.h>
 #include <memkind/internal/ranking_controller.h>
+#include "memkind/internal/heatmap.h"
+
 
 #include <random>
 #include <thread>
@@ -2066,4 +2068,29 @@ TEST(ExponentialCoeffs, SimpleTest) {
         0.9999*0.9999*0.9999*0.9999*0.9999+9.49169617e-04*1.25
     };
     assert_close_array_picewise(values, t6, 4);
+}
+
+TEST(HeatmapAggregator, Basic)
+{
+    heatmap_aggregator_t *aggregator = heatmap_aggregator_create();
+
+    std::vector<HeatmapEntry_t> entries = {
+        {0.0, 20},  {0.1, 10}, {0.2, 30}, {0.5, 71},
+        {0.8, 100}, {0.3, 90}, {0.0, 2},
+    };
+
+    for (auto &entry : entries) {
+        heatmap_aggregator_aggregate(aggregator, &entry);
+    }
+
+    char *info = heatmap_dump_info(aggregator);
+
+    std::cout << info << std::endl;
+
+    ASSERT_EQ(std::string(info),
+              std::string(
+                  "heatmap_data = [ff,cc;e5,4c;b5,7f;4c,33;33,0;19,19;5,0;]"));
+
+    heatmap_free_info(info);
+    heatmap_aggregator_destroy(aggregator);
 }
