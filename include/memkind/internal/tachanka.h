@@ -62,8 +62,8 @@ void tachanka_dump_heatmap(void);
 
 struct ttype {
     uint64_t hash;
-    int num_allocs; // TODO
-    int total_size; // TODO
+    size_t num_allocs; // TODO
+    size_t total_size; // TODO
 
     size_t dram_size;
 

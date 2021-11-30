@@ -57,7 +57,7 @@ tier1 = values[1]
 
 ratios = []
 
-if len(values[0]) > 1:
+if len(values[0]) > 2:
     for t0, t1, act in zip(values[0], values[1], g_actuals):
         if t0 != 0 and t1 != 0:
             ratios.append((t0/(t0+t1), act))
@@ -68,4 +68,6 @@ plt.plot(ratios)
 plt.grid()
 plt.show()
 
+plt.plot(ratios)
+plt.grid()
 plt.savefig("run.png")

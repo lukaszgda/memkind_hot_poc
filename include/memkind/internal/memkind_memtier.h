@@ -264,7 +264,7 @@ extern double old_time_window_hotness_weight;
 
 #define DEFAULT_HOTNESS_MEASURE_WINDOW  1000000000 // time window is 1s
 #define DEFAULT_OLD_HOTNESS_WINDOW_WEIGHT  0.4
-#define RANKING_BUFFER_SIZE_ELEMENTS    1000 // TODO make tests, add error handling and come up with some sensible value
+#define RANKING_BUFFER_SIZE_ELEMENTS    1000000 // TODO make tests, add error handling and come up with some sensible value
 #define RANKING_TOUCH_ALL 0
 
 // logging
@@ -297,7 +297,7 @@ extern double old_time_window_hotness_weight;
 
 #define PRINT_MEMDUMP_INTERVAL 10000
 #define PRINT_RATIO_ADJUSTED_INTERVAL 100
-#define PRINT_TOUCH_STATISTICS_INTERVAL 1000
+#define PRINT_TOUCH_STATISTICS_INTERVAL 100000
 #define CRASH_ON_BLOCK_NOT_FOUND 0
 #define PRINT_POLICY_BACKTRACE_INFO 0
 #define PRINT_POLICY_CREATE_MEMORY_INFO 1
@@ -312,8 +312,10 @@ extern double old_time_window_hotness_weight;
 #define FALLBACK_TO_STATIC 1
 
 #define RANKING_CONTROLLER_ENABLED 1
-#define CONTROLLER_PROPORTIONAL_GAIN 200
-#define CONTROLLER_INTEGRAL_GAIN_PER_SECOND 50
+// #define CONTROLLER_PROPORTIONAL_GAIN 200
+// #define CONTROLLER_INTEGRAL_GAIN_PER_SECOND 50
+#define CONTROLLER_PROPORTIONAL_GAIN 0.3
+#define CONTROLLER_INTEGRAL_GAIN_PER_SECOND 0.1
 
 // TODO temporary fix for issue - background thread overload
 // as a result of overload, threshold was not calculated
@@ -387,6 +389,7 @@ EXPONENTIAL_COEFFS_CONMPENSATION_COEFFS[EXPONENTIAL_COEFFS_NUMBER] = {
     1.00000000e+0, 9.53899645e-02, 9.49597036e-03, 9.49169617e-04};
 
 #define HOTNESS_POLICY HOTNESS_POLICY_EXPONENTIAL_COEFFS
+#define CONTROLLER_TRANSFORM_ENABLED 0
 
 #if QUANTIFICATION_ENABLED
 typedef int quantified_hotness_t;
