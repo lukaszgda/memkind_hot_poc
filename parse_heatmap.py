@@ -38,19 +38,63 @@ def create_heatmap(values: list):
 #lines = 'heatmap_data = [ff,0;f6,0;5c,7f;d3,4c;ce,cc;]'
 #lines = 'heatmap_data = [ff,cc;e5,4c;b5,7f;4c,33;33,0;19,19;5,0;]'
 
-lines = open(sys.argv[1]).read()
+def print_help():
+    print('Sample usage:')
+    print('./parse_heatmap.py output.log # outputs regular plot')
+    print('./parse_heatmap.py output.log heat # outputs heatmap')
+
+try:
+    filename = sys.argv[1]
+except IndexError:
+    print_help()
+    exit(-1)
+
+if filename == '--help':
+    print_help()
+    exit(0)
+
+# should display nice info and exit on failure
+lines = open(filename).read()
 
 hotness, dram_to_total = parse_heatmap(lines)
 
-fig, ax = plt.subplots(2)
 
-hot_heat = create_heatmap(hotness)
-dram_total_heat = create_heatmap(dram_to_total)
 
-ax[0].imshow(hot_heat, cmap='hot', interpolation='nearest')
-ax[0].set_title('Hotness heatmap')
-ax[1].imshow(dram_total_heat, cmap='hot', interpolation='nearest')
-ax[1].set_title('Dram to total heatmap')
-plt.show()
-create_heatmap(hotness)
-create_heatmap(dram_to_total)
+def display_heat(hotness, dram_to_total):
+    hot_heat = create_heatmap(hotness)
+    dram_total_heat = create_heatmap(dram_to_total)
+    fig, ax = plt.subplots(2)
+    ax[0].imshow(hot_heat, cmap='hot', interpolation='nearest')
+    ax[0].set_title('Hotness heatmap')
+    ax[1].imshow(dram_total_heat, cmap='hot', interpolation='nearest')
+    ax[1].set_title('Dram to total heatmap')
+    plt.show()
+    plt.cls()
+    fig, ax = plt.subplots(2)
+    ax[0].imshow(hot_heat, cmap='hot', interpolation='nearest')
+    ax[0].set_title('Hotness heatmap')
+    ax[1].imshow(dram_total_heat, cmap='hot', interpolation='nearest')
+    ax[1].set_title('Dram to total heatmap')
+    plt.savefig('heat_types.png')
+
+def display_plot(hotness, dram_to_total):
+    dram_to_total = np.array(dram_to_total)/255
+    fig, ax = plt.subplots(2)
+    ax[0].plot(hotness, '*')
+    ax[0].set_title('Hotness heatmap')
+    ax[1].plot(dram_to_total, '*')
+    ax[1].set_title('Dram to total heatmap')
+    plt.show()
+    plt.cls()
+    fig, ax = plt.subplots(2)
+    ax[0].plot(hotness, '*')
+    ax[0].set_title('Hotness heatmap')
+    ax[1].plot(dram_to_total, '*')
+    ax[1].set_title('Dram to total heatmap')
+    plt.savefig('heat_types.png')
+
+if 'heat' in sys.argv:
+    display_heat(hotness, dram_to_total)
+else:
+    display_plot(hotness, dram_to_total)
+
