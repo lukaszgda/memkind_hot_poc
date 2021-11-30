@@ -158,5 +158,3 @@ axs[1].legend()
 fig.tight_layout()
 
 plt.savefig('stats.png')
-
-
