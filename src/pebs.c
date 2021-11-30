@@ -169,7 +169,7 @@ void *pebs_monitor(void *state)
                     log_debug("EVENT_CREATE_ADD, address %p, size %lu",
                               data->address, data->size);
 #endif
-                    register_block(data->hash, data->address, data->size);
+                    register_block(data->hash, data->address, data->size, data->isHot);
                     register_block_in_ranking(data->address, data->size);
                     g_queue_counter_malloc++;
                     break;
@@ -196,7 +196,7 @@ void *pebs_monitor(void *state)
 #endif
                     unregister_block(data->addressOld);
 //                     realloc_block(data->addressOld, data->addressNew, data->sizeNew);
-                    register_block(0u /* FIXME hash should not be zero !!! */, data->addressNew, data->sizeNew);
+                    register_block(0u /* FIXME hash should not be zero !!! */, data->addressNew, data->sizeNew, data->isHot);
                     register_block_in_ranking(data->addressNew, data->sizeNew);
                     g_queue_counter_realloc++;
                     break;

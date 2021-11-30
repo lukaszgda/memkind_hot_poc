@@ -35,12 +35,14 @@ typedef struct EventDataRealloc {
     void *addressNew;
     size_t sizeOld;
     size_t sizeNew;
+    bool isHot;
 } EventDataRealloc;
 
 typedef struct EventDataCreateAdd {
     uint64_t hash;
     void *address;
     size_t size;
+    bool isHot;
     // TODO use size in TOUCH!!!
     // idea: pass it instead of FROM_MALLOC parameter:
     // nonzero-> from_malloc, size; zero: pebs touch, not from malloc!
