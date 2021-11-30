@@ -97,4 +97,3 @@ if 'heat' in sys.argv:
     display_heat(hotness, dram_to_total)
 else:
     display_plot(hotness, dram_to_total)
-
