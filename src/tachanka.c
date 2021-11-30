@@ -10,6 +10,7 @@
 #include <memkind/internal/bigary.h>
 #include <memkind/internal/wre_avl_tree.h>
 #include <memkind/internal/slab_allocator.h>
+#include <memkind/internal/heatmap.h>
 
 #include <pthread.h>
 #include <stdint.h>
@@ -66,7 +67,20 @@ static void check_dram_total_ratio(double ratio) {
     }
 }
 
-void register_block(uint64_t hash, void *addr, size_t size)
+static int aggregate_ttypes(uintptr_t key, void *value, void *privdata) {
+    (void)key;
+    struct ttype *cttype = value;
+    heatmap_aggregator_t *aggregator = privdata;
+    HeatmapEntry_t temp_entry = {
+        .dram_to_total=cttype->dram_size/(double)cttype->total_size,
+        .hotness=cttype->f,
+    };
+    heatmap_aggregator_aggregate(aggregator, &temp_entry);
+
+    return 0;
+}
+
+void register_block(uint64_t hash, void *addr, size_t size, bool is_hot)
 {
 #if CHECK_ADDED_SIZE
     if (g_total_ranking_size != g_total_critnib_size) {
@@ -89,6 +103,7 @@ void register_block(uint64_t hash, void *addr, size_t size)
 
         t->hash = hash;
         t->total_size = 0; // will be incremented later
+        t->dram_size = 0; // will be incremented later
         t->timestamp_state = TIMESTAMP_NOT_SET;
 
         int ret = critnib_insert(hash_to_type, hash, t, false);
@@ -111,12 +126,15 @@ void register_block(uint64_t hash, void *addr, size_t size)
 
     t->num_allocs++;
     t->total_size+= size;
+    if (is_hot)
+        t->dram_size += size;
 
     struct tblock *bl = slab_alloc_malloc(&tblock_alloc);
 
     bl->addr = addr; // TODO do we need to store addr separately?
     bl->size = size;
     bl->type = t;
+    bl->is_hot = is_hot;
 
 #if PRINT_CRITNIB_NEW_BLOCK_REGISTERED_INFO
     log_info("New block %d registered: addr %p size %lu type %d", fb, (void*)addr, size, nt);
@@ -234,6 +252,9 @@ void unregister_block(void *addr)
     assert(t->num_allocs >= 0);
     SUB(t->total_size, bl->size);
     assert(t->total_size >= 0);
+    if (bl->is_hot)
+        SUB(t->dram_size, bl->size);
+    assert(t->dram_size >= 0);
     
 #if PRINT_CRITNIB_UNREGISTER_BLOCK_INFO
     log_info("Block unregistered: %d addr %p size %lu type %d h %f", 
@@ -455,6 +476,7 @@ void tachanka_update_threshold(void)
 
 void tachanka_destroy(void)
 {
+    initialized = false;
     ranking_destroy(ranking);
     ranking_event_destroy(&ranking_event_buff);
 
@@ -601,4 +623,16 @@ MEMKIND_EXPORT TimestampState_t tachanka_get_timestamp_state(size_t index) {
     // TODO: re-implement (add API in slab_allocator first!)
 //     return ttypes[index].timestamp_state;
     return 0;
+}
+
+MEMKIND_EXPORT void tachanka_dump_heatmap(void) {
+    if (!initialized)
+        return;
+    heatmap_aggregator_t *aggregator = heatmap_aggregator_create();
+    critnib_iter(hash_to_type, 0, -1, aggregate_ttypes, aggregator);
+    char *info = heatmap_dump_info(aggregator);
+    log_info("heatmap: %s", info);
+    heatmap_free_info(info);
+    heatmap_aggregator_destroy(aggregator);
+
 }

@@ -159,7 +159,7 @@ struct memtier_memory {
 
     // memtier_memory operations
     memkind_t (*get_kind)(struct memtier_memory *memory, size_t size, uint64_t *data);
-    void (*post_alloc)(uint64_t data, void *addr, size_t size);
+    void (*post_alloc)(uint64_t data, void *addr, size_t size, bool is_hot);
     void (*update_cfg)(struct memtier_memory *memory);
 };
 // clang-format on
@@ -437,7 +437,8 @@ memtier_policy_data_hotness_get_kind(struct memtier_memory *memory, size_t size,
 }
 
 static void
-memtier_policy_data_hotness_post_alloc(uint64_t hash, void *addr, size_t size)
+memtier_policy_data_hotness_post_alloc(uint64_t hash, void *addr, size_t size,
+                                       bool is_hot)
 {
     // TODO: there are 2 lookups in hash_to_block - one from "get_kind" and
     // second here - this could be easily optimized
@@ -450,6 +451,7 @@ memtier_policy_data_hotness_post_alloc(uint64_t hash, void *addr, size_t size)
             .hash = hash,
             .address = addr,
             .size = size,
+            .isHot = is_hot,
         },
     };
 
@@ -504,6 +506,7 @@ static void print_memtier_memory(struct memtier_memory *memory)
     log_info("Threshold counter current value %u", memory->thres_check_cnt);
     log_info("Hot tier ID %d", memory->hot_tier_id);
     log_info("Cold tier ID %d", memory->cold_tier_id);
+    tachanka_dump_heatmap();
 }
 
 static void print_memory_statistics(struct memtier_memory *memory) {
@@ -557,7 +560,7 @@ memtier_policy_data_hotness_update_config(struct memtier_memory *memory)
 }
 
 static void
-memtier_empty_post_alloc(uint64_t data, void *addr, size_t size)
+memtier_empty_post_alloc(uint64_t data, void *addr, size_t size, bool is_hot)
 {}
 
 static void
@@ -1188,8 +1191,10 @@ MEMKIND_EXPORT void *memtier_malloc(struct memtier_memory *memory, size_t size)
     void *ptr;
     uint64_t data;
 
-    ptr = memtier_kind_malloc(memory->get_kind(memory, size, &data), size);
-    memory->post_alloc(data, ptr, size);
+    memkind_t kind = memory->get_kind(memory, size, &data);
+    ptr = memtier_kind_malloc(kind, size);
+    bool is_hot = kind == MEMKIND_DEFAULT;
+    memory->post_alloc(data, ptr, size, is_hot);
     memory->update_cfg(memory);
     print_memory_statistics(memory);
 
@@ -1240,8 +1245,10 @@ MEMKIND_EXPORT void *memtier_calloc(struct memtier_memory *memory, size_t num,
     void *ptr;
     uint64_t data;
 
-    ptr = memtier_kind_calloc(memory->get_kind(memory, size, &data), num, size);
-    memory->post_alloc(data, ptr, size);
+    memkind_t kind = memory->get_kind(memory, size, &data);
+    ptr = memtier_kind_calloc(kind, num, size);
+    bool is_hot = kind == MEMKIND_DEFAULT;
+    memory->post_alloc(data, ptr, size, is_hot);
     memory->update_cfg(memory);
     print_memory_statistics(memory);
 
@@ -1286,6 +1293,7 @@ MEMKIND_EXPORT void *memtier_realloc(struct memtier_memory *memory, void *ptr,
 MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
                                           size_t size)
 {
+    bool is_hot = kind == MEMKIND_DEFAULT;
     if (size == 0 && ptr != NULL) {
 #ifdef MEMKIND_DECORATION_ENABLED
         if (memtier_kind_free_pre)
@@ -1334,6 +1342,7 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
                 .data.createAddData = {
                     .address = ptr,
                     .size = size,
+                    .isHot = is_hot,
                 }
             };
 
@@ -1371,6 +1380,7 @@ MEMKIND_EXPORT void *memtier_kind_realloc(memkind_t kind, void *ptr,
                 .addressNew = n_ptr,
 //                 .sizeOld = old_size,
                 .sizeNew = size,
+                .isHot = is_hot,
             }
         };
 
@@ -1407,9 +1417,10 @@ MEMKIND_EXPORT int memtier_posix_memalign(struct memtier_memory *memory,
                                           size_t size)
 {
     uint64_t data = 0;
-    int ret = memtier_kind_posix_memalign(memory->get_kind(memory, size, &data),
-                                          memptr, alignment, size);
-    memory->post_alloc(data, *memptr, size);
+    memkind_t kind = memory->get_kind(memory, size, &data);
+    int ret = memtier_kind_posix_memalign(kind, memptr, alignment, size);
+    bool is_hot = kind == MEMKIND_DEFAULT;
+    memory->post_alloc(data, *memptr, size, is_hot);
     memory->update_cfg(memory);
 
     return ret;

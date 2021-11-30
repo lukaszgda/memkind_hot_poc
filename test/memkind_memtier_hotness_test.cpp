@@ -2089,7 +2089,7 @@ TEST(HeatmapAggregator, Basic)
 
     ASSERT_EQ(std::string(info),
               std::string(
-                  "heatmap_data = [ff,cc;e5,4c;b5,7f;4c,33;33,0;19,19;5,0;]"));
+                  "heatmap_data = [ff,cc;e5,4c;b5,7f;4c,33;33,0;19,19;5,0;]\n"));
 
     heatmap_free_info(info);
     heatmap_aggregator_destroy(aggregator);

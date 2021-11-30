@@ -26,7 +26,7 @@ typedef enum Hotness {
 
 typedef void (*tachanka_touch_callback)(void*);
 
-void register_block(uint64_t hash, void *addr, size_t size);
+void register_block(uint64_t hash, void *addr, size_t size, bool is_hot);
 void register_block_in_ranking(void *addr, size_t size);
 void unregister_block(void *addr);
 void realloc_block(void *addr, void *new_addr, size_t size);
@@ -58,11 +58,14 @@ double tachanka_get_frequency(size_t index);
 /// \brief Getter for type's timestamp state
 /// \param index index of a type in ttypes list
 TimestampState_t tachanka_get_timestamp_state(size_t index);
+void tachanka_dump_heatmap(void);
 
 struct ttype {
     uint64_t hash;
     int num_allocs; // TODO
     int total_size; // TODO
+
+    size_t dram_size;
 
     __u64 t2;   // start of previous measurement window
     __u64 t1;   // start of current window
@@ -92,6 +95,9 @@ struct tblock
     void *addr;
     size_t size;
     struct ttype *type;
+    // TODO only temporary - duing productization,
+    // some other method should be used to avoid memory overhead
+    bool is_hot;
 };
 
 #ifdef __cplusplus
