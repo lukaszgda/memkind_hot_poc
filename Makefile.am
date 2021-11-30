@@ -40,6 +40,7 @@ libmemkind_la_SOURCES = src/hbwmalloc.c \
                         src/ranking_queue.c \
                         src/slab_allocator.c \
                         src/ranking_controller.c \
+                        src/heatmap.cpp \
                         # end
 
 

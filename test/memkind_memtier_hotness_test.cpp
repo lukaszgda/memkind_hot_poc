@@ -6,6 +6,8 @@
 #include <memkind/internal/slab_allocator.h>
 #include <memkind/internal/wre_avl_tree_internal.h>
 #include <memkind/internal/ranking_controller.h>
+#include "memkind/internal/heatmap.h"
+
 
 #include <random>
 #include <thread>
@@ -23,6 +25,8 @@
 
 #include "common.h"
 #include "zipf.h"
+
+#define ASSERT_RANGE(x, min, max) ASSERT_GE(x, min); ASSERT_LE(x, max)
 
 void naive_matrix_multiply(int matrix_size, int mul_step,
                                             double *a, double *b, double *c) {
@@ -449,8 +453,7 @@ TEST_F(RankingTest, check_hotness_50_50) {
     }
     ASSERT_EQ(BLOCKS_SIZE, 100u);
 #else
-    ASSERT_GE(thresh_equal, 27);
-    ASSERT_LE(thresh_equal, 29);
+    ASSERT_RANGE(thresh_equal, 27, 29);
     for (size_t i=0; i<29; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
     }
@@ -490,8 +493,7 @@ TEST_F(RankingTest, check_hotness_50_50_removed) {
     ASSERT_EQ(BLOCKS_SIZE, 100u);
     ASSERT_EQ(SUBSIZE, 10u);
 #else
-    ASSERT_GE(thresh_equal, 3);
-    ASSERT_LE(thresh_equal, 4);
+    ASSERT_RANGE(thresh_equal, 3, 4);
     ASSERT_EQ(thresh_equal, thresh_equal_pmem);
     for (size_t i=0; i<4; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
@@ -616,8 +618,7 @@ TEST_F(RankingTestSameHotness, check_hotness_50_50) {
     }
     ASSERT_EQ(BLOCKS_SIZE, 100u);
 #else
-    ASSERT_GE(thresh_equal, 17);
-    ASSERT_LE(thresh_equal, 19);
+    ASSERT_RANGE(thresh_equal, 17, 19);
     ASSERT_EQ(thresh_equal, thresh_equal_pmem);
     for (size_t i=0; i<18; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
@@ -664,8 +665,7 @@ TEST_F(RankingTestSameHotness, check_hotness_50_50_removed) {
     ASSERT_EQ(BLOCKS_SIZE, 100u);
     ASSERT_EQ(SUBSIZE, 10u);
 #else
-    ASSERT_GE(thresh_equal, 3);
-    ASSERT_LE(thresh_equal, 4);
+    ASSERT_RANGE(thresh_equal, 3, 4);
     ASSERT_EQ(thresh_equal, thresh_equal_pmem);
     for (size_t i=0; i<4; ++i) {
         ASSERT_EQ(ranking_is_hot(ranking, &blocks[i]), false);
@@ -2066,4 +2066,29 @@ TEST(ExponentialCoeffs, SimpleTest) {
         0.9999*0.9999*0.9999*0.9999*0.9999+9.49169617e-04*1.25
     };
     assert_close_array_picewise(values, t6, 4);
+}
+
+TEST(HeatmapAggregator, Basic)
+{
+    heatmap_aggregator_t *aggregator = heatmap_aggregator_create();
+
+    std::vector<HeatmapEntry_t> entries = {
+        {0.0, 20},  {0.1, 10}, {0.2, 30}, {0.5, 71},
+        {0.8, 100}, {0.3, 90}, {0.0, 2},
+    };
+
+    for (auto &entry : entries) {
+        heatmap_aggregator_aggregate(aggregator, &entry);
+    }
+
+    char *info = heatmap_dump_info(aggregator);
+
+    std::cout << info << std::endl;
+
+    ASSERT_EQ(std::string(info),
+              std::string(
+                  "heatmap_data = [ff,cc;e5,4c;b5,7f;4c,33;33,0;19,19;5,0;]\n"));
+
+    heatmap_free_info(info);
+    heatmap_aggregator_destroy(aggregator);
 }
