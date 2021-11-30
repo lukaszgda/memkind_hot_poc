@@ -27,8 +27,10 @@ class HeatmapAggregator
     /// @warn clears all entries
     std::vector<HeatmapByteEntry> CalculateNormalizedEntries()
     {
+        if (entries.size() == 0u)
+            return std::vector<HeatmapByteEntry>();
         std::sort(std::begin(entries), std::end(entries), compare_hotness_desc);
-        double max_hotness = entries.at(0).hotness;
+        double max_hotness = entries[0].hotness;
         std::vector<HeatmapByteEntry> ret;
         ret.reserve(entries.size());
         for (HeatmapEntry_t &entry : entries) {
