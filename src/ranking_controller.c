@@ -1,4 +1,5 @@
 #include "memkind/internal/ranking_controller.h"
+#include "memkind/internal/memkind_memtier.h"
 
 #ifndef MEMKIND_EXPORT
 #define MEMKIND_EXPORT __attribute__((visibility("default")))
@@ -25,8 +26,7 @@ ranking_controller_set_expected_dram_total(ranking_controller *controller,
 MEMKIND_EXPORT double
 ranking_controller_calculate_fixed_thresh(ranking_controller *controller,
                                           double found_dram_total) {
-// #define TRANSFORM_ENABLED
-#ifdef TRANSFORM_ENABLED
+#if CONTROLLER_TRANSFORM_ENABLED
     // case: found thresh too low
     // |---a----------|--------b--------------|
     // |---c--|----------------d--------------|

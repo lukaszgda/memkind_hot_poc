@@ -1970,6 +1970,7 @@ TEST(RankingController, Basic) {
     double fixed_thresh;
     // corner cases:
     // ALL PMEM
+#if CONTROLLER_TRANSFORM_ENABLED
     fixed_thresh = ranking_controller_calculate_fixed_thresh(&controller, 1);
     assert_close(fixed_thresh, 0);
     // ALL DRAM
@@ -1988,6 +1989,26 @@ TEST(RankingController, Basic) {
     assert_close(fixed_thresh, 2./3.*0.7);
     fixed_thresh = ranking_controller_calculate_fixed_thresh(&controller, 2./3.*0.7);
     assert_close(fixed_thresh, 0.8);
+#else
+    fixed_thresh = ranking_controller_calculate_fixed_thresh(&controller, 1);
+    assert_close(fixed_thresh, 0.4);
+    // ALL DRAM
+    fixed_thresh = ranking_controller_calculate_fixed_thresh(&controller, 0);
+    ASSERT_EQ(fixed_thresh, 1.0);
+    // already correct
+    fixed_thresh = ranking_controller_calculate_fixed_thresh(&controller, 0.7);
+    assert_close(fixed_thresh, 0.7);
+    // 50%
+    fixed_thresh = ranking_controller_calculate_fixed_thresh(&controller, 0.85);
+    assert_close(fixed_thresh, 0.55);
+    fixed_thresh = ranking_controller_calculate_fixed_thresh(&controller, 0.35);
+    ASSERT_EQ(fixed_thresh, 1.0);
+    // 30%
+    fixed_thresh = ranking_controller_calculate_fixed_thresh(&controller, 0.8);
+    assert_close(fixed_thresh, 0.6);
+    fixed_thresh = ranking_controller_calculate_fixed_thresh(&controller, 2./3.*0.7);
+    assert_close(fixed_thresh, 4./3.*0.7);
+#endif
 }
 
 TEST(RankingController, Gain) {
@@ -1996,6 +2017,7 @@ TEST(RankingController, Gain) {
     double fixed_thresh;
     // corner cases:
     // ALL PMEM
+#if CONTROLLER_TRANSFORM_ENABLED
     fixed_thresh = ranking_controller_calculate_fixed_thresh(&controller, 1);
     ASSERT_EQ(fixed_thresh, 0.0);
     // ALL DRAM
@@ -2014,6 +2036,26 @@ TEST(RankingController, Gain) {
     assert_close(fixed_thresh, 1./3.*0.7);
     fixed_thresh = ranking_controller_calculate_fixed_thresh(&controller, 2./3.*0.7);
     assert_close(fixed_thresh, 0.9);
+#else
+    fixed_thresh = ranking_controller_calculate_fixed_thresh(&controller, 1);
+    assert_close(fixed_thresh, 0.1);
+    // ALL DRAM
+    fixed_thresh = ranking_controller_calculate_fixed_thresh(&controller, 0);
+    ASSERT_EQ(fixed_thresh, 1.0);
+    // already correct
+    fixed_thresh = ranking_controller_calculate_fixed_thresh(&controller, 0.7);
+    assert_close(fixed_thresh, 0.7);
+    // 50%
+    fixed_thresh = ranking_controller_calculate_fixed_thresh(&controller, 0.85);
+    assert_close(fixed_thresh, 0.4);
+    fixed_thresh = ranking_controller_calculate_fixed_thresh(&controller, 0.35);
+    ASSERT_EQ(fixed_thresh, 1);
+    // 1/3
+    fixed_thresh = ranking_controller_calculate_fixed_thresh(&controller, 0.8);
+    assert_close(fixed_thresh, 0.5);
+    fixed_thresh = ranking_controller_calculate_fixed_thresh(&controller, 2./3.*0.7);
+    ASSERT_EQ(fixed_thresh, 1.0);
+#endif
 }
 
 // TODO write a test for integral part of controller
