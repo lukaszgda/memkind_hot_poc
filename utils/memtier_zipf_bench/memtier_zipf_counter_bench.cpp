@@ -377,7 +377,7 @@ ExecResults run_test(AllocationTypeFactory &factory, const RunInfo &info) {
     // try generating accesses
     // TODO when reallocs?????
     // weird formula - make it scale nicely (reduce dispersion in run times)
-    size_t TEST_ITERATIONS = 5+100/info.iterations;
+    size_t TEST_ITERATIONS = 5; //+50/info.iterations;
     size_t PER_TYPE_ITERATIONS = info.iterations;
 //     size_t TYPES = 3000;
     SummatorSink sink;
@@ -560,7 +560,7 @@ int main(int argc, char *argv[])
     RunInfo info;
 
     // hardcoded test constants
-    info.nTypes = 40;
+    info.nTypes = 15;
 
     assert(argc == 4 &&
         "Incorrect number of arguments specified, "
