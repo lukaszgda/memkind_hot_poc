@@ -18,7 +18,12 @@
 #include <iomanip>
 #include <random>
 #include <memkind/internal/pebs.h>
+#include <mutex>
+#include <condition_variable>
+#include <memory>
+
 #include "../test/zipf.h"
+
 
 
 #define ADJUST_FOR_RANKING_TOUCHES 0
@@ -87,8 +92,6 @@ public:
 // underneath, making all results worthless
 //
 // THIS SHOULD BE FIXED!
-
-#include <memory>
 
 static bool g_pushEvents=true;
 
@@ -223,7 +226,8 @@ class AllocationTypeFactory {
 public:
 
     AllocationTypeFactory(
-        size_t minSize, size_t maxSize, memtier_policy_t policy, size_t pmem_dram_ratio) :
+        size_t minSize, size_t maxSize, memtier_policy_t policy,
+        size_t pmem_dram_ratio) :
             maxSize(maxSize), minSize(minSize) {
         assert(maxSize > minSize);
         struct memtier_builder *m_tier_builder = memtier_builder_new(policy);
@@ -279,6 +283,7 @@ class AccessType {
         }
         generatedIdx = 0;
     }
+
     double GenerateSingle_() {
         if (generatedIdx >= PRE_GENERATED_SIZE) {
             GenerateMultiple_();
@@ -286,16 +291,21 @@ class AccessType {
         }
         return generated[generatedIdx++];
     }
+
 public:
     enum class Type {
         GET,
         SET,
         NONE
     };
-    AccessType(double get_percentage) : getPercentage(get_percentage), generated(PRE_GENERATED_SIZE) {
+
+    AccessType(double get_percentage) :
+            getPercentage(get_percentage), generated(PRE_GENERATED_SIZE) {
         gen = std::make_shared<std::mt19937>(rd());
-        dist = std::make_shared<std::uniform_int_distribution<uint64_t>>(0, 0xFFFFFFFFFFFFFFFF);
+        dist = std::make_shared<
+            std::uniform_int_distribution<uint64_t>>(0, 0xFFFFFFFFFFFFFFFF);
     }
+
     Type Generate(double access_probability) {
         double val_access = GenerateSingle_();
         if (val_access <= access_probability) {
@@ -326,7 +336,6 @@ struct ExecResults {
 ExecResults run_test(AllocationTypeFactory &factory, const RunInfo &info) {
     // TODO handle somehow max number of types
 
-    const uint64_t POWER_TYPES_MULTIPLIER = 13;
     std::vector<AllocationType> types;
     types.reserve(info.nTypes);
     size_t total_types_size=0;
@@ -340,14 +349,6 @@ ExecResults run_test(AllocationTypeFactory &factory, const RunInfo &info) {
             << "Type [size/probability] : [" << types.back().GetSize()
             << "/" << types.back().GetAccessProbability() << "]" << std::endl;
 #endif
-    }
-
-    for (size_t i=0; i<POWER_TYPES_MULTIPLIER; ++i) {
-        size_t start_size = types.size();
-        for (size_t j=0; j<start_size; ++j) {
-            types.push_back(AllocationType(types[j]));
-            total_types_size += types.back().GetSize();
-        }
     }
 
     AccessType accessType(0.8);
@@ -425,19 +426,145 @@ ExecResults run_test(AllocationTypeFactory &factory, const RunInfo &info) {
     return ret;
 }
 
+class Loader  {
+    std::shared_ptr<volatile void> data1, data2;
+    size_t dataSize;
+    std::shared_ptr<std::thread> this_thread;
+    std::atomic<bool> shouldContinue;
+
+    void GenerateAccessOnce_() {
+        for (size_t i=0; i<dataSize/sizeof(uint64_t); ++i) {
+            static_cast<volatile uint64_t*>(data1.get())[i] =
+                static_cast<volatile uint64_t*>(data2.get())[i];
+        }
+    }
+
+    void GenerateUntilDoneAsync_() {
+        if (!this_thread) {
+            this_thread = std::make_shared<std::thread>([&](){
+                while (shouldContinue) {
+                    GenerateAccessOnce_();
+                }
+            });
+        }
+    }
+
+public:
+    Loader(std::shared_ptr<volatile void> data1,
+           std::shared_ptr<volatile void> data2, size_t data_size) :
+                data1(data1), data2(data2), dataSize(data_size),
+                shouldContinue(true) {
+        GenerateUntilDoneAsync_();
+    }
+
+    void Join() {
+        shouldContinue = false;
+        if(this_thread)
+            this_thread->join();
+        this_thread = nullptr;
+    }
+};
+
+class LoaderThreadFactory {
+    // for didtribuing allocations between dram and pmem
+    std::shared_ptr<memtier_memory> memory;
+public:
+    LoaderThreadFactory(size_t pmem_dram_ratio) {
+        // load is necessary for both: pmem and dram,
+        // preferrably both at correct ratio
+        // this should be taken care of when allocating memory
+        struct memtier_builder *m_tier_builder =
+            memtier_builder_new(MEMTIER_POLICY_STATIC_RATIO);
+        memtier_builder_add_tier(m_tier_builder, MEMKIND_DEFAULT, 1);
+        memtier_builder_add_tier(m_tier_builder,
+                                 MEMKIND_REGULAR,
+                                 pmem_dram_ratio);
+        memory =
+            std::shared_ptr<memtier_memory>(
+                memtier_builder_construct_memtier_memory(m_tier_builder),
+                [](struct memtier_memory *m) {
+                    memtier_delete_memtier_memory(m);
+                });
+        memtier_builder_delete(m_tier_builder);
+    }
+
+    std::shared_ptr<Loader> CreateLoaderThread(size_t size) {
+        void *allocated_memory1 = memtier_malloc(memory.get(), size);
+        void *allocated_memory2 = memtier_malloc(memory.get(), size);
+        std::shared_ptr<void> allocated_memory_ptr1(allocated_memory1,
+                                                    memtier_free);
+        std::shared_ptr<void> allocated_memory_ptr2(allocated_memory2,
+                                                    memtier_free);
+        return std::make_shared<Loader>(allocated_memory_ptr1, allocated_memory_ptr2, size);
+  }
+};
+
+class MemoryLoadGenerator {
+    std::atomic<bool> shouldWork;
+    std::mutex threadsMutex;
+    std::vector<std::shared_ptr<Loader>> threads;
+
+    LoaderThreadFactory factory;
+
+    void AddThread_(std::shared_ptr<Loader> &thread) {
+        std::lock_guard<std::mutex> guard(threadsMutex);
+        threads.push_back(thread);
+    }
+
+    std::shared_ptr<Loader> SpawnThread_(size_t size) {
+        return factory.CreateLoaderThread(size);
+    }
+
+    /// join one thread
+    /// @return false when there were no threads to join, false otherwise
+    bool JoinOne_() {
+        bool joined = false;
+        std::shared_ptr<Loader> thread_to_join;
+        std::unique_lock<std::mutex> guard(threadsMutex);
+        if (threads.size() > 0) {
+            thread_to_join = threads.back();
+            threads.pop_back();
+            joined = true;
+        }
+        guard.unlock();
+        if (thread_to_join)
+            thread_to_join->Join();
+
+        return joined;
+    }
+
+public:
+
+    MemoryLoadGenerator(size_t pmem_dram_ratio) : factory(pmem_dram_ratio) {}
+
+    void SpawnThread(size_t size) {
+        auto thread = SpawnThread_(size);
+        AddThread_(thread);
+    }
+
+    void JoinAll() {
+        while (JoinOne_());
+    }
+    ~MemoryLoadGenerator() {
+        JoinAll();
+    }
+};
+
 int main(int argc, char *argv[])
 {
 
+    size_t PMEM_TO_DRAM = 8;
+    size_t LOADER_SIZE = 1024*1024*512; // half gigabyte
     // avoid interactions between manual touches and hardware touches
     pebs_set_process_hardware_touches(false);
     RunInfo info;
 
     // hardcoded test constants
-    info.nTypes = 100;
+    info.nTypes = 40;
 
-    assert(argc == 3 &&
+    assert(argc == 4 &&
         "Incorrect number of arguments specified, "
-        "please specify 2 arguments: [static|hotness] [iterations]"); // FIXME temporary
+        "please specify 2 arguments: [static|hotness] [iterations] [threads]"); // FIXME temporary
     // FIXME temporary arg parsing...
     memtier_policy_t policy = argv[1] == std::string("static") ?
         MEMTIER_POLICY_STATIC_RATIO
@@ -445,11 +572,23 @@ int main(int argc, char *argv[])
             MEMTIER_POLICY_DATA_HOTNESS
             : MEMTIER_POLICY_MAX_VALUE;
     size_t iterations = atoi(argv[2]);
+    size_t THREADS = atoi(argv[3]);
 
     assert(policy != MEMTIER_POLICY_MAX_VALUE &&
         "please specify a known policy [hotness|static]");
+    assert(THREADS>0 && "at least one thread is required");
 
-    AllocationTypeFactory factory(512, 1024, policy, 8);
+
+    const size_t LOADER_THREADS=THREADS-1;
+
+    MemoryLoadGenerator generator(PMEM_TO_DRAM);
+
+    for (size_t i=0; i<LOADER_THREADS; ++i) {
+        generator.SpawnThread(LOADER_SIZE);
+    }
+
+    size_t MIN_SIZE=1024*1024*50; // 50 MB
+    AllocationTypeFactory factory(MIN_SIZE, MIN_SIZE+512, policy, PMEM_TO_DRAM);
 
     info.iterations = iterations;
 
