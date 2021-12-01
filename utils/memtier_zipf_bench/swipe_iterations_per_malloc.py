@@ -11,7 +11,7 @@ STATIC=0
 HOTNESS=1
 
 #iterations = 5*1.5**np.array(range(12))
-iterations = 20*2**np.array(range(12))
+iterations = 20*3**np.array(range(3))
 #iterations = 5*1.5**np.array(range(3))
 
 THREADS=8
