@@ -10,7 +10,8 @@ import numpy as np
 STATIC=0
 HOTNESS=1
 
-iterations = 5*1.5**np.array(range(12))
+#iterations = 5*1.5**np.array(range(12))
+iterations = 20*2**np.array(range(12))
 #iterations = 5*1.5**np.array(range(3))
 
 
