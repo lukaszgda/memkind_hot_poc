@@ -3,6 +3,8 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <cmath>
+#include <cassert>
 
 #include "memkind/internal/heatmap.h"
 #include "memkind/internal/memkind_private.h"
@@ -29,6 +31,11 @@ class HeatmapAggregator
     {
         if (entries.size() == 0u)
             return std::vector<HeatmapByteEntry>();
+        for (HeatmapEntry_t &entry : entries) {
+            assert(entry.hotness >= 0);
+            if (entry.hotness != 0 )
+            entry.hotness = log(entry.hotness);
+        }
         std::sort(std::begin(entries), std::end(entries), compare_hotness_desc);
         double max_hotness = entries[0].hotness;
         std::vector<HeatmapByteEntry> ret;
