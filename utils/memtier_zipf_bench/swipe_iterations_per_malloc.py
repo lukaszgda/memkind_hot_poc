@@ -14,6 +14,7 @@ HOTNESS=1
 iterations = 20*2**np.array(range(12))
 #iterations = 5*1.5**np.array(range(3))
 
+THREADS=8
 
 re_exec_adjusted=re.compile('Measured execution time \[millis_thread\|millis_thread_adjusted\|millis_system\]: \[[0-9]*\|([0-9]*)\|[0-9]*\]')
 re_accesses_per_malloc=re.compile('Stats \[accesses_per_malloc\|average_size\]: \[([0-9\.]*)\|[0-9\.\+e]*\]')
@@ -35,6 +36,7 @@ def get_adjusted_execution_time(iterations, static_hotness):
     else:
         raise Exception('Incorrect function argument!')
     args.append(str(iterations))
+    args.append(str(THREADS))
     ret = subprocess.run(['./utils/memtier_zipf_bench/.libs/memtier_zipf_bench'] + args, env=m_env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stats = ret.stdout.decode()
     adjusted_exec_time_millis = int(re_exec_adjusted.findall(stats)[0])
