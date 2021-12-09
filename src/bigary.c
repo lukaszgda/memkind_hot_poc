@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include "memkind/internal/bigary.h"
+#include "memkind/internal/memkind_private.h"
 // default max: 16 GB
 #define BIGARY_DEFAULT_MAX (16 * 1024 * 1024 * 1024ULL)
 #define BIGARY_PAGESIZE 2097152
@@ -42,9 +43,9 @@ void bigary_init(bigary *restrict ba, int fd, int flags, size_t max)
     ba->declared = max;
     ba->fd = fd;
     ba->flags = flags;
-    if ((ba->area = mmap(0, max, PROT_NONE, flags, fd, 0)) == MAP_FAILED)
+    if ((ba->area = sys_mmap(0, max, PROT_NONE, flags, fd, 0)) == MAP_FAILED)
         die("mmapping bigary(%zd) failed: %m\n", max);
-    if (mmap(ba->area, BIGARY_PAGESIZE, PROT_READ|PROT_WRITE,
+    if (sys_mmap(ba->area, BIGARY_PAGESIZE, PROT_READ|PROT_WRITE,
         MAP_FIXED|flags, fd, 0) == MAP_FAILED)
     {
         die("bigary alloc of %zd failed: %m\n", BIGARY_PAGESIZE);
@@ -75,7 +76,7 @@ void bigary_alloc(bigary *restrict ba, size_t top)
     // printf("extending to %zd\n", top);
     if (top > ba->declared)
         die("bigary's max is %zd, %zd requested.\n", ba->declared, top);
-    if (mmap(ba->area + ba->top, top - ba->top, PROT_READ|PROT_WRITE,
+    if (sys_mmap(ba->area + ba->top, top - ba->top, PROT_READ|PROT_WRITE,
         MAP_FIXED|ba->flags, ba->fd, ba->top) == MAP_FAILED)
     {
         die("in-bigary alloc of %zd to %zd failed: %m\n", top - ba->top, top);

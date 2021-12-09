@@ -459,7 +459,7 @@ void pebs_init(pid_t pid)
     if (pebs_fd != -1) {
         int mmap_pages = 1 + MMAP_DATA_SIZE;
         int map_size = mmap_pages * getpagesize();
-        pebs_mmap = mmap(NULL, map_size,
+        pebs_mmap = sys_mmap(NULL, map_size,
                         PROT_READ | PROT_WRITE, MAP_SHARED, pebs_fd, 0);
 
 #if PRINT_PEBS_BASIC_INFO

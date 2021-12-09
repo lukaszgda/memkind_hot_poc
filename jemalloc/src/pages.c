@@ -76,7 +76,7 @@ os_pages_map(void *addr, size_t size, size_t alignment, bool *commit) {
 	{
 		int prot = *commit ? PAGES_PROT_COMMIT : PAGES_PROT_DECOMMIT;
 
-		ret = mmap(addr, size, prot, mmap_flags, -1, 0);
+		ret = sys_mmap(addr, size, prot, mmap_flags, -1, 0);
 	}
 	assert(ret != NULL);
 
@@ -201,7 +201,7 @@ pages_map(void *addr, size_t size, size_t alignment, bool *commit) {
 			flags |= MAP_ALIGNED(alignment_bits - 1);
 		}
 
-		void *ret = mmap(addr, size, prot, flags, -1, 0);
+		void *ret = sys_mmap(addr, size, prot, flags, -1, 0);
 		if (ret == MAP_FAILED) {
 			ret = NULL;
 		}
@@ -260,7 +260,7 @@ pages_commit_impl(void *addr, size_t size, bool commit) {
 #else
 	{
 		int prot = commit ? PAGES_PROT_COMMIT : PAGES_PROT_DECOMMIT;
-		void *result = mmap(addr, size, prot, mmap_flags | MAP_FIXED,
+		void *result = sys_mmap(addr, size, prot, mmap_flags | MAP_FIXED,
 		    -1, 0);
 		if (result == MAP_FAILED) {
 			return true;

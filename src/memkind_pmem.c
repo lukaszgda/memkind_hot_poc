@@ -332,7 +332,7 @@ MEMKIND_EXPORT void *memkind_pmem_mmap(struct memkind *kind, void *addr,
         }
     }
 
-    if ((result = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, priv->fd,
+    if ((result = sys_mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, priv->fd,
                        priv->offset)) != MAP_FAILED) {
         priv->offset += size;
         priv->current_size += size;
@@ -367,7 +367,7 @@ int memkind_pmem_validate_dir(const char *dir)
         goto end;
     }
 
-    void *addr = mmap(NULL, size, PROT_READ | PROT_WRITE,
+    void *addr = sys_mmap(NULL, size, PROT_READ | PROT_WRITE,
                       MAP_SHARED_VALIDATE | MAP_SYNC, fd, 0);
     if (addr == MAP_FAILED) {
         ret = MEMKIND_ERROR_MMAP;

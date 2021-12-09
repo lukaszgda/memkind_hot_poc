@@ -109,6 +109,7 @@ typedef enum memkind_node_variant_t
 void memkind_init(memkind_t kind, bool check_numa);
 
 void *kind_mmap(struct memkind *kind, void *addr, size_t size);
+void *sys_mmap(void *addr, size_t length, int prot, int flags, int fd, off_t off);
 
 char *memkind_get_env(const char *name);
 

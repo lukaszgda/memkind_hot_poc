@@ -38,6 +38,8 @@
 #include <sys/mman.h>
 #include <sys/param.h>
 #include <unistd.h>
+#include <pthread.h>
+#include <threads.h>
 
 // clang-format off
 #ifdef MEMKIND_ENABLE_HEAP_MANAGER

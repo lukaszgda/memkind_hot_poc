@@ -96,6 +96,11 @@ void memtier_delete_memtier_memory(struct memtier_memory *memory);
 ///
 void *memtier_malloc(struct memtier_memory *memory, size_t size);
 
+// comment TODO
+void *memtier_mmap(struct memtier_memory *memory,
+    void *addr, size_t length, int prot, int flags, int fd, off_t offset);
+void memtier_munmap(void* ptr);
+
 ///
 /// \brief Allocates size bytes of uninitialized storage of the specified kind
 /// \note STANDARD API

@@ -125,7 +125,7 @@ MEMKIND_EXPORT void *memkind_default_mmap(struct memkind *kind, void *addr,
         err = memkind_default_get_mmap_flags(kind, &flags);
     }
     if (MEMKIND_LIKELY(!err)) {
-        result = mmap(addr, size, PROT_READ | PROT_WRITE, flags, -1, 0);
+        result = sys_mmap(addr, size, PROT_READ | PROT_WRITE, flags, -1, 0);
         if (result == MAP_FAILED) {
             log_err("syscall mmap() returned: %p", result);
             return result;

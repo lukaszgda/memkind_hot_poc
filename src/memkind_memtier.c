@@ -17,6 +17,7 @@
 #include <pthread.h>
 #include <threads.h>
 #include <execinfo.h>
+#include <numaif.h>
 
 #ifdef HAVE_STDATOMIC_H
 #include <stdatomic.h>
@@ -284,6 +285,7 @@ memtier_policy_static_ratio_get_kind(struct memtier_memory *memory,
             dest_tier = i;
         }
     }
+    //log_info("kind: %d", dest_tier);
     return cfg[dest_tier].kind;
 }
 
@@ -1189,12 +1191,83 @@ MEMKIND_EXPORT void *memtier_malloc(struct memtier_memory *memory, size_t size)
     void *ptr;
     uint64_t data;
 
-    ptr = memtier_kind_malloc(memory->get_kind(memory, size, &data), size);
+    memkind_t kind = memory->get_kind(memory, size, &data);
+    ptr = memtier_kind_malloc(kind, size);
     memory->post_alloc(data, ptr, size);
     memory->update_cfg(memory);
     print_memory_statistics(memory);
 
     return ptr;
+}
+
+void *sys_mmap(void *addr, size_t length, int prot, int flags, int fd, off_t off)
+{
+    long ret = syscall(SYS_mmap, addr, length, prot, flags, fd, off);
+    if (ret == -EPERM && !off && (flags&MAP_ANON) && !(flags&MAP_FIXED))
+        ret = -ENOMEM;
+    if (ret > -4096 && ret < 0) {
+        errno = -ret;
+        return MAP_FAILED;
+    }
+
+    return (void*)ret;
+}
+
+int munmap(void *addr, size_t length)
+{
+    long ret = syscall(SYS_munmap, addr, length);
+    if (!ret)
+        return 0;
+    errno = -ret;
+    return -1;
+}
+
+#define SLICE (2*1048576)
+
+static void split_into_slices(struct memtier_memory *memory, void *addr, size_t length)
+{
+    size_t todo = length;
+    void *sladdr = addr;
+
+    while (todo > 0) {
+        size_t len = (todo > SLICE) ? SLICE : todo;
+
+        uint64_t data = 0;
+        memkind_t kind = memory->get_kind(memory, len, &data);
+        memory->post_alloc(data, sladdr, len);
+        if (kind == MEMKIND_DEFAULT)
+            mbind(sladdr, len, MPOL_DEFAULT, 0, 0 ,0);
+        else {
+            unsigned long nodemask;
+            if (kind->ops->get_mbind_nodemask
+                && !kind->ops->get_mbind_nodemask(kind, &nodemask, sizeof(nodemask)*8))
+            {
+                mbind(sladdr, len, MPOL_PREFERRED, &nodemask, sizeof(nodemask)*8, 0);
+            } else
+                fprintf(stderr, "Kind without nodemask\n");
+        }
+
+        todo -= len;
+        sladdr += len;
+    }
+}
+
+MEMKIND_EXPORT void* memtier_mmap(struct memtier_memory *memory, void *addr, size_t length, int prot, int flags, int fd, off_t offset)
+{
+    if (memory == NULL)
+        return sys_mmap(addr, length, prot, flags, fd, offset);
+
+    void* ret = memtier_malloc(memory, length);
+
+    if (ret)
+        split_into_slices(memory, ret, length);
+
+    return ret;
+}
+
+MEMKIND_EXPORT void memtier_munmap(void* ptr)
+{
+    memtier_free(ptr);
 }
 
 MEMKIND_EXPORT void *memtier_kind_malloc(memkind_t kind, size_t size)
@@ -1277,9 +1350,8 @@ MEMKIND_EXPORT void *memtier_realloc(struct memtier_memory *memory, void *ptr,
         return ptr;
     }
 
-    if (size == 0) {
+    if (size == 0)
         return NULL;
-    }
 
     return memtier_malloc(memory, size);
 }
