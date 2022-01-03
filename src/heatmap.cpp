@@ -32,9 +32,8 @@ class HeatmapAggregator
         if (entries.size() == 0u)
             return std::vector<HeatmapByteEntry>();
         for (HeatmapEntry_t &entry : entries) {
-            assert(entry.hotness >= 0);
             if (entry.hotness != 0 )
-            entry.hotness = log(entry.hotness);
+                entry.hotness = log(entry.hotness);
         }
         std::sort(std::begin(entries), std::end(entries), compare_hotness_desc);
         double max_hotness = entries[0].hotness;

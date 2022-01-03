@@ -29,6 +29,9 @@
 #define ADJUST_FOR_RANKING_TOUCHES 0
 #define TOUCH_PROBABILITY 0.2
 
+/// number of u64 on single cache line
+#define CACHE_LINE_SIZE_U64 16 // 16*8 == 128 TODO read cache line size from some config?
+
 // Interface for data generation
 class DataGenerator {
 public:
@@ -320,8 +323,18 @@ public:
 #define CHECK_TEST 0
 
 struct RunInfo {
+    /* total operations: nTypes*typeIterations*testIterations
+     *
+     * for testIterations:
+     *      for nTypes:
+     *          reallocate()
+     *      for typeIterations:
+     *          for nTypes:
+     *              access()
+     */
     size_t nTypes;
-    size_t iterations;
+    size_t typeIterations;
+    size_t testIterations;
 };
 
 struct ExecResults {
@@ -377,8 +390,9 @@ ExecResults run_test(AllocationTypeFactory &factory, const RunInfo &info) {
     // try generating accesses
     // TODO when reallocs?????
     // weird formula - make it scale nicely (reduce dispersion in run times)
-    size_t TEST_ITERATIONS = 5; //+50/info.iterations;
-    size_t PER_TYPE_ITERATIONS = info.iterations;
+//     size_t TEST_ITERATIONS = 5; //+50/info.iterations;
+    size_t TEST_ITERATIONS = info.testIterations;
+    size_t PER_TYPE_ITERATIONS = info.typeIterations;
 //     size_t TYPES = 3000;
     SummatorSink sink;
     RandomInitializedGenerator gen(factory.GetMaxSize()*2);
@@ -429,11 +443,13 @@ ExecResults run_test(AllocationTypeFactory &factory, const RunInfo &info) {
 class Loader  {
     std::shared_ptr<volatile void> data1, data2;
     size_t dataSize;
+    size_t i=0;
     std::shared_ptr<std::thread> this_thread;
     std::atomic<bool> shouldContinue;
 
     void GenerateAccessOnce_() {
-        for (size_t i=0; i<dataSize/sizeof(uint64_t); ++i) {
+        for (size_t i=0; i<dataSize/sizeof(uint64_t); i += CACHE_LINE_SIZE_U64) {
+//         i = (i+CACHE_LINE_SIZE_U64)%(dataSize/sizeof(uint64_t));
             static_cast<volatile uint64_t*>(data1.get())[i] =
                 static_cast<volatile uint64_t*>(data2.get())[i];
         }
@@ -562,17 +578,18 @@ int main(int argc, char *argv[])
     // hardcoded test constants
     info.nTypes = 15;
 
-    assert(argc == 4 &&
+    assert(argc == 5 &&
         "Incorrect number of arguments specified, "
-        "please specify 2 arguments: [static|hotness] [iterations] [threads]"); // FIXME temporary
+        "please specify 2 arguments: [static|hotness] [test_iterations] [type_iterations] [threads]"); // FIXME temporary
     // FIXME temporary arg parsing...
     memtier_policy_t policy = argv[1] == std::string("static") ?
         MEMTIER_POLICY_STATIC_RATIO
         : argv[1] == std::string("hotness") ?
             MEMTIER_POLICY_DATA_HOTNESS
             : MEMTIER_POLICY_MAX_VALUE;
-    size_t iterations = atoi(argv[2]);
-    size_t THREADS = atoi(argv[3]);
+    size_t test_iterations = atoi(argv[2]);
+    size_t type_iterations = atoi(argv[3]);
+    size_t THREADS = atoi(argv[4]);
 
     assert(policy != MEMTIER_POLICY_MAX_VALUE &&
         "please specify a known policy [hotness|static]");
@@ -587,10 +604,12 @@ int main(int argc, char *argv[])
         generator.SpawnThread(LOADER_SIZE);
     }
 
-    size_t MIN_SIZE=1024*1024*50; // 50 MB
-    AllocationTypeFactory factory(MIN_SIZE, MIN_SIZE+512, policy, PMEM_TO_DRAM);
+//     size_t MIN_SIZE=1024*1024*50; // 50 MB
+    size_t MIN_SIZE=256; // 256 B
+    AllocationTypeFactory factory(MIN_SIZE, MIN_SIZE+32, policy, PMEM_TO_DRAM);
 
-    info.iterations = iterations;
+    info.testIterations = test_iterations;
+    info.typeIterations = type_iterations;
 
     if (policy != MEMTIER_POLICY_DATA_HOTNESS)
         g_pushEvents=false;

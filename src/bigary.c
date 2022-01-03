@@ -8,7 +8,8 @@
 
 #include "memkind/internal/bigary.h"
 // default max: 16 GB
-#define BIGARY_DEFAULT_MAX (16 * 1024 * 1024 * 1024ULL)
+// #define BIGARY_DEFAULT_MAX (16 * 1024 * 1024 * 1024ULL)
+#define BIGARY_DEFAULT_MAX (4 * 1024 * 1024 * 1024ULL)
 #define BIGARY_PAGESIZE 2097152
 
 static void die(const char *fmt, ...)
