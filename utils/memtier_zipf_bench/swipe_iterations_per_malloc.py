@@ -11,7 +11,7 @@ STATIC=0
 HOTNESS=1
 
 #iterations = 5*1.5**np.array(range(12))
-iterations = 20*3**np.array(range(3))
+iterations = 20*3**np.array(range(2))
 #iterations = 5*1.5**np.array(range(3))
 
 THREADS=8
@@ -115,7 +115,9 @@ accesses_per_malloc_static, execution_times_static, accesses_per_malloc_hotness,
 # interpolate
 maxval = np.min([np.max(accesses_per_malloc_static), np.max(accesses_per_malloc_hotness)])
 minval = np.max([np.min(accesses_per_malloc_static), np.min(accesses_per_malloc_hotness)])
-assert minval < maxval # might not be true in some corner cases - make sure they don't appear
+if minval < maxval: # might not be true in some corner cases - make sure they don't appear
+    breakpoint()
+    printf('weird')
 check_points = np.logspace(np.log10(minval), np.log10(maxval), 10)
 interp_hot = np.interp(check_points, accesses_per_malloc_hotness, execution_times_hotness)
 interp_static = np.interp(check_points, accesses_per_malloc_static, execution_times_static)
