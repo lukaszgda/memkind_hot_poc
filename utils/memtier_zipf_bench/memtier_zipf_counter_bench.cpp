@@ -38,12 +38,12 @@
 // Interface for data generation
 class DataGenerator {
 public:
-    virtual char *Generate(size_t size) = 0;
+    virtual uint64_t *Generate(size_t size) = 0;
 };
 
 class DataSink {
 public:
-    virtual void Sink(char c) = 0;
+    virtual void Sink(uint64_t c) = 0;
 };
 
 /// The purpose of this class is to avoid optimising out calculations
@@ -51,7 +51,7 @@ public:
 class SummatorSink : public DataSink {
     size_t sum=0;
 public:
-    void Sink(char c) {
+    void Sink(uint64_t c) {
         sum += (size_t)c;
     }
     ~SummatorSink() {
@@ -63,7 +63,7 @@ public:
 /// by providing a simple way to use data
 class RandomInitializedGenerator : public DataGenerator {
 
-    std::vector<char> data;
+    std::vector<uint64_t> data;
     size_t idx;
 
 public:
@@ -72,13 +72,13 @@ public:
         data.reserve(len);
         std::random_device rd;
 //         std::uniform_int_distribution<char> uniform_char(0, 0xFF);
-        std::uniform_int_distribution<char> uniform_char;
+        std::uniform_int_distribution<uint64_t> uniform_u64;
         for (size_t i=0; i<len; ++i) {
-            data.push_back(uniform_char(rd));
+            data.push_back(uniform_u64(rd));
         }
     }
 
-    char *Generate(size_t size) {
+    uint64_t *Generate(size_t size) {
         assert(size < data.size() && "Generator's buffer is too small");
         ++idx;
         if (size+idx > data.size())
@@ -140,7 +140,7 @@ static uint64_t g_totalMallocs=0;
 
 
 class AllocationType {
-    char *data;
+    uint64_t *data;
     size_t size;
     double accessProbability;   /// should be distributed 0-1
     /// probability that, given that access is performed,
@@ -189,18 +189,21 @@ public:
         ++g_totalMallocs;
         if (data)
             memtier_free(data);
-        data = static_cast<char*>(memtier_malloc(memory.get(), size));
+        data = static_cast<uint64_t*>(memtier_malloc(memory.get(), size*sizeof(uint64_t)));
         memset(data, 0, size);
     }
 
     void GenerateSet(DataGenerator &gen) {
         assert(data && "data not initialized!");
-        (void)memcpy(data, gen.Generate(size), size);
+        for (size_t i=0; i < size; i += CACHE_LINE_SIZE_U64)
+            gen.Generate(size);
+            // sink.Sink(data[i]);
+//         (void)memcpy(data, gen.Generate(size), size);
         GenerateTouch();
     }
 
     void GenerateGet(DataSink &sink) {
-        for (size_t i=0; i < size; ++i)
+        for (size_t i=0; i < size; i += CACHE_LINE_SIZE_U64)
             sink.Sink(data[i]);
          GenerateTouch();
     }
@@ -476,6 +479,10 @@ public:
         GenerateUntilDoneAsync_();
     }
 
+    void Stop() {
+        shouldContinue = false;
+    }
+
     void Join() {
         shouldContinue = false;
         if(this_thread)
@@ -562,8 +569,16 @@ public:
     }
 
     void JoinAll() {
+        StopAll();
         while (JoinOne_());
     }
+
+    void StopAll() {
+        std::unique_lock<std::mutex> guard(threadsMutex);
+        for (auto &thread : threads)
+            thread->Stop();
+    }
+
     ~MemoryLoadGenerator() {
         JoinAll();
     }
@@ -574,10 +589,19 @@ void init_global_sys_info(void) {
 //     CACHE_LINE_SIZE_U64 = sysconf(LEVEL1_DCACHE_LINESIZE)/8;
 }
 
+
+// what needs to be done:
+// 1. Benchmark all threads, not just one
+// 2. Use loader to bench tests ACTION
+// 3. re-allocate loaders
+// 4. allocate loaders with specified policy
+// 5. vary size of each loader - create separate types
+// 6. benchmark separately - access times and allocation time
+
 int main(int argc, char *argv[])
 {
     init_global_sys_info();
-    size_t PMEM_TO_DRAM = 8;
+    size_t PMEM_TO_DRAM = 4;
     size_t LOADER_SIZE = 1024*1024*512; // half gigabyte
     // avoid interactions between manual touches and hardware touches
     pebs_set_process_hardware_touches(false);
