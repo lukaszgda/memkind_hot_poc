@@ -21,6 +21,8 @@
 #include <mutex>
 #include <condition_variable>
 #include <memory>
+#include <unistd.h>
+#include <limits.h>
 
 #include "../test/zipf.h"
 
@@ -30,7 +32,8 @@
 #define TOUCH_PROBABILITY 0.2
 
 /// number of u64 on single cache line
-#define CACHE_LINE_SIZE_U64 16 // 16*8 == 128 TODO read cache line size from some config?
+// #define CACHE_LINE_SIZE_U64 16 // 16*8 == 128 TODO read cache line size from some config?
+// size_t CACHE_LINE_SIZE_U64=8; // 8*8 == 64 TODO read cache line size from some config?
 
 // Interface for data generation
 class DataGenerator {
@@ -566,9 +569,14 @@ public:
     }
 };
 
+void init_global_sys_info(void) {
+    // 8 bytes in uint64_t
+//     CACHE_LINE_SIZE_U64 = sysconf(LEVEL1_DCACHE_LINESIZE)/8;
+}
+
 int main(int argc, char *argv[])
 {
-
+    init_global_sys_info();
     size_t PMEM_TO_DRAM = 8;
     size_t LOADER_SIZE = 1024*1024*512; // half gigabyte
     // avoid interactions between manual touches and hardware touches
