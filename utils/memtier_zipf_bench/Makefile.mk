@@ -9,7 +9,8 @@ utils_memtier_zipf_bench_memtier_zipf_bench_SOURCES = utils/memtier_zipf_bench/m
 utils_memtier_zipf_bench_memtier_zipf_bench_LDADD = libmemkind.la
 utils_memtier_zipf_bench_memtier_zipf_bench_LDFLAGS = $(PTHREAD_CFLAGS)
 # utils_memtier_zipf_bench_memtier_zipf_bench_CXXFLAGS = "$(utils_memtier_zipf_bench_memtier_zipf_bench_CXXFLAGS) -DLEVEL1_DCACHE_LINESIZE
-utils_memtier_zipf_bench_memtier_zipf_bench_CXXFLAGS = "-DCACHE_LINE_SIZE_U64=`getconf LEVEL1_DCACHE_LINESIZE`"
+# utils_memtier_zipf_bench_memtier_zipf_bench_CXXFLAGS = "-DCACHE_LINE_SIZE_U64=\"`getconf LEVEL1_DCACHE_LINESIZE`\" -std=c++20"
+utils_memtier_zipf_bench_memtier_zipf_bench_CXXFLAGS = -DCACHE_LINE_SIZE_U64=`getconf LEVEL1_DCACHE_LINESIZE` -std=c++20
 
 clean-local: utils_memtier_zipf_bench_memtier_zipf_bench-clean
 

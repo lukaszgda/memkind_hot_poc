@@ -89,11 +89,8 @@ struct RunInfo {
 };
 
 struct ExecResults {
-    uint64_t threadMillis;
-    uint64_t systemMillis;
-    uint64_t totalSize;
-    uint64_t nofTypes;
-    uint64_t nofBlocks;
+    uint64_t malloc_time_ms;
+    uint64_t access_time_ms;
 };
 
 class Fence {
@@ -119,6 +116,7 @@ public:
 class Loader  {
     std::shared_ptr<volatile void> data1, data2;
     size_t dataSize;
+    size_t iterations;
     size_t i=0;
     std::shared_ptr<std::thread> this_thread;
     std::atomic<bool> shouldContinue;
@@ -127,20 +125,24 @@ class Loader  {
     /// @return milliseconds per whole data access
     uint64_t GenerateAccessOnce_() {
         uint64_t timestamp_start = clock_bench_time_ms();
-        for (size_t i=0; i<dataSize/sizeof(uint64_t); i += CACHE_LINE_SIZE_U64) {
-            static_cast<volatile uint64_t*>(data1.get())[i] =
-                static_cast<volatile uint64_t*>(data2.get())[i];
-        }
+        for (size_t it=0; it<iterations; ++it)
+            for (size_t i=0; i<dataSize/sizeof(uint64_t); i += CACHE_LINE_SIZE_U64) {
+                static_cast<volatile uint64_t*>(data1.get())[i] =
+                    static_cast<volatile uint64_t*>(data2.get())[i];
+            }
 
         return clock_bench_time_ms() - timestamp_start;
     }
 
 public:
     Loader(std::shared_ptr<volatile void> data1,
-           std::shared_ptr<volatile void> data2, size_t data_size) :
-                data1(data1), data2(data2), dataSize(data_size),
-                shouldContinue(false) {
-    }
+           std::shared_ptr<volatile void> data2, size_t data_size,
+           size_t iterations)
+        : data1(data1),
+          data2(data2),
+          dataSize(data_size),
+          iterations(iterations),
+          shouldContinue(false) {}
 
     void PrepareOnce(std::shared_ptr<Fence> fence) {
         assert(!this_thread);
@@ -193,7 +195,8 @@ public:
         std::shared_ptr<void> allocated_memory_ptr2(allocated_memory2,
                                                     memtier_free);
 
-        return std::make_shared<Loader>(allocated_memory_ptr1, allocated_memory_ptr2, size);
+        return std::make_shared<Loader>(
+            allocated_memory_ptr1, allocated_memory_ptr2, size, iterations);
     }
 };
 
@@ -206,7 +209,7 @@ create_and_run_loaders(std::vector<LoaderCreator> &creators) {
     // populate this->vector<...>
     uint64_t start_mallocs_timestamp = clock_bench_time_ms();
     for (auto &creator : creators) {
-        loaders.push_back(std::make_shared<Loader>(creator.CreateLoader()));
+        loaders.push_back(creator.CreateLoader());
     }
     uint64_t malloc_time = clock_bench_time_ms() - start_mallocs_timestamp;
     for (auto &loader : loaders) {
@@ -267,6 +270,7 @@ create_loader_creators (size_t minSize,
         // TODO create LoaderCreator of size size and of rank
         double probability = 1/pow(k, s)/zipf_denominator;
         probability_sum += probability;
+        // TODO total_iterations*probability has no effect, requires debugging
         size_t iterations = (size_t)(total_iterations*probability);
         creators.push_back(LoaderCreator(size, iterations, memory));
     }
@@ -290,9 +294,12 @@ ExecResults run_test(const RunInfo &info) {
     malloc_times.reserve(info.iterationsMajor);
     access_times.reserve(info.iterationsMajor);
 
+    ExecResults ret = {0};
     for (size_t major_it = 0; major_it < info.iterationsMajor; ++major_it) {
         auto [malloc_time, access_time] =
             create_and_run_loaders(loader_creators);
+        ret.malloc_time_ms += malloc_time;
+        ret.access_time_ms += access_time;
     }
 
     return ret;
@@ -319,10 +326,6 @@ int main(int argc, char *argv[])
     size_t LOADER_SIZE = 1024*1024*512; // half gigabyte
     // avoid interactions between manual touches and hardware touches
     pebs_set_process_hardware_touches(false);
-    RunInfo info;
-
-    // hardcoded test constants
-    info.nTypes = 15;
 
     assert(argc == 5 &&
         "Incorrect number of arguments specified, "
@@ -341,34 +344,21 @@ int main(int argc, char *argv[])
         "please specify a known policy [hotness|static]");
     assert(THREADS>0 && "at least one thread is required");
 
+    RunInfo info = {
+        .minSize = 512 * 1024 * 1024, // 512 MB per thread
+        .nTypes = THREADS,
+        .iterationsMajor = test_iterations,
+        .iterationsMinor = type_iterations,
+        .s = 2.0, // arbitrary value, should it be read from command line?
+        .policy = policy,
+        .pmem_dram_ratio = 8,
+    };
 
-    const size_t LOADER_THREADS=THREADS-1;
+    ExecResults stats = run_test(info);
 
-    MemoryLoadGenerator generator(PMEM_TO_DRAM);
-
-    for (size_t i=0; i<LOADER_THREADS; ++i) {
-        generator.SpawnThread(LOADER_SIZE);
-    }
-
-    AllocationTypeFactory factory(LOADER_SIZE, info.nTypes, policy, PMEM_TO_DRAM);
-
-    info.iterationsMajor = test_iterations;
-    info.iterationsMinor = type_iterations;
-
-//     if (policy != MEMTIER_POLICY_DATA_HOTNESS)
-//         g_pushEvents=false;
-
-    ExecResults stats = run_test(factory, info);
-
-    std::cout
-        << "Measured execution time [millis_thread|millis_thread_adjusted|millis_system]: ["
-        << stats.threadMillis << "|"
-        << (stats.threadMillis - g_excludedTicks)
-        << "|" << stats.systemMillis << "]" << std::endl
-        << "Stats [accesses_per_malloc|average_size]: ["
-        << 0xFFFF*((double)g_totalAccessesX0xFFFF)/((double)g_totalMallocs) << "|"
-        << stats.totalSize/(double)stats.nofTypes << "]" << std::endl
-        << "Total size:" << stats.totalSize << std::endl;
+    std::cout << "Measured execution time [malloc | access]: ["
+              << stats.malloc_time_ms << "|" << stats.access_time_ms
+              << "]" << std::endl;
 
     return 0;
 }
