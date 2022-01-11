@@ -91,6 +91,8 @@ struct RunInfo {
 struct ExecResults {
     uint64_t malloc_time_ms;
     uint64_t access_time_ms;
+    std::vector<uint64_t> malloc_times_ms;
+    std::vector<uint64_t> access_times_ms;
 };
 
 class Fence {
@@ -295,11 +297,16 @@ ExecResults run_test(const RunInfo &info) {
     access_times.reserve(info.iterationsMajor);
 
     ExecResults ret = {0};
+
+    ret.access_times_ms.reserve(info.iterationsMajor);
+    ret.malloc_times_ms.reserve(info.iterationsMajor);
+
     for (size_t major_it = 0; major_it < info.iterationsMajor; ++major_it) {
         auto [malloc_time, access_time] =
             create_and_run_loaders(loader_creators);
         ret.malloc_time_ms += malloc_time;
-        ret.access_time_ms += access_time;
+        ret.malloc_times_ms.push_back(malloc_time);
+        ret.access_times_ms.push_back(access_time);
     }
 
     return ret;
@@ -359,6 +366,16 @@ int main(int argc, char *argv[])
     std::cout << "Measured execution time [malloc | access]: ["
               << stats.malloc_time_ms << "|" << stats.access_time_ms
               << "]" << std::endl;
+
+    std::cout << "Malloc times: ";
+    for (uint64_t malloc_time_ms : stats.malloc_times_ms)
+        std::cout << malloc_time_ms << ",";
+    std::cout << std::endl;
+
+    std::cout << "Access times: ";
+    for (uint64_t access_time_ms : stats.access_times_ms)
+        std::cout << access_time_ms << ",";
+    std::cout << std::endl;
 
     return 0;
 }
