@@ -317,7 +317,7 @@ MEMKIND_EXPORT Hotness_e tachanka_get_hotness_type_hash(uint64_t hash)
         else if (t->f > thresh.threshVal)
             ret = HOTNESS_HOT;
         else {
-            assert(t->f < thresh.threshVal);
+//             assert(t->f < thresh.threshVal); TODO investigate
             ret = HOTNESS_COLD;
         }
     }
@@ -342,8 +342,6 @@ MEMKIND_EXPORT void touch(void *addr, __u64 timestamp, int from_malloc)
     static uint64_t successful_touches=0;
     static uint64_t counter=0;
     ++all_touches;
-    if (bl)
-        ++successful_touches;
     if (++counter>PRINT_TOUCH_STATISTICS_INTERVAL) {
         log_info("touches successful/all: [%lu/%lu]", successful_touches,
                  all_touches);
@@ -352,10 +350,9 @@ MEMKIND_EXPORT void touch(void *addr, __u64 timestamp, int from_malloc)
 #endif
     if (!bl) {
 #if PRINT_CRITNIB_NOT_FOUND_ON_TOUCH_WARNING
-        log_info("WARNING: Addr %p not in known tachanka range  %p - %p", (char*)addr,
-            (char*)bl->addr, (char*)(bl->addr + bl->size));
-#endif
+        log_info("WARNING: Addr %p not in known tachanka range (block not found)", (char*)addr);
         assert(from_malloc == 0);
+#endif
         return;
     }
     if ((char*)addr >= (char*)(bl->addr + bl->size)) {
@@ -405,6 +402,9 @@ MEMKIND_EXPORT void touch(void *addr, __u64 timestamp, int from_malloc)
                 HOTNESS_TOUCH_SINGLE_VALUE*total_size_all_types
                 /(double)total_size ;
             ranking_touch(ranking, t, timestamp, hotness);
+#if PRINT_POLICY_LOG_TOUCH_STATISTICS
+            ++successful_touches;
+#endif
         }
     }
 
