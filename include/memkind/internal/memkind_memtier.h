@@ -282,7 +282,7 @@ extern double old_time_window_hotness_weight;
 #define PRINT_CRITNIB_UNREGISTER_BLOCK_INFO 0
 #define PRINT_CRITNIB_TOUCH_INFO 0
 #define PRINT_CRITNIB_REALLOC_INFO 0
-#define PRINT_CRITNIB_NOT_FOUND_ON_TOUCH_WARNING 0
+#define PRINT_CRITNIB_NOT_FOUND_ON_TOUCH_WARNING 1
 #define PRINT_CRITNIB_NOT_FOUND_ON_UNREGISTER_BLOCK_WARNING 0
 #define PRINT_CRITNIB_NOT_FOUND_ON_REALLOC_WARNING 0
 
@@ -297,7 +297,7 @@ extern double old_time_window_hotness_weight;
 
 #define PRINT_MEMDUMP_INTERVAL 15
 #define PRINT_RATIO_ADJUSTED_INTERVAL 100
-#define PRINT_TOUCH_STATISTICS_INTERVAL 100000
+#define PRINT_TOUCH_STATISTICS_INTERVAL 100
 #define CRASH_ON_BLOCK_NOT_FOUND 0
 #define PRINT_POLICY_BACKTRACE_INFO 0
 #define PRINT_POLICY_CREATE_MEMORY_INFO 1
@@ -333,12 +333,12 @@ extern double old_time_window_hotness_weight;
 //
 // hotness threshold needs to be more up-to-date than pebs touches,
 // it has more influence on ratio
-#define HOTNESS_PEBS_THREAD_FREQUENCY 10.0
+#define HOTNESS_PEBS_THREAD_FREQUENCY 50.0
 #define HOTNESS_RANKING_EVENT_ITERATIONS_PER_CYCLE \
     (MAX_RANKING_EVENTS_PER_NOMINAL_SECOND/HOTNESS_PEBS_THREAD_FREQUENCY)
 // smaller value -> more frequent sampling
 // 10000 = around 100 samples on *my machine* / sec in matmul test
-#define HOTNESS_PEBS_SAMPLING_INTERVAL 1000
+#define HOTNESS_PEBS_SAMPLING_INTERVAL 10
 
 #define CONTROLLER_INTEGRAL_GAIN \
     (CONTROLLER_INTEGRAL_GAIN_PER_SECOND/HOTNESS_PEBS_THREAD_FREQUENCY)
@@ -354,11 +354,12 @@ extern double old_time_window_hotness_weight;
 /// but this one is not known at the moemnt of start
 /// we have to either deal with inaccuracies at the beginning
 /// or find a better way to get rid of the bias
-#define HOTNESS_INITIAL_SINGLE_VALUE 10.0
+#define HOTNESS_INITIAL_SINGLE_VALUE 0.0
 /// touch value: its significance is limited to preventing buffer overflow
-#define HOTNESS_TOUCH_SINGLE_VALUE 1.0
+#define HOTNESS_TOUCH_SINGLE_VALUE 1e9
 
-static const double EXPONENTIAL_COEFFS_VALS[] = { 0.9, 0.99, 0.999, 0.9999};
+// static const double EXPONENTIAL_COEFFS_VALS[] = { 0.9, 0.99, 0.999, 0.9999};
+static const double EXPONENTIAL_COEFFS_VALS[] = { 1, 1, 1, 1};
 
 #define EXPONENTIAL_COEFFS_NUMBER \
     ((sizeof(EXPONENTIAL_COEFFS_VALS)/(sizeof(EXPONENTIAL_COEFFS_VALS[0]))))

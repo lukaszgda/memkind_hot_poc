@@ -127,12 +127,21 @@ class Loader  {
     /// @return milliseconds per whole data access
     uint64_t GenerateAccessOnce_() {
         uint64_t timestamp_start = clock_bench_time_ms();
+#if 1
+        const size_t data_size_u64 = dataSize/sizeof(uint64_t);
         for (size_t it=0; it<iterations; ++it)
-            for (size_t i=0; i<dataSize/sizeof(uint64_t); i += CACHE_LINE_SIZE_U64) {
+            for (size_t i=0; i<data_size_u64; i += CACHE_LINE_SIZE_U64) {
                 static_cast<volatile uint64_t*>(data1.get())[i] =
                     static_cast<volatile uint64_t*>(data2.get())[i];
             }
-
+#else
+        for (size_t it=0; it<iterations; ++it)
+            for (size_t i=0; i<dataSize/sizeof(uint64_t); i += CACHE_LINE_SIZE_U64) {
+                size_t index = rand()%(dataSize/sizeof(uint64_t));
+                static_cast<volatile uint64_t*>(data1.get())[index] =
+                    static_cast<volatile uint64_t*>(data2.get())[index];
+            }
+#endif
         return clock_bench_time_ms() - timestamp_start;
     }
 
@@ -332,7 +341,9 @@ int main(int argc, char *argv[])
     size_t PMEM_TO_DRAM = 4;
     size_t LOADER_SIZE = 1024*1024*512; // half gigabyte
     // avoid interactions between manual touches and hardware touches
-    pebs_set_process_hardware_touches(false);
+//     pebs_set_process_hardware_touches(false);
+
+    srand(time(NULL));
 
     assert(argc == 5 &&
         "Incorrect number of arguments specified, "
