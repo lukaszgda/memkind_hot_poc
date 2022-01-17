@@ -358,6 +358,8 @@ void *pebs_monitor(void *state)
             bp += sprintf(bp, "\n");
             if (write(log_file, buf, bp - buf));
 #endif
+        } else {
+            log_info("PEBS: no new data");
         }
 
 		ioctl(pebs_fd, PERF_EVENT_IOC_REFRESH, 0);
