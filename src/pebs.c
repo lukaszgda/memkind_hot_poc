@@ -18,8 +18,8 @@ typedef enum {
 
 pthread_t pebs_thread;
 ThreadState_t thread_state = THREAD_INIT;
-int pebs_fd;
-static char *pebs_mmap;
+int pebs_fd[CPU_LOGICAL_CORES_NUMBER];
+static char *pebs_mmap[CPU_LOGICAL_CORES_NUMBER];
 
 #if CHECK_ADDED_SIZE
 extern size_t g_total_ranking_size;
@@ -97,7 +97,7 @@ void *pebs_monitor(void *state)
     param.sched_priority = sched_get_priority_min(policy);
     pthread_setschedparam(pthread_self(), policy, &param);
 
-    __u64 last_head = 0;
+    __u64 last_head[CPU_LOGICAL_CORES_NUMBER] = { 0 };
 #if PRINT_PEBS_BASIC_INFO
     int cur_tid = syscall(SYS_gettid);
 #endif
@@ -236,109 +236,114 @@ void *pebs_monitor(void *state)
 #endif
         }
 
-        struct perf_event_mmap_page* pebs_metadata =
-            (struct perf_event_mmap_page*)pebs_mmap;
+        int samples = 0;
+        for (size_t cpu_idx=0u; cpu_idx<CPU_LOGICAL_CORES_NUMBER; ++cpu_idx) {
+            struct perf_event_mmap_page* pebs_metadata =
+                (struct perf_event_mmap_page*)pebs_mmap[cpu_idx];
 
-        if (last_head < pebs_metadata->data_head) {
-#if PRINT_PEBS_NEW_DATA_INFO
-            log_info("PEBS: new data to process!");
-#endif
-            int samples = 0;
-            __u64 timestamp = 0;
+            if (last_head[cpu_idx] < pebs_metadata->data_head) {
+    #if PRINT_PEBS_NEW_DATA_INFO
+                log_info("PEBS: new data to process!");
+    #endif
+                __u64 timestamp = 0;
 
-            while (last_head < pebs_metadata->data_head) {
-	            char *data_mmap = pebs_mmap + getpagesize() +
-                    last_head % (MMAP_DATA_SIZE * getpagesize());
+                while (last_head[cpu_idx] < pebs_metadata->data_head) {
+                    char *data_mmap = pebs_mmap[cpu_idx] + getpagesize() +
+                        last_head[cpu_idx] % (MMAP_DATA_SIZE * getpagesize());
 
-                struct perf_event_header *event =
-                    (struct perf_event_header *)data_mmap;
+                    struct perf_event_header *event =
+                        (struct perf_event_header *)data_mmap;
 
-//  {    static uint64_t counter=0;
-//     const uint64_t interval=10;
-//     if (++counter > interval) {
-//         struct timespec t;
-//         int ret = clock_gettime(CLOCK_MONOTONIC, &t);
-//         if (ret != 0) {
-//             printf("ASSERT PEBS EVENT COUNTER FAILURE!\n");
-//         }
-//         assert(ret == 0);
-//         printf("pebs event counter 10 hit, [seconds, nanoseconds]: [%ld, %ld]\n",
-//             t.tv_sec, t.tv_nsec);
-//         counter=0u;
-//     }
-// }
-                switch (event->type) {
-                    case PERF_RECORD_SAMPLE:
-                    {
-                        // content of this struct is defined by
-                        // "pe.sample_type = PERF_SAMPLE_ADDR | PERF_SAMPLE_TIME"
-                        // in pebs_init()
-                        timestamp = *(__u64*)(data_mmap + sizeof(struct perf_event_header));
-                        // 'addr' is the acessed address
-                        __u64 addr = *(__u64*)(data_mmap + sizeof(struct perf_event_header) + sizeof(__u64));
+    //  {    static uint64_t counter=0;
+    //     const uint64_t interval=10;
+    //     if (++counter > interval) {
+    //         struct timespec t;
+    //         int ret = clock_gettime(CLOCK_MONOTONIC, &t);
+    //         if (ret != 0) {
+    //             printf("ASSERT PEBS EVENT COUNTER FAILURE!\n");
+    //         }
+    //         assert(ret == 0);
+    //         printf("pebs event counter 10 hit, [seconds, nanoseconds]: [%ld, %ld]\n",
+    //             t.tv_sec, t.tv_nsec);
+    //         counter=0u;
+    //     }
+    // }
+                    switch (event->type) {
+                        case PERF_RECORD_SAMPLE:
+                        {
+                            // content of this struct is defined by
+                            // "pe.sample_type = PERF_SAMPLE_ADDR | PERF_SAMPLE_TIME"
+                            // in pebs_init()
+                            timestamp = *(__u64*)(data_mmap + sizeof(struct perf_event_header));
+                            // 'addr' is the acessed address
+                            __u64 addr = *(__u64*)(data_mmap + sizeof(struct perf_event_header) + sizeof(__u64));
 
-                        // TODO - is this a global or per-core timestamp?
-                        // If per-core, this could lead to some problems
+                            // TODO - is this a global or per-core timestamp?
+                            // If per-core, this could lead to some problems
 
-// {    static uint64_t counter=0;
-//     const uint64_t interval=10;
-//     if (++counter > interval) {
-//         struct timespec t;
-//         int ret = clock_gettime(CLOCK_MONOTONIC, &t);
-//         if (ret != 0) {
-//             printf("ASSERT PEBS TOUCH COUNTER FAILURE!\n");
-//         }
-//         assert(ret == 0);
-//         printf("pebs touch counter 10 hit, [seconds, nanoseconds]: [%ld, %ld]\n",
-//             t.tv_sec, t.tv_nsec);
-//         counter=0u;
-//     }
-// }
-//                         printf("touches, timestamp: [%llu], from malloc [0]\n", timestamp);
+    // {    static uint64_t counter=0;
+    //     const uint64_t interval=10;
+    //     if (++counter > interval) {
+    //         struct timespec t;
+    //         int ret = clock_gettime(CLOCK_MONOTONIC, &t);
+    //         if (ret != 0) {
+    //             printf("ASSERT PEBS TOUCH COUNTER FAILURE!\n");
+    //         }
+    //         assert(ret == 0);
+    //         printf("pebs touch counter 10 hit, [seconds, nanoseconds]: [%ld, %ld]\n",
+    //             t.tv_sec, t.tv_nsec);
+    //         counter=0u;
+    //     }
+    // }
+    //                         printf("touches, timestamp: [%llu], from malloc [0]\n", timestamp);
 
-                        // defer touch after corresponding malloc - put it onto queue
-                        EventEntry_t entry = {
-                            .type = EVENT_TOUCH,
-                            .data.touchData = {
-                                .address = (void*)addr,
-                                .timestamp = timestamp,
-                            },
-                        };
+                            // defer touch after corresponding malloc - put it onto queue
+                            EventEntry_t entry = {
+                                .type = EVENT_TOUCH,
+                                .data.touchData = {
+                                    .address = (void*)addr,
+                                    .timestamp = timestamp,
+                                },
+                            };
 
-                        // copy is performed, passing pointer to stack is ok
-                        // losing single malloc should not cause issues,
-                        // so we are just ignoring buffer overflows
-//                         (void)tachanka_ranking_event_push(&entry); // TODO
-                        if (shouldProcessTouches)
-                            touch(entry.data.touchData.address,
-                                entry.data.touchData.timestamp, 0 /*called from malloc*/);
-                                g_queue_counter_touch++;
+                            // copy is performed, passing pointer to stack is ok
+                            // losing single malloc should not cause issues,
+                            // so we are just ignoring buffer overflows
+    //                         (void)tachanka_ranking_event_push(&entry); // TODO
+                            if (shouldProcessTouches)
+                                touch(entry.data.touchData.address,
+                                    entry.data.touchData.timestamp, 0 /*called from malloc*/);
+                                    g_queue_counter_touch++;
 
-//                         touch((void*)addr, timestamp, 0 /* from malloc */);
-//                         printf("touched, timestamp: [%llu], from malloc [0]\n", timestamp);
+    //                         touch((void*)addr, timestamp, 0 /* from malloc */);
+    //                         printf("touched, timestamp: [%llu], from malloc [0]\n", timestamp);
 
-#if PEBS_LOG_TO_FILE
-                        // DEBUG
-                        sprintf(buf, "last: %llu, head: %llu t: %llu addr: %llx\n",
-                            last_head, pebs_metadata->data_head,
-                            timestamp, addr);
-                        //if (write(log_file, buf, strlen(buf))) ;
-#endif
+    #if PEBS_LOG_TO_FILE
+                            // DEBUG
+                            sprintf(buf, "last: %llu, head: %llu t: %llu addr: %llx\n",
+                                last_head[cpu_idx], pebs_metadata->data_head,
+                                timestamp, addr);
+                            //if (write(log_file, buf, strlen(buf))) ;
+    #endif
 
-#if PRINT_PEBS_TOUCH_INFO
-                        log_info("PEBS touch(): last: %llu, head: %llu t: %llu addr: %llx",
-                            last_head, pebs_metadata->data_head,
-                            timestamp, addr);
-#endif
-                    }
-                    break;
-                default:
-                    break;
-                };
+    #if PRINT_PEBS_TOUCH_INFO
+                            log_info("PEBS touch(): last: %llu, head: %llu t: %llu addr: %llx",
+                                last_head[cpu_idx], pebs_metadata->data_head,
+                                timestamp, addr);
+    #endif
+                        }
+                        break;
+                    default:
+                        break;
+                    };
 
-                last_head += event->size;
-                data_mmap += event->size;
-                samples++;
+                    last_head[cpu_idx] += event->size;
+                    data_mmap += event->size;
+                    samples++;
+                }
+                ioctl(pebs_fd[cpu_idx], PERF_EVENT_IOC_REFRESH, 0);
+                last_head[cpu_idx] = pebs_metadata->data_head;
+                pebs_metadata->data_tail = pebs_metadata->data_head;
             }
 
 #if RANKING_TOUCH_ALL
@@ -360,9 +365,6 @@ void *pebs_monitor(void *state)
 #endif
         }
 
-		ioctl(pebs_fd, PERF_EVENT_IOC_REFRESH, 0);
-        last_head = pebs_metadata->data_head;
-        pebs_metadata->data_tail = pebs_metadata->data_head;
         tachanka_update_threshold();
 
 //         ret = clock_gettime(CLOCK_MONOTONIC, &ctime);
@@ -451,21 +453,36 @@ void pebs_init(pid_t pid)
     pe.exclude_kernel = 1;
     pe.exclude_hv = 1;
     pe.wakeup_events = 1;
+    pe.inherit = 1;
+    pe.inherit_stat = 1;
 
     // NOTE: pid is passed as an argument to this func
     //pid_t pid = 0;            // measure current process
 
-    int cpu = -1;               // .. on any CPU
     int group_fd = -1;          // use single event group
     unsigned long flags = 0;
-    pebs_fd = perf_event_open(&pe, pid, cpu, group_fd, flags);
-
-    if (pebs_fd != -1) {
+    bool pebs_supported = true;
+    for (size_t cpu_idx=0u; cpu_idx<CPU_LOGICAL_CORES_NUMBER; ++cpu_idx) {
+        pebs_fd[cpu_idx] = perf_event_open(&pe, pid, cpu_idx, group_fd, flags);
         int mmap_pages = 1 + MMAP_DATA_SIZE;
         int map_size = mmap_pages * getpagesize();
-        pebs_mmap = mmap(NULL, map_size,
-                        PROT_READ | PROT_WRITE, MAP_SHARED, pebs_fd, 0);
-
+        if (pebs_fd[cpu_idx] != -1) {
+            pebs_mmap[cpu_idx] = mmap(NULL, map_size, PROT_READ | PROT_WRITE,
+                                      MAP_SHARED, pebs_fd[cpu_idx], 0);
+        }
+        else
+        {
+            pebs_supported = false;
+            if (cpu_idx > 0)
+                for (size_t bcpu_idx=cpu_idx-1; bcpu_idx>=0; --bcpu_idx) {
+                    munmap(pebs_mmap[bcpu_idx], mmap_pages * getpagesize());
+                    pebs_mmap[bcpu_idx] = 0;
+                    close(pebs_fd[bcpu_idx]);
+                }
+            break;
+        }
+    }
+    if (pebs_supported) {
 #if PRINT_PEBS_BASIC_INFO
         log_info("PEBS: thread start");
 #endif
@@ -473,11 +490,12 @@ void pebs_init(pid_t pid)
         thread_state = THREAD_RUNNING;
         pthread_create(&pebs_thread, NULL, &pebs_monitor, (void*)&thread_state);
 
-        ioctl(pebs_fd, PERF_EVENT_IOC_RESET, 0);
-        ioctl(pebs_fd, PERF_EVENT_IOC_ENABLE, 0);
-    }
-    else
-    {
+        for (size_t cpu_idx=0u; cpu_idx<CPU_LOGICAL_CORES_NUMBER; ++cpu_idx) {
+            ioctl(pebs_fd[cpu_idx], PERF_EVENT_IOC_RESET, 0);
+            ioctl(pebs_fd[cpu_idx], PERF_EVENT_IOC_ENABLE, 0);
+        }
+    } else {
+        // TODO
         log_err("PEBS: PEBS NOT SUPPORTED! continuing without pebs!");
     }
 }
@@ -486,7 +504,8 @@ void pebs_fini()
 {
     // finish only if the thread is running
     if (thread_state == THREAD_RUNNING) {
-        ioctl(pebs_fd, PERF_EVENT_IOC_DISABLE, 0);
+        for (size_t cpu_idx=0u; cpu_idx<CPU_LOGICAL_CORES_NUMBER; ++cpu_idx)
+            ioctl(pebs_fd[cpu_idx], PERF_EVENT_IOC_DISABLE, 0);
 
         // TODO - use mutex?
         thread_state = THREAD_FINISHED;
@@ -494,9 +513,12 @@ void pebs_fini()
         pthread_join(pebs_thread, &ret);
 
         int mmap_pages = 1 + MMAP_DATA_SIZE;
-        munmap(pebs_mmap, mmap_pages * getpagesize());
-        pebs_mmap = 0;
-        close(pebs_fd);
+
+    for (size_t cpu_idx=0u; cpu_idx<CPU_LOGICAL_CORES_NUMBER; ++cpu_idx) {
+        munmap(pebs_mmap[cpu_idx], mmap_pages * getpagesize());
+        pebs_mmap[cpu_idx] = 0;
+        close(pebs_fd[cpu_idx]);
+    }
 
 #if PRINT_PEBS_BASIC_INFO
         log_info("PEBS: thread end");
