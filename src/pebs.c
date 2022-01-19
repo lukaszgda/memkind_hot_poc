@@ -447,18 +447,22 @@ void pebs_init(pid_t pid)
 
     pe.precise_ip = 2; // NOTE: this is reqired but was not set
                        // by pfm_get_os_event_encoding()
+//     pe.read_format = PERF_FORMAT_ID;
     pe.read_format = 0;
     pe.disabled = 1;
     pe.pinned = 1;
     pe.exclude_kernel = 1;
     pe.exclude_hv = 1;
     pe.wakeup_events = 1;
+    pe.inherit = 1;
+    pe.inherit_stat = 1;
 
     // NOTE: pid is passed as an argument to this func
     //pid_t pid = 0;            // measure current process
 
     int cpu = -1;               // .. on any CPU
     int group_fd = -1;          // use single event group
+//     int group_fd = 0;
     unsigned long flags = 0;
     pebs_fd = perf_event_open(&pe, pid, cpu, group_fd, flags);
 
@@ -467,7 +471,7 @@ void pebs_init(pid_t pid)
         int map_size = mmap_pages * getpagesize();
         pebs_mmap = mmap(NULL, map_size,
                         PROT_READ | PROT_WRITE, MAP_SHARED, pebs_fd, 0);
-
+        assert(pebs_mmap != MAP_FAILED && "pebs mmap failed");
 #if PRINT_PEBS_BASIC_INFO
         log_info("PEBS: thread start");
 #endif

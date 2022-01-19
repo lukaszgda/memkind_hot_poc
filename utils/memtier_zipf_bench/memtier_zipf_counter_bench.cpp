@@ -114,21 +114,25 @@ public:
 };
 
 #define TEST_ACCESS_RANDOM 0
-#define TEST_ACCESS_SEQ_CPY 1
-#define TEST_ACCESS_SEQ_INC 2
+#define TEST_ACCESS_RANDOM_INC 1
+#define TEST_ACCESS_SEQ_CPY 2
+#define TEST_ACCESS_SEQ_INC 3
 
-#define TEST_ACCESS TEST_ACCESS_SEQ_CPY
+#define TEST_ACCESS TEST_ACCESS_RANDOM_INC
 
+
+#define IS_TEST_ACCESS_RANDOM ((TEST_ACCESS == TEST_ACCESS_RANDOM_INC) \
+                                || (TEST_ACCESS == TEST_ACCESS_RANDOM_INC))
 /// @warning: API is not thread safe, only one function per instance
 /// should be called at once
 class Loader  {
 
-#if TEST_ACCESS == TEST_ACCESS_RANDOM
+#if IS_TEST_ACCESS_RANDOM
     static std::random_device dev;
     std::mt19937 generator;
 #endif
 
-    std::shared_ptr<volatile void> data1, data2;
+    std::shared_ptr<void> data1; //, data2;
     size_t dataSize;
     size_t iterations;
     size_t i=0;
@@ -155,6 +159,14 @@ class Loader  {
                 static_cast<volatile uint64_t*>(data1.get())[index] =
                     static_cast<volatile uint64_t*>(data2.get())[index];
             }
+#elif TEST_ACCESS == TEST_ACCESS_RANDOM_INC
+        for (size_t it=0; it<iterations; ++it)
+            for (size_t i=0; i<dataSize/sizeof(uint64_t); i += CACHE_LINE_SIZE_U64) {
+//                 size_t index = rand()%(dataSize/sizeof(uint64_t));
+                std::uniform_int_distribution<uint64_t> distr(0, dataSize/sizeof(uint64_t));
+                size_t index = distr(generator);
+                static_cast<uint64_t*>(data1.get())[index]++;
+            }
 #else
         const size_t data_size_u64 = dataSize/sizeof(uint64_t);
         for (size_t it=0; it<iterations; ++it)
@@ -167,14 +179,14 @@ class Loader  {
     }
 
 public:
-    Loader(std::shared_ptr<volatile void> data1,
-           std::shared_ptr<volatile void> data2, size_t data_size,
+    Loader(std::shared_ptr<void> data1,
+           /*std::shared_ptr<void> data2, */size_t data_size,
            size_t iterations) :
-#if TEST_ACCESS == TEST_ACCESS_RANDOM
+#if IS_TEST_ACCESS_RANDOM
           generator(dev()),
 #endif
           data1(data1),
-          data2(data2),
+//           data2(data2),
           dataSize(data_size),
           iterations(iterations),
           shouldContinue(false) {}
@@ -182,6 +194,8 @@ public:
     void PrepareOnce(std::shared_ptr<Fence> fence) {
         assert(!this_thread);
         this_thread = std::make_shared<std::thread>([this, fence](){
+//             std::this_thread::sleep_for(std::chrono::seconds(10));
+//             sleep(10);
             fence->Await();
             this->executionTimeMillis_ = this->GenerateAccessOnce_();
         });
@@ -192,9 +206,14 @@ public:
         this_thread->join();
         return this->executionTimeMillis_;
     }
+
+    /// \todo hide from API ? TODO
+    uint64_t GenerateAccessOnce() {
+        return this->GenerateAccessOnce_();
+    }
 };
 
-#if TEST_ACCESS == TEST_ACCESS_RANDOM
+#if IS_TEST_ACCESS_RANDOM
 std::random_device Loader::dev;
 #endif
 
@@ -229,16 +248,16 @@ public:
 
     std::shared_ptr<Loader> CreateLoader() {
         void *allocated_memory1 = memtier_malloc(memory.get(), size);
-        void *allocated_memory2 = memtier_malloc(memory.get(), size);
+//         void *allocated_memory2 = memtier_malloc(memory.get(), size);
         assert(allocated_memory1 && "memtier malloc failed");
-        assert(allocated_memory2 && "memtier malloc failed");
+//         assert(allocated_memory2 && "memtier malloc failed");
         std::shared_ptr<void> allocated_memory_ptr1(allocated_memory1,
                                                     memtier_free);
-        std::shared_ptr<void> allocated_memory_ptr2(allocated_memory2,
-                                                    memtier_free);
+//         std::shared_ptr<void> allocated_memory_ptr2(allocated_memory2,
+//                                                     memtier_free);
 
         return std::make_shared<Loader>(
-            allocated_memory_ptr1, allocated_memory_ptr2, size, iterations);
+            allocated_memory_ptr1, /*allocated_memory_ptr2,*/ size, iterations);
     }
 };
 
@@ -345,6 +364,7 @@ ExecResults run_test(const RunInfo &info) {
         auto [malloc_time, access_time] =
             create_and_run_loaders(loader_creators);
         ret.malloc_time_ms += malloc_time;
+        ret.access_time_ms += access_time;
         ret.malloc_times_ms.push_back(malloc_time);
         ret.access_times_ms.push_back(access_time);
     }
@@ -378,6 +398,7 @@ int main(int argc, char *argv[])
     // avoid interactions between manual touches and hardware touches
 //     pebs_set_process_hardware_touches(false);
 
+    matmul();
 
     assert(argc == 5 &&
         "Incorrect number of arguments specified, "
@@ -475,7 +496,8 @@ static void matmul() {
 
     // objects will be reallocated after N uses
     const int AGE_THRESHOLD = 10;
-    const int LOOP_LEN = 20 * OBJS_NUM;
+    const int LOOP_LEN = 1;
+//     const int LOOP_LEN = 20 * OBJS_NUM;
     // start iteration of hotness validation
     const int LOOP_CHECK_START = 5 * OBJS_NUM;
     // compare sum of hotness between objects from DEPTH num of checks
@@ -555,9 +577,29 @@ static void matmul() {
 
 // 	    naive_matrix_multiply(MATRIX_SIZE, MUL_STEP,
 //             dest_obj, dest_obj, dest_obj);
-        for (size_t j=0; j<1000; ++j)
-            for (size_t i=0; i< MATRIX_SIZE*MATRIX_SIZE; i += CACHE_LINE_SIZE_U64)
-                dest_obj[i] ++;
+//         for (size_t j=0; j<1000; ++j)
+//             for (size_t i=0; i< MATRIX_SIZE*MATRIX_SIZE; i += CACHE_LINE_SIZE_U64)
+//                 dest_obj[i] ++;
+
+        Loader loader(std::shared_ptr<void>(dest_obj, [](void* addr){
+            (void) addr;
+        }), MATRIX_SIZE*MATRIX_SIZE, 100000);
+        auto fence = std::make_shared<Fence>();
+        std::thread([m_tier_memory, mat_size](){
+            double *ndest_obj = (double*)memtier_malloc(m_tier_memory,
+                MATRIX_SIZE*MATRIX_SIZE );
+            Loader internal_loader(std::shared_ptr<void>(ndest_obj, [](void* addr){
+                (void) addr;
+            }), MATRIX_SIZE*MATRIX_SIZE, 100000);
+            internal_loader.GenerateAccessOnce();
+            memtier_free(ndest_obj);
+        }).join();
+//         loader.PrepareOnce(fence);
+//         std::this_thread::sleep_for(std::chrono::seconds(15));
+//         sleep(5);
+//         fence->Start();
+//         loader.CollectResults();
+//         loader.GenerateAccessOnce();
 
         if (ready_to_validate == 0) {
             int num_allocated_objs = 0;
