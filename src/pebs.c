@@ -460,7 +460,8 @@ void pebs_init(pid_t pid)
     // NOTE: pid is passed as an argument to this func
     //pid_t pid = 0;            // measure current process
 
-    int cpu = -1;               // .. on any CPU
+//     int cpu = -1;               // .. on any CPU
+    int cpu = 2;               // .. on any CPU
     int group_fd = -1;          // use single event group
 //     int group_fd = 0;
     unsigned long flags = 0;
