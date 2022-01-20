@@ -332,7 +332,6 @@ int main(int argc, char *argv[])
     size_t PMEM_TO_DRAM = 4;
     size_t LOADER_SIZE = 1024*1024*512; // half gigabyte
     // avoid interactions between manual touches and hardware touches
-    pebs_set_process_hardware_touches(false);
 
     assert(argc == 5 &&
         "Incorrect number of arguments specified, "
