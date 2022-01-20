@@ -118,7 +118,8 @@ public:
 #define TEST_ACCESS_SEQ_CPY 2
 #define TEST_ACCESS_SEQ_INC 3
 
-#define TEST_ACCESS TEST_ACCESS_RANDOM_INC
+// #define TEST_ACCESS TEST_ACCESS_RANDOM_INC
+#define TEST_ACCESS TEST_ACCESS_SEQ_INC
 
 
 #define IS_TEST_ACCESS_RANDOM ((TEST_ACCESS == TEST_ACCESS_RANDOM_INC) \
@@ -171,7 +172,7 @@ class Loader  {
         const size_t data_size_u64 = dataSize/sizeof(uint64_t);
         for (size_t it=0; it<iterations; ++it)
             for (size_t i=CACHE_LINE_SIZE_U64, pi=0; i<data_size_u64; pi=i, i += CACHE_LINE_SIZE_U64) {
-//                 static_cast<volatile uint64_t*>(data1.get())[i]
+                static_cast<volatile uint64_t*>(data1.get())[i]
                     += static_cast<volatile uint64_t*>(data1.get())[pi];
             }
 #endif
@@ -398,7 +399,7 @@ int main(int argc, char *argv[])
     // avoid interactions between manual touches and hardware touches
 //     pebs_set_process_hardware_touches(false);
 
-    matmul();
+//     matmul();
 
     assert(argc == 5 &&
         "Incorrect number of arguments specified, "
@@ -443,7 +444,7 @@ int main(int argc, char *argv[])
         std::cout << access_time_ms << ",";
     std::cout << std::endl;
 
-    matmul();
+//     matmul();
 
     return 0;
 }
